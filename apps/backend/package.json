@@ -1,0 +1,13 @@
+{
+  "name": "@os-one/backend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node src/server.js",
+    "check": "node src/server.js --check"
+  },
+  "dependencies": {
+    "@os-one/vault-model": "0.1.0"
+  }
+}

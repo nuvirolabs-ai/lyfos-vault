@@ -1,0 +1,19 @@
+{
+  "name": "os-one-life-vault",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w @os-one/web --",
+    "dev:backend": "npm run dev -w @os-one/backend --",
+    "package:web": "npm run check && rm -rf build/os-one-vault-web build/os-one-vault-web.zip && mkdir -p build && cp -R apps/web/dist build/os-one-vault-web && cp apps/web/README.md build/os-one-vault-web/README.md && cd build && zip -qr os-one-vault-web.zip os-one-vault-web",
+    "check": "npm run check -ws --if-present"
+  },
+  "dependencies": {
+    "tesseract.js": "^7.0.0"
+  }
+}

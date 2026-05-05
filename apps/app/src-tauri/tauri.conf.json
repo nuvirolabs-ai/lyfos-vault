@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OS-One Vault",
+  "version": "0.1.0",
+  "identifier": "com.osone.vault",
+  "build": {
+    "frontendDist": "../../web/dist",
+    "devUrl": "http://127.0.0.1:5173"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "OS-One Vault",
+        "width": 1180,
+        "height": 780
+      }
+    ]
+  }
+}
