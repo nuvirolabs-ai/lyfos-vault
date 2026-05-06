@@ -107,6 +107,79 @@ button:disabled {
   animation: scan 2.2s ease-in-out infinite;
 }
 
+.entry-vault-art {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 168.2%;
+  max-width: none;
+  min-height: 100%;
+  transform: translateY(-50%);
+}
+
+.entry-restore > div > label {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 1rem 1.25rem;
+  color: rgba(255, 255, 255, 0.86);
+  box-shadow: none;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.entry-restore > div > label:hover {
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.entry-restore > div > label + p {
+  display: none;
+}
+
+.entry-restore > div > label::before {
+  content: "";
+  width: 1.15rem;
+  height: 1.15rem;
+  margin-right: 0.75rem;
+  border: 2px solid currentColor;
+  border-radius: 999px;
+  opacity: 0.9;
+}
+
+.entry-restore [class*="rounded-\\[1\\.25rem\\]"] {
+  max-height: 18rem;
+  overflow: auto;
+}
+
+.entry-verify > div > div:first-child,
+.entry-verify > div > label + p {
+  display: none;
+}
+
+.entry-verify > div > label {
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  padding: 0.5rem 0;
+  color: rgba(255, 255, 255, 0.48);
+  box-shadow: none;
+  font-size: 0.75rem;
+  font-weight: 600;
+  transition: color 160ms ease;
+}
+
+.entry-verify > div > label:hover {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.entry-verify [class*="rounded-\\[1\\.25rem\\]"] {
+  max-height: 18rem;
+  overflow: auto;
+}
+
 @keyframes breathe {
   0%, 100% {
     transform: scale(0.96);
