@@ -904,40 +904,42 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
     : "Your vault phrase wraps the key that encrypts this local vault. OS-One does not store the phrase or a server recovery copy. Stage 1 creates a user-held recovery key; if both are lost, the encrypted vault cannot be opened.";
 
   return (
-    <main className="min-h-screen bg-[#d6d0c6] text-[#221d16] lg:h-screen lg:overflow-hidden">
-      <div className="mx-auto flex min-h-screen max-w-[96rem] items-stretch px-4 py-4 sm:px-6 sm:py-6 lg:h-screen lg:px-8 lg:py-8">
-        <div className="grid w-full overflow-hidden rounded-[2rem] border border-black/8 bg-[#f3eee5] shadow-[0_24px_80px_rgba(30,24,18,0.12)] lg:grid-cols-[0.95fr_1.05fr]">
-          <section className="entry-stage relative min-h-[16rem] overflow-hidden border-b border-black/6 bg-[#e4ddd1] lg:min-h-0 lg:border-b-0 lg:border-r lg:border-black/5" aria-hidden="true">
-            <div className="entry-stage__wash" />
-            <div className="entry-stage__grain" />
-            <div className="entry-stage__panel" />
-            <div className="entry-stage__stone" />
-            <div className="entry-stage__paper" />
-            <div className="entry-stage__disc" />
-            <div className="entry-stage__line" />
-            <div className="entry-stage__shadow" />
-            <div className="entry-stage__caption">Private by design</div>
+    <main className="min-h-screen bg-[#d8d2c7] text-[#211c16] lg:h-screen lg:overflow-hidden">
+      <div className="mx-auto flex min-h-screen max-w-[94rem] items-stretch px-4 py-4 sm:px-6 sm:py-6 lg:h-screen lg:px-8 lg:py-8">
+        <div className="entry-shell grid w-full overflow-hidden rounded-[1.6rem] border border-black/8 shadow-[0_26px_86px_rgba(26,22,17,0.14)] lg:grid-cols-[1.02fr_0.98fr]">
+          <section className="entry-archive-scene relative min-h-[17rem] overflow-hidden border-b border-black/8 lg:min-h-0 lg:border-b-0" aria-hidden="true">
+            <div className="entry-archive-scene__light" />
+            <div className="entry-archive-scene__grain" />
+            <div className="entry-archive-scene__table" />
+            <div className="entry-archive-scene__tray" />
+            <div className="entry-archive-scene__folio" />
+            <div className="entry-archive-scene__papers" />
+            <div className="entry-archive-scene__band" />
+            <div className="entry-archive-scene__seal" />
+            <div className="entry-archive-scene__key" />
+            <div className="entry-archive-scene__key-bit" />
+            <div className="entry-archive-scene__annotation">Local archive</div>
           </section>
 
-          <section className="relative flex min-h-[calc(100vh-2rem)] items-center justify-center bg-[#f7f3eb] px-5 py-8 sm:px-8 lg:min-h-0 lg:px-12 lg:py-10">
-            <form id="vault-entry" onSubmit={submit} className="w-full max-w-[28rem]">
-              <div className="mb-8">
+          <section className="entry-access relative flex min-h-[calc(100vh-2rem)] items-center justify-center px-5 py-8 sm:px-8 lg:min-h-0 lg:px-12 lg:py-10">
+            <form id="vault-entry" onSubmit={submit} className="w-full max-w-[27rem]">
+              <div className="mb-7">
                 <div className="entry-mark">
                   <span className="entry-mark__ring" />
                   <span className="entry-mark__core">O</span>
                 </div>
-                <p className="mt-5 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#6f7c69]">OS-One Vault</p>
+                <p className="mt-5 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#53614d]">OS-One Vault</p>
                 <p className="mt-2 text-sm text-[#6a635b]">Private life infrastructure</p>
-                <h1 className="entry-headline mt-7 text-[2.9rem] leading-[0.95] text-[#1f1a15] sm:text-[3.65rem]">
-                  {hasVault ? "Enter your vault" : "Create your vault"}
+                <h1 className="entry-headline mt-7 text-[2.35rem] leading-[1.02] text-[#1f1a15] sm:text-[3rem]">
+                  {hasVault ? "Access your private records" : "Create your private vault"}
                 </h1>
-                <p className="mt-4 max-w-md text-[1rem] leading-7 text-[#655e56]">
-                  {hasVault ? "Your records stay local. Unlock with the vault phrase or the recovery key." : "Create a local encrypted vault in this browser with a phrase you control."}
+                <p className="mt-4 max-w-md text-[0.98rem] leading-7 text-[#625b52]">
+                  {hasVault ? "Unlock the encrypted local archive with the vault phrase or recovery key." : "Create a local encrypted archive in this browser with a phrase you control."}
                 </p>
               </div>
 
               {hasVault && hasRecoveryEnvelope && (
-                <div className="mb-6 grid grid-cols-2 rounded-full border border-black/8 bg-[#e8e2d8] p-1">
+                <div className="entry-segment mb-5 grid grid-cols-2 border border-black/10 bg-[#e6dfd4]">
                   {[
                     ["passphrase", "Vault phrase"],
                     ["recovery", "Recovery key"]
@@ -948,9 +950,9 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
                       onClick={() => setUnlockMode(id)}
                       aria-pressed={unlockMode === id}
                       className={cx(
-                        "rounded-full px-4 py-2.5 text-sm font-semibold transition",
+                        "px-4 py-2.5 text-sm font-semibold transition",
                         unlockMode === id
-                          ? "bg-[#f8f4ec] text-[#1f1a15] shadow-[0_1px_0_rgba(255,255,255,0.6),0_8px_20px_rgba(22,18,14,0.06)]"
+                          ? "bg-[#f8f4ec] text-[#1f1a15] shadow-[inset_0_0_0_1px_rgba(34,29,22,0.05),0_8px_18px_rgba(22,18,14,0.06)]"
                           : "text-[#6f685f] hover:text-[#1f1a15]"
                       )}
                     >
@@ -963,7 +965,7 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
               <label className="block">
                 <span className="sr-only">{hasVault && unlockMode === "recovery" ? "Recovery key" : "Vault phrase"}</span>
                 <input
-                  className="w-full rounded-[1.15rem] border border-black/10 bg-white/78 px-5 py-4 text-base text-[#221d16] outline-none transition placeholder:text-[#91887d] focus:border-[#708267]/40 focus:bg-white focus:ring-4 focus:ring-[#708267]/10"
+                  className="w-full rounded-[0.85rem] border border-black/12 bg-[#fbf8f1]/82 px-5 py-4 text-base text-[#221d16] outline-none transition placeholder:text-[#8f867a] focus:border-[#53614d]/45 focus:bg-white focus:ring-4 focus:ring-[#53614d]/10"
                   type={hasVault && unlockMode === "recovery" ? "text" : "password"}
                   value={passphrase}
                   onChange={(event) => setPassphrase(event.target.value)}
@@ -976,7 +978,7 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
                 <label className="mt-3 block">
                   <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-[#7c746a]">Confirm phrase</span>
                   <input
-                    className="w-full rounded-[1.15rem] border border-black/10 bg-white/78 px-5 py-4 text-base text-[#221d16] outline-none transition focus:border-[#708267]/40 focus:bg-white focus:ring-4 focus:ring-[#708267]/10"
+                    className="w-full rounded-[0.85rem] border border-black/12 bg-[#fbf8f1]/82 px-5 py-4 text-base text-[#221d16] outline-none transition focus:border-[#53614d]/45 focus:bg-white focus:ring-4 focus:ring-[#53614d]/10"
                     type="password"
                     value={confirm}
                     onChange={(event) => setConfirm(event.target.value)}
@@ -986,7 +988,7 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
               )}
 
               {!hasVault && (
-                <div className="mt-4 rounded-[1.35rem] border border-black/8 bg-[#ece6dc] p-4">
+                <div className="mt-4 rounded-[0.95rem] border border-black/10 bg-[#ebe4d9] p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7c746a]">Recovery key</p>
@@ -999,20 +1001,20 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
                         setRecoveryKey(key);
                         setRecoveryConfirm("");
                       }}
-                      className="rounded-full border border-black/10 bg-[#f7f3eb] px-4 py-2 text-sm font-semibold text-[#221d16] transition hover:bg-white"
+                      className="rounded-[0.65rem] border border-black/10 bg-[#f8f4ec] px-4 py-2 text-sm font-semibold text-[#221d16] transition hover:bg-white"
                     >
                       {recoveryKey ? "Regenerate" : "Generate key"}
                     </button>
                   </div>
                   {recoveryKey && (
                     <div className="mt-4">
-                      <div className="select-all break-words rounded-[1rem] border border-black/8 bg-[#f8f4ec] px-4 py-3 font-mono text-xs font-semibold text-[#322c24]">
+                      <div className="select-all break-words rounded-[0.8rem] border border-black/8 bg-[#f8f4ec] px-4 py-3 font-mono text-xs font-semibold text-[#322c24]">
                         {recoveryKey}
                       </div>
                       <label className="mt-3 block">
                         <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-[#7c746a]">Confirm recovery key</span>
                         <input
-                          className="w-full rounded-[1rem] border border-black/10 bg-white/82 px-4 py-3 text-sm text-[#221d16] outline-none transition placeholder:text-[#91887d] focus:border-[#708267]/40 focus:bg-white focus:ring-4 focus:ring-[#708267]/10"
+                          className="w-full rounded-[0.8rem] border border-black/12 bg-white/82 px-4 py-3 text-sm text-[#221d16] outline-none transition placeholder:text-[#8f867a] focus:border-[#53614d]/45 focus:bg-white focus:ring-4 focus:ring-[#53614d]/10"
                           value={recoveryConfirm}
                           onChange={(event) => setRecoveryConfirm(event.target.value)}
                           placeholder="OS1A-..."
@@ -1027,7 +1029,7 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
                 <div
                   aria-live="polite"
                   className={cx(
-                    "mt-4 rounded-[1rem] border px-4 py-3 text-sm leading-6",
+                    "mt-4 rounded-[0.85rem] border px-4 py-3 text-sm leading-6",
                     error
                       ? "border-[#c98979]/45 bg-[#f5d9d2] text-[#7d4033]"
                       : lockNotice
@@ -1040,7 +1042,7 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
               )}
 
               <button
-                className="mt-6 w-full rounded-[1.15rem] bg-[#242119] px-5 py-4 text-base font-semibold text-[#f7f3eb] shadow-[0_16px_32px_rgba(23,19,15,0.12)] transition hover:bg-[#191612] disabled:cursor-wait disabled:opacity-60"
+                className="mt-5 w-full rounded-[0.85rem] bg-[#211d16] px-5 py-4 text-base font-semibold text-[#f8f4ec] shadow-[0_16px_30px_rgba(23,19,15,0.14)] transition hover:bg-[#17140f] disabled:cursor-wait disabled:opacity-60"
                 disabled={busy}
               >
                 {busy ? hasVault ? "Unlocking..." : "Sealing..." : hasVault ? "Unlock vault" : "Create encrypted vault"}
@@ -1051,7 +1053,7 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
                   type="button"
                   onClick={createSampleVault}
                   disabled={busy}
-                  className="mt-3 w-full rounded-[1.15rem] border border-black/10 bg-transparent px-5 py-3 text-sm font-semibold text-[#5d564f] transition hover:bg-white/50 disabled:cursor-wait disabled:opacity-60"
+                  className="mt-3 w-full rounded-[0.85rem] border border-black/10 bg-transparent px-5 py-3 text-sm font-semibold text-[#5d564f] transition hover:bg-white/50 disabled:cursor-wait disabled:opacity-60"
                 >
                   Create vault with sample records
                 </button>
