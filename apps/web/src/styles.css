@@ -107,32 +107,173 @@ button:disabled {
   animation: scan 2.2s ease-in-out infinite;
 }
 
-.entry-vault-art {
+.entry-headline {
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.entry-mark {
+  position: relative;
+  display: grid;
+  width: 3rem;
+  height: 3rem;
+  place-items: center;
+}
+
+.entry-mark__ring,
+.entry-mark__core {
   position: absolute;
-  left: 0;
-  top: 50%;
-  width: 168.2%;
-  max-width: none;
-  min-height: 100%;
-  transform: translateY(-50%);
+  border-radius: 999px;
+}
+
+.entry-mark__ring {
+  inset: 0;
+  border: 1px solid rgba(34, 29, 22, 0.12);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.7), rgba(219, 211, 198, 0.42));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.entry-mark__core {
+  inset: 0.4rem;
+  display: grid;
+  place-items: center;
+  background: #f7f3eb;
+  color: #2a241d;
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  font-size: 1rem;
+  line-height: 1;
+  box-shadow: 0 8px 24px rgba(23, 19, 15, 0.08);
+}
+
+.entry-stage__wash,
+.entry-stage__grain,
+.entry-stage__panel,
+.entry-stage__stone,
+.entry-stage__paper,
+.entry-stage__disc,
+.entry-stage__line,
+.entry-stage__shadow,
+.entry-stage__caption {
+  position: absolute;
+}
+
+.entry-stage__wash {
+  inset: 0;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.46), transparent 34%),
+    radial-gradient(circle at 80% 78%, rgba(92, 107, 83, 0.08), transparent 26%),
+    linear-gradient(135deg, #e5ded2 0%, #d7cfbf 48%, #e8e1d5 100%);
+}
+
+.entry-stage__grain {
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.18) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+  background-size: 100% 36px, 36px 100%;
+  opacity: 0.16;
+  mix-blend-mode: soft-light;
+}
+
+.entry-stage__panel {
+  left: 8%;
+  right: 14%;
+  top: 9%;
+  bottom: 10%;
+  border: 1px solid rgba(36, 33, 25, 0.05);
+  border-radius: 2.1rem;
+  background: linear-gradient(180deg, rgba(249, 245, 238, 0.46), rgba(255, 255, 255, 0.08));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.entry-stage__stone {
+  left: 13%;
+  bottom: 14%;
+  width: 33%;
+  height: 56%;
+  border-radius: 2.4rem;
+  background:
+    linear-gradient(180deg, rgba(52, 49, 42, 0.96), rgba(27, 26, 24, 0.98)),
+    #27241f;
+  box-shadow: 0 32px 50px rgba(32, 27, 22, 0.16);
+}
+
+.entry-stage__paper {
+  left: 43%;
+  top: 20%;
+  width: 33%;
+  height: 42%;
+  border: 1px solid rgba(53, 46, 36, 0.08);
+  border-radius: 1.35rem;
+  background: linear-gradient(180deg, rgba(251, 248, 241, 0.96), rgba(236, 229, 218, 0.92));
+  box-shadow: 0 24px 46px rgba(65, 54, 41, 0.08);
+  transform: rotate(-7deg);
+}
+
+.entry-stage__disc {
+  right: 16%;
+  bottom: 18%;
+  width: 8.5rem;
+  height: 8.5rem;
+  border-radius: 999px;
+  background: radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.78), rgba(92, 107, 83, 0.18) 44%, rgba(44, 53, 39, 0.84) 100%);
+  box-shadow: 0 20px 36px rgba(39, 43, 36, 0.14);
+}
+
+.entry-stage__line {
+  left: 52%;
+  top: 16%;
+  width: 9rem;
+  height: 18rem;
+  border-left: 1.5px solid rgba(98, 114, 89, 0.46);
+  border-radius: 50%;
+  transform: rotate(11deg);
+  opacity: 0.72;
+}
+
+.entry-stage__shadow {
+  left: 17%;
+  right: 18%;
+  bottom: 10%;
+  height: 2.5rem;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(43, 37, 30, 0.16), transparent 74%);
+}
+
+.entry-stage__caption {
+  left: 12%;
+  top: 11%;
+  border: 1px solid rgba(36, 33, 25, 0.08);
+  border-radius: 999px;
+  padding: 0.55rem 0.9rem;
+  color: rgba(52, 46, 38, 0.66);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  background: rgba(247, 243, 235, 0.55);
+  backdrop-filter: blur(12px);
 }
 
 .entry-restore > div > label {
   display: flex;
   width: 100%;
+  align-items: center;
   justify-content: center;
-  border-radius: 0.75rem;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.02);
-  padding: 1rem 1.25rem;
-  color: rgba(255, 255, 255, 0.86);
-  box-shadow: none;
-  transition: background-color 160ms ease, border-color 160ms ease;
+  border-radius: 1.15rem;
+  border: 1px solid rgba(34, 29, 22, 0.1);
+  background: rgba(255, 255, 255, 0.58);
+  padding: 0.95rem 1.25rem;
+  color: #2a241d;
+  box-shadow: 0 12px 28px rgba(30, 24, 18, 0.04);
+  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
 }
 
 .entry-restore > div > label:hover {
-  border-color: rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(34, 29, 22, 0.16);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 14px 32px rgba(30, 24, 18, 0.07);
 }
 
 .entry-restore > div > label + p {
@@ -141,15 +282,16 @@ button:disabled {
 
 .entry-restore > div > label::before {
   content: "";
-  width: 1.15rem;
-  height: 1.15rem;
+  width: 1.05rem;
+  height: 1.05rem;
   margin-right: 0.75rem;
-  border: 2px solid currentColor;
+  border: 1.8px solid currentColor;
   border-radius: 999px;
-  opacity: 0.9;
+  opacity: 0.8;
 }
 
-.entry-restore [class*="rounded-\\[1\\.25rem\\]"] {
+.entry-restore [class*="rounded-\\[1\\.25rem\\]"],
+.entry-verify [class*="rounded-\\[1\\.25rem\\]"] {
   max-height: 18rem;
   overflow: auto;
 }
@@ -163,8 +305,8 @@ button:disabled {
   cursor: pointer;
   border: 0;
   background: transparent;
-  padding: 0.5rem 0;
-  color: rgba(255, 255, 255, 0.48);
+  padding: 0.45rem 0;
+  color: rgba(70, 63, 55, 0.72);
   box-shadow: none;
   font-size: 0.75rem;
   font-weight: 600;
@@ -172,12 +314,39 @@ button:disabled {
 }
 
 .entry-verify > div > label:hover {
-  color: rgba(255, 255, 255, 0.72);
+  color: #262019;
 }
 
-.entry-verify [class*="rounded-\\[1\\.25rem\\]"] {
-  max-height: 18rem;
-  overflow: auto;
+@media (max-width: 1023px) {
+  .entry-stage__panel {
+    left: 7%;
+    right: 7%;
+    top: 10%;
+    bottom: 12%;
+  }
+
+  .entry-stage__stone {
+    left: 11%;
+    width: 30%;
+    height: 52%;
+  }
+
+  .entry-stage__paper {
+    left: 41%;
+    width: 30%;
+    height: 40%;
+  }
+
+  .entry-stage__disc {
+    width: 6.5rem;
+    height: 6.5rem;
+  }
+
+  .entry-stage__line {
+    top: 14%;
+    width: 7rem;
+    height: 14rem;
+  }
 }
 
 @keyframes breathe {
