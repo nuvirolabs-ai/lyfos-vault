@@ -92,6 +92,23 @@ export async function resetPasswordEmail({ email }) {
   return data;
 }
 
+/**
+ * Permanently delete the current user's account. Wipes:
+ *   - vault_blobs row
+ *   - devices rows
+ *   - recovery_envelopes row
+ *   - audit_log rows
+ *   - auth.users row (cascades to sessions, identities)
+ *
+ * After this resolves, sign the client out and clear local storage.
+ */
+export async function deleteAccount() {
+  const sb = requireSupabase();
+  const { error } = await sb.rpc("delete_account");
+  if (error) throw error;
+  await sb.auth.signOut().catch(() => {});
+}
+
 export async function appendServerAuditEvent(eventType, meta = {}) {
   const sb = getSupabase();
   if (!sb) return;

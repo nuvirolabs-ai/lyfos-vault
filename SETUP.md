@@ -21,7 +21,8 @@ Lyfos uses Supabase for auth, Postgres, and (later) edge functions + storage. Th
 1. In the Supabase dashboard sidebar: **SQL Editor → New query**.
 2. Paste the contents of `supabase/migrations/0001_initial_schema.sql`. Run.
 3. Repeat with `supabase/migrations/0002_rls_policies.sql`. Run.
-4. Verify in **Table editor**: you should see `vault_blobs`, `devices`, `recovery_envelopes`, `audit_log`. All four should have the green "RLS enabled" badge.
+4. Repeat with `supabase/migrations/0003_account_deletion.sql`. Run.
+5. Verify in **Table editor**: you should see `vault_blobs`, `devices`, `recovery_envelopes`, `audit_log`. All four should have the green "RLS enabled" badge. In **Database → Functions** you should see `append_audit_event` and `delete_account`.
 
 ### Configure auth providers
 

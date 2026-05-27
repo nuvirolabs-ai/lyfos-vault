@@ -1,7 +1,8 @@
 -- Lyfos initial schema. Run in Supabase SQL editor (or via supabase CLI).
--- This is the zero-knowledge layer: the server holds encrypted ciphertext
--- and metadata only. It must never see plaintext, passphrases, or derived
--- vault keys.
+-- This is the zero-knowledge layer: the server holds the encrypted Stage 1
+-- vault record (which itself contains the encrypted vault key envelopes
+-- and the encrypted vault payload) plus thin sync metadata. It must never
+-- see plaintext, passphrases, or derived vault keys.
 --
 -- Apply order:
 --   1. Create tables
@@ -11,37 +12,45 @@
 
 -- ============================================================
 -- vault_blobs
--- One row per user. Holds the encrypted JSON envelope of the
--- vault. We bump version on every write so the client can detect
--- conflicts (last-write-wins for v1; CRDT later if needed).
+-- One row per user. encrypted_record is the full Stage 1 vault record
+-- as JSONB. The fields inside are public structure (KDF metadata,
+-- algorithm names, etc.) but every secret value is AES-GCM ciphertext
+-- that the server cannot decrypt.
+--
+-- version, size_bytes, client_updated_at exist as un-encrypted metadata
+-- for sync conflict resolution and quota enforcement. They are derived
+-- from the encrypted_record but stored separately so the server can
+-- order and size-cap without parsing the JSON on every write.
 -- ============================================================
 create table if not exists public.vault_blobs (
-  user_id        uuid primary key references auth.users(id) on delete cascade,
-  ciphertext     bytea       not null,
-  iv             text        not null,            -- base64 IV from AES-GCM
-  algorithm      text        not null default 'AES-GCM',
-  kdf            text        not null,            -- 'argon2id' | 'pbkdf2-sha256-600k'
-  kdf_salt       text        not null,            -- base64
-  kdf_params     jsonb       not null,            -- { iterations, memory_kib, parallelism, ... }
-  version        integer     not null default 1,
-  size_bytes     integer     not null,
-  client_updated_at timestamptz not null,         -- when the client encrypted this
-  created_at     timestamptz not null default now(),
-  updated_at     timestamptz not null default now()
+  user_id            uuid primary key references auth.users(id) on delete cascade,
+  encrypted_record   jsonb       not null,
+  version            integer     not null default 1,
+  size_bytes         integer     not null,
+  client_updated_at  timestamptz not null,
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now()
 );
 
 create index if not exists vault_blobs_updated_at_idx on public.vault_blobs (updated_at desc);
 
+-- Hard size cap as defence-in-depth. Anything over 5 MiB is almost
+-- certainly an attachment-spam attempt or a client bug.
+alter table public.vault_blobs
+  add constraint vault_blobs_size_sanity check (size_bytes <= 5 * 1024 * 1024);
+
 -- ============================================================
 -- devices
--- Devices the user has signed in from. The client picks a stable
--- device_id per browser (random UUID stored in localStorage).
+-- Browsers / native apps the user has signed in from. device_token is
+-- a client-generated UUID stored in localStorage / SecureStore on that
+-- device. label is user-editable so the device list reads like
+-- "Tanu's MacBook", "iPhone 15".
 -- ============================================================
 create table if not exists public.devices (
   id            uuid primary key default gen_random_uuid(),
   user_id       uuid not null references auth.users(id) on delete cascade,
-  device_token  text not null,                    -- client-generated UUID per browser
-  label         text,                             -- "Tanu's MacBook", set by user
+  device_token  text not null,
+  label         text,
   user_agent    text,
   created_at    timestamptz not null default now(),
   last_seen_at  timestamptz not null default now(),
@@ -53,36 +62,36 @@ create index if not exists devices_user_idx on public.devices (user_id, last_see
 
 -- ============================================================
 -- recovery_envelopes
--- A second wrapped copy of the vault master key, sealed with the
--- recovery key (BIP39 phrase the user printed at signup). Used to
--- decrypt the vault if the user forgets their passphrase.
--- The recovery key itself is NEVER sent to the server.
+-- Stage 1 wraps the recovery key envelope INSIDE encrypted_record.
+-- This table exists for future use (Stage 2 plans an out-of-band
+-- escrow with key-holder Shamir shares) — leave it created but unused
+-- for now so the migration doesn't need to drop-and-recreate later.
 -- ============================================================
 create table if not exists public.recovery_envelopes (
   user_id            uuid primary key references auth.users(id) on delete cascade,
-  wrapped_key        text not null,               -- base64 ciphertext
+  wrapped_key        text not null,
   iv                 text not null,
   algorithm          text not null default 'AES-GCM',
-  kdf                text not null,               -- 'argon2id' for recovery KDF
+  kdf                text not null,
   kdf_salt           text not null,
   kdf_params         jsonb not null,
-  fingerprint        text not null,               -- first 8 chars of sha256(recovery_pubkey) for UI display
+  fingerprint        text not null,
   created_at         timestamptz not null default now(),
   rotated_at         timestamptz
 );
 
 -- ============================================================
 -- audit_log
--- Server-side append-only event log. Sensitive details stay in
--- the encrypted vault's own client-side audit array; this is for
--- security-relevant server events (login, device added, blob
--- pushed, account deleted).
+-- Server-side append-only event log for security-relevant events
+-- (login, device added, blob pushed, account deleted). The richer,
+-- vault-content-adjacent audit trail lives inside encrypted_record.
+-- DO NOT put PII or vault content in event_meta.
 -- ============================================================
 create table if not exists public.audit_log (
   id            uuid primary key default gen_random_uuid(),
   user_id       uuid not null references auth.users(id) on delete cascade,
   event_type    text not null,
-  event_meta    jsonb,                            -- DO NOT put PII or vault content here
+  event_meta    jsonb,
   device_token  text,
   created_at    timestamptz not null default now()
 );

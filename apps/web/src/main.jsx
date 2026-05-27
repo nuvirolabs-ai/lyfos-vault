@@ -8,6 +8,8 @@ import {
   generateRecoveryKey,
   normalizeRecoveryKey,
   updateEncryptedVault,
+  envelopeIsLegacyKdf,
+  upgradeEnvelopeKdf,
 } from "./lib/stage1Crypto.js";
 import { appendAuditEvent, appendAuditEvents, getAuditGroups } from "./lib/stage1Audit.js";
 import {
@@ -48,7 +50,17 @@ import { getBackupReminderCopy } from "./lib/stage2BackupReminders.js";
 import { prepareStage2BackupExport } from "./lib/stage2BackupManifest.js";
 import { initTelemetry, registerServiceWorker } from "./lib/telemetry.js";
 import { isSupabaseConfigured } from "./lib/supabaseClient.js";
-import { getSession, onAuthStateChange, signOut, appendServerAuditEvent, ensureDeviceToken } from "./lib/auth.js";
+import { getSession, onAuthStateChange, signOut, appendServerAuditEvent, ensureDeviceToken, getDeviceToken, deleteAccount } from "./lib/auth.js";
+import {
+  pushEncryptedRecord,
+  fetchEncryptedRecord,
+  reconcileLocalAndServer,
+  registerOrTouchDevice,
+  deleteEncryptedRecord,
+  listDevices as listDevicesFromSync,
+  renameDevice as renameDeviceFromSync,
+  revokeDevice as revokeDeviceFromSync
+} from "./lib/vaultSync.js";
 import { AuthScreen } from "./AuthScreen.jsx";
 import {
   canConfirmDestructiveRestore,
@@ -702,6 +714,40 @@ function App() {
     return () => { mounted = false; unsubscribe(); };
   }, []);
 
+  // When a session arrives (sign-in or hydrated existing session):
+  //   1. Register/touch this device
+  //   2. Pull the server's encrypted record and reconcile against local
+  // If the server has a newer copy, drop it into storedRecord — the user
+  // still has to enter their passphrase on EntryScreen to actually unlock.
+  // The server never sees the passphrase or the derived vault key.
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await registerOrTouchDevice({ deviceToken: getDeviceToken() });
+      } catch {}
+      if (cancelled) return;
+
+      try {
+        const { record: serverRecord } = await fetchEncryptedRecord();
+        if (cancelled) return;
+        const decision = reconcileLocalAndServer({ localRecord: storedRecordRef.current, serverRecord });
+        if (decision.needsReplaceLocal && decision.record) {
+          saveStage1Record(localStorage, decision.record);
+          setStoredRecord(decision.record);
+          setNotice("Synced from cloud. Unlock with your vault phrase.");
+        } else if (decision.needsPush && decision.record) {
+          // Local is newer (or server has nothing) — push so the server catches up.
+          pushEncryptedRecord(decision.record).catch(() => {});
+        }
+      } catch (err) {
+        if (typeof console !== "undefined") console.warn("[lyfos] cloud reconcile failed:", err?.message ?? err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session?.user?.id]);
+
   useEffect(() => {
     if (!storedRecord?.updatedAt) return;
     const derived = deriveBackupHealth({
@@ -753,6 +799,20 @@ function App() {
         currentVault: { updatedAt: nextRecord.updatedAt },
         changeReason
       }));
+    }
+    // Cloud push: fire-and-forget so the local save stays instant. The user's
+    // local copy is the source of truth in the moment; the server is a backup
+    // and a path to the next device. We pull and reconcile on session-load.
+    if (session) {
+      pushEncryptedRecord(nextRecord)
+        .then((result) => {
+          if (result?.synced) {
+            appendServerAuditEvent("vault_pushed", { size: result.meta?.size_bytes }).catch(() => {});
+          }
+        })
+        .catch((err) => {
+          if (typeof console !== "undefined") console.warn("[lyfos] cloud push failed:", err?.message ?? err);
+        });
     }
   }
 
@@ -833,13 +893,38 @@ function App() {
           setLockNotice("");
           setNotice("Vault created and encrypted locally.");
         }}
-        onUnlocked={async (key, nextVault, usedEnvelope) => {
+        onUnlocked={async (key, nextVault, usedEnvelope, secret) => {
           const pendingEvents = drainPendingAuditEvents(localStorage);
+          let recordForPersist = storedRecord;
+
+          // Auto-upgrade: legacy PBKDF2 envelope → Argon2id, using the
+          // secret the user just typed. Best-effort; failures don't block
+          // unlock. Only the envelope just successfully unwrapped is upgraded
+          // (the other envelope's secret isn't in memory).
+          try {
+            if (envelopeIsLegacyKdf(storedRecord, usedEnvelope) && secret) {
+              const upgraded = await upgradeEnvelopeKdf({
+                record: storedRecord,
+                vaultKey: key,
+                kind: usedEnvelope,
+                secret
+              });
+              recordForPersist = upgraded;
+              saveStage1Record(localStorage, upgraded);
+              setStoredRecord(upgraded);
+              if (typeof console !== "undefined") {
+                console.info(`[lyfos] upgraded ${usedEnvelope} envelope to Argon2id.`);
+              }
+            }
+          } catch (err) {
+            if (typeof console !== "undefined") console.warn("[lyfos] KDF upgrade failed (non-fatal):", err?.message ?? err);
+          }
+
           const auditedVault = appendAuditEvent(
             appendAuditEvents(nextVault, pendingEvents),
             usedEnvelope === "recovery" ? "Vault unlocked with recovery key" : "Vault unlocked with phrase"
           );
-          const nextRecord = await persistVault(key, auditedVault, storedRecord);
+          const nextRecord = await persistVault(key, auditedVault, recordForPersist);
           setStoredRecord(nextRecord);
           setVaultKey(key);
           setVault(auditedVault);
@@ -950,7 +1035,7 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
         const unlocked = unlockMode === "recovery"
           ? await decryptVaultWithRecoveryKey(record, passphrase)
           : await decryptVaultWithPassphrase(record, passphrase);
-        await onUnlocked(unlocked.vaultKey, unlocked.vault, unlocked.usedEnvelope);
+        await onUnlocked(unlocked.vaultKey, unlocked.vault, unlocked.usedEnvelope, passphrase);
         return;
       }
 
@@ -1250,7 +1335,7 @@ function SettingsDrawer({ onClose, onLoadDemo, onExport, onReset, session, onSho
               <div className="mt-3 rounded-2xl border border-black/8 bg-white p-4">
                 <p className="text-[13px] font-medium text-[#1d1d1f]">{session.user?.email ?? "Signed in"}</p>
                 <p className="mt-1 text-[12px] text-[#86868b]">
-                  Cloud sync coming next — your vault will encrypt locally and upload as ciphertext only.
+                  Cloud sync is live. Your vault is encrypted locally before upload — Lyfos cannot read it.
                 </p>
                 <button
                   onClick={() => { onSignOut?.(); }}
@@ -1276,6 +1361,8 @@ function SettingsDrawer({ onClose, onLoadDemo, onExport, onReset, session, onSho
           </div>
         )}
 
+        {supabaseOn && session && <DeviceListSection />}
+
         <div className="mt-8 space-y-1">
           <p className="px-3 text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Vault</p>
           <SettingsRow
@@ -1300,17 +1387,204 @@ function SettingsDrawer({ onClose, onLoadDemo, onExport, onReset, session, onSho
             className="mt-4 w-full rounded-xl border border-[#b42318]/30 bg-white px-4 py-3 text-left text-[13px] font-medium text-[#b42318] transition hover:bg-[#b42318]/5"
           >
             Delete this local vault
-            <span className="mt-1 block text-[11px] font-normal text-[#86868b]">This cannot be undone. Without an export you will lose everything.</span>
+            <span className="mt-1 block text-[11px] font-normal text-[#86868b]">This cannot be undone. Without an export you will lose everything on this device.</span>
           </button>
+
+          {supabaseOn && session && (
+            <DeleteAccountButton onDone={() => { onClose(); onReset(); }} />
+          )}
         </div>
 
         <div className="mt-auto pt-8 text-[11px] text-[#a1a1a6]">
           <p>Lyfos · Beta · v0.1</p>
-          <p className="mt-1">Encrypted locally on this device. Cloud sync is coming in Phase 1.</p>
+          <p className="mt-1">
+            {supabaseOn && session
+              ? "Encrypted locally, then synced as ciphertext only."
+              : "Encrypted locally on this device. Sign in to sync across devices."}
+          </p>
         </div>
       </div>
     </div>
   );
+}
+
+function DeleteAccountButton({ onDone }) {
+  const [confirming, setConfirming] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  if (!confirming) {
+    return (
+      <button
+        onClick={() => setConfirming(true)}
+        className="mt-3 w-full rounded-xl border border-[#b42318]/30 bg-white px-4 py-3 text-left text-[13px] font-medium text-[#b42318] transition hover:bg-[#b42318]/5"
+      >
+        Delete account entirely
+        <span className="mt-1 block text-[11px] font-normal text-[#86868b]">
+          Permanently removes your account and the encrypted blob from our servers. Local vault on this device is also wiped. DPDPA / GDPR right to erasure.
+        </span>
+      </button>
+    );
+  }
+
+  async function confirm() {
+    if (typed !== "delete my account") {
+      setError("Type exactly: delete my account");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await deleteAccount();
+      // Also wipe local copies of everything.
+      try { localStorage.clear(); } catch {}
+      onDone?.();
+      window.location.assign("/");
+    } catch (err) {
+      setError(err?.message || "Could not complete deletion. Try again or email support.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded-xl border border-[#b42318]/30 bg-[#ff453a]/6 p-4">
+      <p className="text-[13px] font-semibold text-[#7a1d12]">This deletes everything.</p>
+      <p className="mt-1 text-[12px] leading-5 text-[#7a1d12]/85">
+        Your account, the encrypted vault on our servers, every device record, the audit log, and the local vault on this device. We will not be able to recover any of it. Type <strong>delete my account</strong> to confirm.
+      </p>
+      <input
+        autoFocus
+        value={typed}
+        onChange={(e) => { setTyped(e.target.value); setError(""); }}
+        placeholder="delete my account"
+        className="mt-3 w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-[13px] outline-none focus:border-[#b42318]"
+      />
+      {error && <p className="mt-2 text-[11px] font-medium text-[#b42318]">{error}</p>}
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <button
+          onClick={() => { setConfirming(false); setTyped(""); setError(""); }}
+          className="text-[11px] font-medium text-[#86868b] hover:text-[#1d1d1f]"
+          disabled={busy}
+        >
+          Cancel
+        </button>
+        <button
+          onClick={confirm}
+          disabled={busy || typed !== "delete my account"}
+          className="rounded-full bg-[#b42318] px-4 py-1.5 text-[11px] font-semibold text-white shadow-[0_4px_12px_rgba(180,35,24,0.25)] transition hover:bg-[#8e1612] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {busy ? "Deleting…" : "Delete account"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DeviceListSection() {
+  const [devices, setDevices] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState(null);
+  const [draftLabel, setDraftLabel] = useState("");
+  const currentToken = getDeviceToken();
+
+  async function refresh() {
+    setLoading(true);
+    try {
+      const list = await listDevicesFromSync();
+      setDevices(list);
+    } catch (err) {
+      if (typeof console !== "undefined") console.warn("[lyfos] device list failed:", err?.message ?? err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { refresh(); }, []);
+
+  async function rename(id) {
+    const label = draftLabel.trim();
+    if (!label) { setEditingId(null); return; }
+    try {
+      await renameDeviceFromSync(id, label);
+      setEditingId(null);
+      setDraftLabel("");
+      await refresh();
+    } catch {}
+  }
+
+  async function revoke(id) {
+    if (!window.confirm("Sign this device out of your account? It can sign back in with the account password and the vault phrase.")) return;
+    try {
+      await revokeDeviceFromSync(id);
+      await refresh();
+    } catch {}
+  }
+
+  return (
+    <div className="mt-8">
+      <div className="flex items-center justify-between px-3">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Devices</p>
+        {loading && <span className="text-[10px] text-[#a1a1a6]">Loading…</span>}
+      </div>
+      <div className="mt-3 space-y-2">
+        {devices.length === 0 && !loading && (
+          <p className="px-3 text-[12px] text-[#86868b]">No other devices signed in.</p>
+        )}
+        {devices.map((d) => {
+          const isCurrent = d.device_token === currentToken;
+          const editing = editingId === d.id;
+          return (
+            <div key={d.id} className="rounded-xl border border-black/8 bg-white p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  {editing ? (
+                    <input
+                      autoFocus
+                      value={draftLabel}
+                      onChange={(e) => setDraftLabel(e.target.value)}
+                      onBlur={() => rename(d.id)}
+                      onKeyDown={(e) => { if (e.key === "Enter") rename(d.id); if (e.key === "Escape") setEditingId(null); }}
+                      className="w-full rounded-md border border-black/10 px-2 py-1 text-[13px] outline-none focus:border-[#1d1d1f]"
+                    />
+                  ) : (
+                    <button
+                      onClick={() => { setEditingId(d.id); setDraftLabel(d.label ?? ""); }}
+                      className="text-left text-[13px] font-medium text-[#1d1d1f] hover:underline"
+                    >
+                      {d.label || "Untitled device"}
+                    </button>
+                  )}
+                  <p className="mt-0.5 text-[11px] text-[#86868b]">
+                    Last seen {formatRelativeTime(d.last_seen_at)}{isCurrent ? " · this device" : ""}
+                  </p>
+                </div>
+                {!isCurrent && (
+                  <button
+                    onClick={() => revoke(d.id)}
+                    className="shrink-0 text-[11px] font-medium text-[#b42318] hover:underline"
+                  >
+                    Sign out
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function formatRelativeTime(iso) {
+  if (!iso) return "—";
+  const then = new Date(iso).getTime();
+  const now = Date.now();
+  const seconds = Math.round((now - then) / 1000);
+  if (seconds < 60) return "just now";
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min ago`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)} h ago`;
+  return `${Math.round(seconds / 86400)} d ago`;
 }
 
 function SettingsRow({ label, hint, actionLabel, onClick, tone }) {

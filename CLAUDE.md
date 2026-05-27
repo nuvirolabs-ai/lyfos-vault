@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Lyfos Vault** (internal name "OS-One Vault") — a zero-knowledge, client-encrypted vault for sensitive records + a monthly personal balance sheet. The product thesis: turn scattered private records into protected, rule-based life recovery so a nominee can actually recover after death/incapacity, without ever trusting the company.
 
-**Current state:** local-only encrypted prototype. No backend persistence, no accounts, no real release-to-nominee service. See [ROADMAP.md](ROADMAP.md) for the 6-month production plan and [docs/os-one-prd.md](docs/os-one-prd.md) for the long-form product vision.
+**Current state (mid Phase 1):** local-first encrypted vault. Optional cloud sync via Supabase activates when `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` are set at deploy time. Without those env vars, the app remains local-only — Phase 0 behaviour. Release-to-nominee is still a planning tool only; the real service ships in Phase 3. See [ROADMAP.md](ROADMAP.md) for the full plan and [docs/os-one-prd.md](docs/os-one-prd.md) for the long-form product vision. See [SETUP.md](SETUP.md) for the operator setup steps.
 
 Deployed at https://lyfos.signorvale.com. Repo: https://github.com/signorvaleai-hash/lyfos-vault.
 
@@ -38,7 +38,8 @@ There is no linter and no CI configured yet (both are in Phase 0 of the roadmap)
 npm workspaces, two app entry points and two shared packages:
 
 - `apps/web/` — the **product** (React 18 + Vite 7 + Tailwind v4). This is what users see. **The entire UI lives in a single ~3.5k-line file: [apps/web/src/main.jsx](apps/web/src/main.jsx).** Treat that file as the application — components are not split out.
-- `apps/backend/` — 75-line Node http server. Currently only echoes encrypted blobs and serves item-type constants. The real backend is unbuilt (Phase 1 of the roadmap).
+- `apps/backend/` — 75-line Node http server stub. Largely superseded by Supabase (see `supabase/migrations/`). Kept for reference; not part of the production stack.
+- `supabase/migrations/` — SQL migrations for the Phase 1 backend: `0001_initial_schema.sql`, `0002_rls_policies.sql`, `0003_account_deletion.sql`. Apply in order via the Supabase SQL editor or the supabase CLI.
 - `apps/app/` — Tauri desktop scaffold (not active).
 - `packages/crypto/` — WebCrypto primitives: PBKDF2 (600k iterations, SHA-256) → AES-GCM-256. Plain ESM, no dependencies.
 - `packages/vault-model/` — pure data: vault item types and release policy constants. Imported by both `apps/web` and `apps/backend`.
@@ -69,7 +70,17 @@ Everything goes through `packages/crypto`:
 
 In `main.jsx`, `persistVault(key, vault, recordMeta)` is the single funnel for writing — every state change that should survive a refresh must go through it. Never write to `localStorage` directly from a component.
 
-**Argon2id migration is in Phase 1 of the roadmap.** Do not casually change `DEFAULT_ITERATIONS` in `packages/crypto/src/index.js` — existing users have salts derived against 600k and changing it will lock them out without a migration.
+**Argon2id is the default KDF for new vaults** (`apps/web/src/lib/argon2.js` wraps hash-wasm). Legacy PBKDF2-600k vaults still unlock — `stage1Crypto.js` dispatches on `envelope.kdf.name`. On a successful unlock, the matching envelope is auto-upgraded to Argon2id via `upgradeEnvelopeKdf` (best-effort, only the envelope whose secret is in memory).
+
+**Recovery phrase is BIP39 24-word** (`apps/web/src/lib/recoveryPhrase.js` via `@scure/bip39`). Legacy `OS1A-XXXX-...` keys still work — `normalizeRecoveryKey` detects the format. The `generateLegacyRecoveryKey` export remains for tests that need the old shape.
+
+### Cloud sync (Phase 1)
+
+- `apps/web/src/lib/supabaseClient.js` — lazy `createClient`, env-driven. `getSupabase()` returns `null` if env vars are unset; every call site is null-safe.
+- `apps/web/src/lib/auth.js` — sign-up / sign-in / magic link / sign-out / `deleteAccount` / device-token + server audit helpers.
+- `apps/web/src/lib/vaultSync.js` — `pushEncryptedRecord` / `fetchEncryptedRecord` / `reconcileLocalAndServer` (last-write-wins by `updatedAt`) / device registry.
+- `apps/web/src/AuthScreen.jsx` — separate file because it's a top-level screen. Renders only when Supabase is configured AND there is no local record AND no session (or when user explicitly opens it via Settings).
+- Push happens fire-and-forget from `saveVault` after a successful local persist. Pull happens once per session arrival in a `useEffect([session?.user?.id])`.
 
 ### Storage helpers (`apps/web/src/lib/`)
 

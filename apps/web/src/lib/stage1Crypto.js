@@ -149,6 +149,49 @@ export async function updateEncryptedVault(record, vaultKey, vault) {
   };
 }
 
+/**
+ * Returns true if the named envelope still uses the legacy PBKDF2 KDF.
+ * Pre-Argon2id beta vaults will all return true here; new vaults will
+ * return false. Used by the auto-upgrade path.
+ */
+export function envelopeIsLegacyKdf(record, kind = "passphrase") {
+  const envelope = record?.keyEnvelopes?.[kind];
+  if (!envelope) return false;
+  return envelope.kdf?.name === PBKDF2_NAME;
+}
+
+/**
+ * Rebuild an envelope with the current default KDF (Argon2id). Requires
+ * the secret to be re-supplied because the envelope's wrapping key cannot
+ * be derived from the unwrapped vault key alone.
+ *
+ * Caller is responsible for persisting the returned record.
+ */
+export async function upgradeEnvelopeKdf({ record, vaultKey, kind, secret }) {
+  if (!record || !vaultKey) throw new Error("upgradeEnvelopeKdf: record and vaultKey are required.");
+  if (!envelopeIsLegacyKdf(record, kind)) return record;
+
+  const normalizedSecret = kind === "recovery" ? normalizeRecoveryKey(secret) : secret;
+  if (!normalizedSecret) throw new Error("upgradeEnvelopeKdf: secret is required to rewrap.");
+
+  const newEnvelope = await wrapVaultKeyWithSecret({
+    vaultKey,
+    secret: normalizedSecret,
+    type: kind,
+    kdf: ARGON2ID_NAME
+  });
+
+  return {
+    ...record,
+    updatedAt: new Date().toISOString(),
+    crypto: { ...(record.crypto ?? {}), keyWrap: DEFAULT_KDF },
+    keyEnvelopes: {
+      ...record.keyEnvelopes,
+      [kind]: newEnvelope
+    }
+  };
+}
+
 export async function replaceRecoveryKeyEnvelope(record, vaultKey, recoveryKey) {
   if (!record || !vaultKey) {
     throw new Error("The vault must be unlocked before replacing the recovery key.");
