@@ -46,6 +46,7 @@ import {
 import { verifyBackup } from "./lib/stage2BackupVerification.js";
 import { getBackupReminderCopy } from "./lib/stage2BackupReminders.js";
 import { prepareStage2BackupExport } from "./lib/stage2BackupManifest.js";
+import { initTelemetry, registerServiceWorker, trackEvent } from "./lib/telemetry.js";
 import {
   canConfirmDestructiveRestore,
   createRestoreDryRun,
@@ -269,7 +270,16 @@ function formatINRCompact(value) {
   return `${sign}₹${abs}`;
 }
 
-function createDemoAttachment(name, text) {
+// Demo vault data is intentionally NOT bundled with the default chunk.
+// See apps/web/src/lib/demoData.js — loaded on demand via dynamic import
+// only when the user visits ?demo=1 or clicks "Load demo" in Settings.
+async function loadDemoVaultModule() {
+  const mod = await import("./lib/demoData.js");
+  return mod.buildDemoVault({ EMPTY_ITEM, monthKey });
+}
+
+// Real production helper — builds a small text attachment around captured input.
+function buildTextAttachment(name, text) {
   return {
     id: crypto.randomUUID(),
     name,
@@ -277,129 +287,6 @@ function createDemoAttachment(name, text) {
     size: text.length,
     dataUrl: `data:text/plain;charset=utf-8,${encodeURIComponent(text)}`
   };
-}
-
-function createDemoVault() {
-  const now = new Date().toISOString();
-  const item = (type, title, fields) => ({
-    ...EMPTY_ITEM,
-    id: crypto.randomUUID(),
-    type,
-    title,
-    createdAt: now,
-    updatedAt: now,
-    ...fields
-  });
-
-  return {
-    version: 1,
-    items: [
-      item("bank_account", "HDFC primary account", {
-        username: "Customer ID 44556677",
-        secret: "NetBanking demo password: HdfcDemo@2026",
-        bankDetails: "Account ending 5678. IFSC HDFC0001234. Mumbai Main Branch.",
-        notes: "Primary salary account. Nominee should call branch manager before moving funds.",
-        financial: { kind: "asset", value: "845000", liability: "", income: "220000", expense: "" },
-        attachments: [createDemoAttachment("hdfc-claim-note.txt", "Nominee: Priya Sharma\nBranch: Mumbai Main")]
-      }),
-      item("email_account", "Primary Gmail", {
-        username: "rahul.sharma@example.com",
-        secret: "DemoGmail#2026!",
-        email: "Recovery email: priya.sharma@example.com. Recovery phone: +91 90000 11111.",
-        notes: "Financial alerts arrive here. Check labels: Banking, Insurance, Property."
-      }),
-      item("password", "Apple ID", {
-        username: "rahul.sharma@example.com",
-        secret: "DemoApple#2026!",
-        notes: "Used for iCloud, device recovery, and purchases. Recovery phone is primary mobile.",
-        attachments: [createDemoAttachment("apple-recovery.txt", "Trusted device: Rahul's MacBook Pro")]
-      }),
-      item("identity_document", "Passport and Aadhaar", {
-        username: "Passport Z1234567 / Aadhaar ending 2211",
-        secret: "DigiLocker PIN demo: 7788",
-        notes: "Original passport is in the bedroom locker. Aadhaar PDF password follows family format."
-      }),
-      item("insurance_policy", "LIC term policy", {
-        username: "Policy LIC-28473-DEMO",
-        secret: "Policy portal password: LicDemo@2026",
-        notes: "Sum assured demo: Rs 2 crore. Nominee: Priya Sharma. Agent: Manish Mehta.",
-        financial: { kind: "asset", value: "20000000", liability: "", income: "", expense: "2600" }
-      }),
-      item("important_document", "Pune flat papers", {
-        username: "Flat B-1204, Baner",
-        secret: "Locker code demo: 7913",
-        notes: "Sale deed and loan closure letter are in the bank locker.",
-        financial: { kind: "asset", value: "18500000", liability: "4200000", income: "", expense: "12000" }
-      }),
-      item("emergency_instruction", "First 72 hours plan", {
-        username: "For Main Nominee",
-        secret: "Emergency contact code: FAMILY-FIRST",
-        notes: "Call CA first, then branch manager, then insurance agent. Do not sell investments in week one."
-      })
-    ],
-    releaseSettings: {
-      mainNominee: "Priya Sharma - priya.sharma@example.com",
-      keyHolders: [
-        "Vikram Sharma - vikram@example.com",
-        "Anita Roy - anita@example.com",
-        "Rohan Mehta - rohan@example.com",
-        "CA Nikhil Shah - nikhil@example.com",
-        "Meera Iyer - meera@example.com"
-      ],
-      emergencyOnly: true
-    },
-    balanceSheet: createDemoBalanceSheet(),
-    audit: [
-      { id: crypto.randomUUID(), event: "Demo vault loaded", at: now },
-      { id: crypto.randomUUID(), event: "Release circle configured", at: now },
-      { id: crypto.randomUUID(), event: "Vault created", at: now }
-    ]
-  };
-}
-
-function createDemoBalanceSheet() {
-  const accounts = [
-    { id: "acc_hdfc",     category: "cash",         kind: "asset",     name: "HDFC savings",        createdAt: new Date().toISOString() },
-    { id: "acc_icici",    category: "cash",         kind: "asset",     name: "ICICI savings",       createdAt: new Date().toISOString() },
-    { id: "acc_fd",       category: "cash",         kind: "asset",     name: "SBI FD",              createdAt: new Date().toISOString() },
-    { id: "acc_mf",       category: "investments",  kind: "asset",     name: "Equity mutual funds", createdAt: new Date().toISOString() },
-    { id: "acc_stocks",   category: "investments",  kind: "asset",     name: "Direct stocks",       createdAt: new Date().toISOString() },
-    { id: "acc_epf",      category: "investments",  kind: "asset",     name: "EPF",                 createdAt: new Date().toISOString() },
-    { id: "acc_ppf",      category: "investments",  kind: "asset",     name: "PPF",                 createdAt: new Date().toISOString() },
-    { id: "acc_flat",     category: "real_estate",  kind: "asset",     name: "Pune flat",           createdAt: new Date().toISOString() },
-    { id: "acc_gold",     category: "gold",         kind: "asset",     name: "Gold (physical)",     createdAt: new Date().toISOString() },
-    { id: "acc_car",      category: "vehicles",     kind: "asset",     name: "Car",                 createdAt: new Date().toISOString() },
-    { id: "acc_home_loan",category: "home_loan",    kind: "liability", name: "HDFC home loan",      createdAt: new Date().toISOString() },
-    { id: "acc_cc",       category: "credit_card",  kind: "liability", name: "HDFC credit card",    createdAt: new Date().toISOString() }
-  ];
-
-  const today = new Date();
-  const months = [];
-  for (let i = 3; i >= 1; i--) {
-    months.push(monthKey(new Date(today.getFullYear(), today.getMonth() - i, 1)));
-  }
-
-  const snapshots = months.map((m, i) => ({
-    id: crypto.randomUUID(),
-    month: m,
-    takenAt: new Date(today.getFullYear(), today.getMonth() - (3 - i), 3).toISOString(),
-    values: {
-      acc_hdfc: 240000 + i * 18000,
-      acc_icici: 85000 + i * 6000,
-      acc_fd: 500000,
-      acc_mf: 1820000 + i * 42000,
-      acc_stocks: 380000 + i * 11000,
-      acc_epf: 940000 + i * 12000,
-      acc_ppf: 620000 + i * 4500,
-      acc_flat: 18500000,
-      acc_gold: 410000 + i * 3000,
-      acc_car: 720000 - i * 8000,
-      acc_home_loan: 4200000 - i * 26000,
-      acc_cc: 42000 - i * 9000
-    }
-  }));
-
-  return { accounts, snapshots };
 }
 
 async function persistVault(key, vault, recordMeta) {
@@ -938,6 +825,7 @@ function App() {
       }}
       onSave={saveVault}
       onLock={lockVault}
+      backupHealth={backupHealth}
       backupSizeWarning={backupSizeWarning}
       onExport={async () => {
         const exportedAt = new Date().toISOString();
@@ -1034,7 +922,7 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
       if (passphrase !== confirm) throw new Error("Passphrases do not match.");
       if (!recoveryKey) throw new Error("Generate and confirm a recovery key before creating a sample vault.");
       if (normalizeRecoveryKey(recoveryConfirm) !== recoveryKey) throw new Error("Recovery key confirmation does not match.");
-      const nextVault = createDemoVault();
+      const nextVault = await loadDemoVaultModule();
       const nextRecord = await createStage1VaultRecord({ vault: nextVault, passphrase, recoveryKey });
       saveStage1Record(localStorage, nextRecord);
       const unlocked = await decryptVaultWithPassphrase(nextRecord, passphrase);
@@ -1238,9 +1126,12 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
   );
 }
 
-function VaultExperience({ vault, notice, autoLockMs, onAutoLockChange, onSave, onLock, backupSizeWarning, onExport, onReplaceRecoveryKey, onReset }) {
+function VaultExperience({ vault, notice, autoLockMs, onAutoLockChange, onSave, onLock, backupHealth, backupSizeWarning, onExport, onReplaceRecoveryKey, onReset }) {
   const [screen, setScreen] = useState("home");
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return new URLSearchParams(window.location.search).get("demo") === "1";
+  });
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -1249,7 +1140,8 @@ function VaultExperience({ vault, notice, autoLockMs, onAutoLockChange, onSave, 
   async function loadDemoData() {
     const ok = vault.items.length === 0 || window.confirm("Replace current vault contents with full demo data?");
     if (!ok) return;
-    await onSave(createDemoVault());
+    const demo = await loadDemoVaultModule();
+    await onSave(demo);
     setScreen("home");
     setSettingsOpen(false);
   }
@@ -1273,7 +1165,7 @@ function VaultExperience({ vault, notice, autoLockMs, onAutoLockChange, onSave, 
         {notice && <div className="mb-5 rounded-3xl border border-[#34c759]/20 bg-[#34c759]/10 px-5 py-4 text-sm font-semibold text-[#0b6b3a]">{notice}</div>}
         {backupSizeWarning?.level !== "none" && <BackupSizeNotice warning={backupSizeWarning} />}
 
-        {screen === "home"    && <HomeScreen    vault={vault} onSave={onSave} onNavigate={setScreen} />}
+        {screen === "home"    && <HomeScreen    vault={vault} onSave={onSave} onNavigate={setScreen} backupHealth={backupHealth} onExport={onExport} />}
         {screen === "setup"   && <SetupScreen   vault={vault} onSave={onSave} onNavigate={setScreen} />}
         {screen === "update"  && <UpdateScreen  vault={vault} onSave={onSave} onNavigate={setScreen} />}
         {screen === "life"    && <VaultSubNav screen={screen} setScreen={setScreen}><LifeMapScreen vault={vault} autoLockMs={autoLockMs} onAutoLockChange={onAutoLockChange} onReplaceRecoveryKey={onReplaceRecoveryKey} onSave={onSave} onNavigate={setScreen} /></VaultSubNav>}
@@ -1282,7 +1174,11 @@ function VaultExperience({ vault, notice, autoLockMs, onAutoLockChange, onSave, 
 
         <footer className="mt-12 flex flex-wrap items-center justify-between gap-4 border-t border-black/8 py-6 text-[11px] font-medium text-[#a1a1a6]">
           <span>Lyfos · Beta · Locally encrypted on this device.</span>
-          <a href="/privacy" className="hover:text-[#1d1d1f]">Privacy</a>
+          <div className="flex items-center gap-4">
+            <a href="/legal/beta-disclaimer.html" className="hover:text-[#1d1d1f]">Beta disclaimer</a>
+            <a href="/legal/privacy.html" className="hover:text-[#1d1d1f]">Privacy</a>
+            <a href="/legal/terms.html" className="hover:text-[#1d1d1f]">Terms</a>
+          </div>
         </footer>
 
         {settingsOpen && (
@@ -1387,15 +1283,22 @@ function VaultSubNav({ screen, setScreen, children }) {
 // HOME — Net worth / monthly balance sheet
 // =====================================================================
 
-function HomeScreen({ vault, onSave, onNavigate }) {
+function HomeScreen({ vault, onSave, onNavigate, backupHealth, onExport }) {
   const bs = vault.balanceSheet ?? createEmptyBalanceSheet();
   const hasAccounts = bs.accounts.length > 0;
   const currentKey = monthKey();
   const currentSnap = snapshotForMonth(bs.snapshots, currentKey);
   const series = useMemo(() => buildMonthlySeries(bs, 12), [bs]);
+  const reminder = useMemo(() => getBackupReminderCopy(backupHealth ?? {}), [backupHealth]);
+  const showBackupNudge = reminder.level !== "none";
 
   if (!hasAccounts) {
-    return <EmptyHome onStartSetup={() => onNavigate("setup")} onEnterVault={() => onNavigate("life")} vault={vault} />;
+    return (
+      <>
+        {showBackupNudge && <BackupNudge reminder={reminder} onExport={onExport} />}
+        <EmptyHome onStartSetup={() => onNavigate("setup")} onEnterVault={() => onNavigate("life")} vault={vault} />
+      </>
+    );
   }
 
   const last = series[series.length - 1];
@@ -1406,6 +1309,7 @@ function HomeScreen({ vault, onSave, onNavigate }) {
 
   return (
     <section className="mx-auto max-w-2xl">
+      {showBackupNudge && <BackupNudge reminder={reminder} onExport={onExport} />}
       <div className="text-center">
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">{monthLabel(currentKey)}</p>
         <h1 className="mt-3 text-[64px] font-semibold leading-none tracking-tight text-[#1d1d1f] md:text-[80px]">
@@ -1471,6 +1375,42 @@ function HomeScreen({ vault, onSave, onNavigate }) {
         </button>
       </div>
     </section>
+  );
+}
+
+function BackupNudge({ reminder, onExport }) {
+  const tone = reminder.level === "failed" ? "danger" : "warn";
+  return (
+    <div className={cx(
+      "mb-10 rounded-2xl border px-5 py-4",
+      tone === "danger" ? "border-[#ff453a]/25 bg-[#ff453a]/6" : "border-[#c88719]/25 bg-[#fff8eb]"
+    )}>
+      <div className="flex items-start gap-3">
+        <span className={cx(
+          "mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] font-bold text-white",
+          tone === "danger" ? "bg-[#b42318]" : "bg-[#c88719]"
+        )}>!</span>
+        <div className="flex-1">
+          <p className={cx("text-[13px] font-semibold", tone === "danger" ? "text-[#7a1d12]" : "text-[#7a4b00]")}>
+            {reminder.title}
+          </p>
+          <p className={cx("mt-1 text-[12px] leading-5", tone === "danger" ? "text-[#7a1d12]/80" : "text-[#7a4b00]/85")}>
+            {reminder.body} Without a backup, clearing this browser's data will lose your vault.
+          </p>
+        </div>
+        {onExport && reminder.primaryAction && (
+          <button
+            onClick={onExport}
+            className={cx(
+              "shrink-0 rounded-full px-3.5 py-1.5 text-[11px] font-semibold transition",
+              tone === "danger" ? "bg-[#b42318] text-white hover:bg-[#8e1612]" : "bg-[#1d1d1f] text-white hover:bg-black"
+            )}
+          >
+            {reminder.primaryAction}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -2693,7 +2633,7 @@ function CaptureScreen({ vault, onSave, onNavigate }) {
       title,
       attachments: [
         ...attachments,
-        ...(hasStructuredDrafts ? [createDemoAttachment("capture-source.txt", messyText)] : [])
+        ...(hasStructuredDrafts ? [buildTextAttachment("capture-source.txt", messyText)] : [])
       ],
       createdAt: now,
       updatedAt: now
@@ -2887,7 +2827,7 @@ function ReleaseScreen({ vault, onSave }) {
               Lyfos does <strong>not</strong> yet contact your nominees or key holders. This page stores your release plan locally on this device so you can think through it. Until the release service launches, you must share these instructions with your nominee yourself (e.g. printed and kept in a safe).
             </p>
             <p className="mt-2 text-[11px] text-[#7a4b00]/80">
-              Live release service is on the roadmap. See <a href="/roadmap" className="underline">when it ships</a>.
+              Live release service is on the roadmap. See <a href="https://github.com/signorvaleai-hash/lyfos-vault/blob/main/ROADMAP.md" target="_blank" rel="noopener" className="underline">when it ships</a>.
             </p>
           </div>
         </div>
@@ -3576,4 +3516,6 @@ function RestoreMetric({ label, value }) {
   );
 }
 
+initTelemetry();
+registerServiceWorker();
 createRoot(document.getElementById("root")).render(<App />);
