@@ -37,6 +37,8 @@ export default defineConfig({
           if (id.includes("node_modules/tesseract.js")) return "tesseract";
           if (id.includes("node_modules/hash-wasm")) return "crypto-argon2";
           if (id.includes("node_modules/@scure/bip39")) return "crypto-bip39";
+          if (id.includes("node_modules/libsodium")) return "crypto-sodium";
+          if (id.includes("node_modules/secrets.js")) return "crypto-sss";
         }
       }
     }

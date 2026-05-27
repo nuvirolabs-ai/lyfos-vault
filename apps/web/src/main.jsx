@@ -51,6 +51,7 @@ import { prepareStage2BackupExport } from "./lib/stage2BackupManifest.js";
 import { initTelemetry, registerServiceWorker } from "./lib/telemetry.js";
 import { buildSnapshotsCsv, suggestedCsvFilename } from "./lib/csvExport.js";
 import { formatCurrency, formatCompact, DEFAULT_CURRENCY } from "./lib/currency.js";
+import { listMyKeyHolders, createKeyHolderInvite, revokeKeyHolder, sendInviteEmail } from "./lib/releasePlan.js";
 import { isSupabaseConfigured } from "./lib/supabaseClient.js";
 import { getSession, onAuthStateChange, signOut, appendServerAuditEvent, ensureDeviceToken, getDeviceToken, deleteAccount } from "./lib/auth.js";
 import {
@@ -64,6 +65,7 @@ import {
   revokeDevice as revokeDeviceFromSync
 } from "./lib/vaultSync.js";
 import { AuthScreen } from "./AuthScreen.jsx";
+import { InviteAcceptScreen } from "./InviteAcceptScreen.jsx";
 import {
   canConfirmDestructiveRestore,
   createRestoreDryRun,
@@ -168,6 +170,18 @@ const EMPTY_AI_DRAFT = {
   needsConfirmation: true,
   confidence: 0
 };
+
+// Tiny URL matcher — extracts the token segment after a known prefix
+// (e.g. "/invite/abc123" → "abc123"). Returns null if no match.
+// We don't have a router; for the handful of public routes Lyfos
+// needs (invite, claim, abort), this is plenty.
+function matchPathToken(prefix) {
+  if (typeof window === "undefined") return null;
+  const path = window.location.pathname;
+  if (!path.startsWith(prefix)) return null;
+  const token = path.slice(prefix.length).split("/")[0];
+  return token || null;
+}
 
 function cx(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -890,6 +904,14 @@ function App() {
     setNotice("Local vault removed from this browser.");
   }
 
+  // URL routing. Single SPA, no router lib — we just look at pathname
+  // for the handful of public routes we need (invite acceptance for now;
+  // claim + abort tokens will join in later days).
+  const inviteToken = matchPathToken("/invite/");
+  if (inviteToken) {
+    return <InviteAcceptScreen token={inviteToken} onReturnHome={() => { window.location.assign("/"); }} />;
+  }
+
   // Hold the screen while we hydrate the Supabase session — flicker-free
   // so we don't briefly show AuthScreen and then yank it away.
   if (!sessionLoaded) {
@@ -1325,7 +1347,7 @@ function VaultExperience({ vault, notice, autoLockMs, onAutoLockChange, onSave, 
         {screen === "update"  && <UpdateScreen  vault={vault} onSave={onSave} onNavigate={setScreen} />}
         {screen === "life"    && <VaultSubNav screen={screen} setScreen={setScreen}><LifeMapScreen vault={vault} autoLockMs={autoLockMs} onAutoLockChange={onAutoLockChange} onReplaceRecoveryKey={onReplaceRecoveryKey} onSave={onSave} onNavigate={setScreen} /></VaultSubNav>}
         {screen === "capture" && <VaultSubNav screen={screen} setScreen={setScreen}><CaptureScreen vault={vault} onSave={onSave} onNavigate={setScreen} /></VaultSubNav>}
-        {screen === "release" && <VaultSubNav screen={screen} setScreen={setScreen}><ReleaseScreen vault={vault} onSave={onSave} /></VaultSubNav>}
+        {screen === "release" && <VaultSubNav screen={screen} setScreen={setScreen}><ReleaseScreen vault={vault} onSave={onSave} session={session} /></VaultSubNav>}
 
         <footer className="mt-12 flex flex-wrap items-center justify-between gap-4 border-t border-black/8 py-6 text-[11px] font-medium text-[#a1a1a6]">
           <span>Lyfos · Beta · Locally encrypted on this device.</span>
@@ -3835,7 +3857,7 @@ function DraftRowLight({ label, value, muted }) {
   );
 }
 
-function ReleaseScreen({ vault, onSave }) {
+function ReleaseScreen({ vault, onSave, session }) {
   const [settings, setSettings] = useState(vault.releaseSettings);
   const [activeKeys, setActiveKeys] = useState(() => settings.keyHolders.map((holder, index) => holder.trim() ? index : null).filter((index) => index !== null).slice(0, RELEASE_POLICY.requiredKeys));
   const [releaseStep, setReleaseStep] = useState(1);
@@ -3877,15 +3899,23 @@ function ReleaseScreen({ vault, onSave }) {
     setMessage(confirmed ? "Plan saved locally. Lyfos cannot yet contact your nominees — share these details with them yourself." : "Plan saved as a draft.");
   }
 
+  const supabaseOn = isSupabaseConfigured();
+  const cloudEnabled = supabaseOn && Boolean(session);
+
   return (
     <section className="mx-auto max-w-2xl">
+      {cloudEnabled && <CloudKeyHolders />}
+
+      {!cloudEnabled && (
       <div className="mb-10 rounded-2xl border border-[#c88719]/30 bg-[#fff8eb] px-5 py-4">
         <div className="flex items-start gap-3">
           <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[#c88719] text-[11px] font-bold text-white">!</span>
           <div>
             <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[#7a4b00]">Draft — not an active service</p>
             <p className="mt-1.5 text-[13px] leading-5 text-[#7a4b00]">
-              Lyfos does <strong>not</strong> yet contact your nominees or key holders. This page stores your release plan locally on this device so you can think through it. Until the release service launches, you must share these instructions with your nominee yourself (e.g. printed and kept in a safe).
+              {supabaseOn
+                ? <>Sign in to set up real key holders. Without an account, this page only stores your plan locally — Lyfos cannot contact anyone for you.</>
+                : <>Lyfos does <strong>not</strong> yet contact your nominees or key holders. This page stores your release plan locally on this device so you can think through it. Until the release service launches, you must share these instructions with your nominee yourself (e.g. printed and kept in a safe).</>}
             </p>
             <p className="mt-2 text-[11px] text-[#7a4b00]/80">
               Live release service is on the roadmap. See <a href="https://github.com/signorvaleai-hash/lyfos-vault/blob/main/ROADMAP.md" target="_blank" rel="noopener" className="underline">when it ships</a>.
@@ -3893,6 +3923,7 @@ function ReleaseScreen({ vault, onSave }) {
           </div>
         </div>
       </div>
+      )}
 
       <div className="text-center">
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Release plan · Draft</p>
@@ -4011,6 +4042,252 @@ function ReleaseScreen({ vault, onSave }) {
         <p className="mt-3 text-[11px] text-[#a1a1a6]">Saved locally. No emails are sent in this prototype.</p>
       </div>
     </section>
+  );
+}
+
+function CloudKeyHolders() {
+  const [holders, setHolders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [showInvite, setShowInvite] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [inviteFeedback, setInviteFeedback] = useState(null); // { holderId, inviteUrl }
+
+  const accepted = holders.filter((h) => h.status === "accepted" || h.status === "verified").length;
+  const verified = holders.filter((h) => h.status === "verified").length;
+  const planActive = verified >= 5;
+
+  async function refresh() {
+    setLoading(true);
+    setError("");
+    try {
+      const list = await listMyKeyHolders();
+      setHolders(list);
+    } catch (err) {
+      setError(err?.message || "Couldn't load your key holders.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { refresh(); }, []);
+
+  async function handleInviteCreated({ label, holderEmail, holderPhone }) {
+    setBusy(true);
+    setError("");
+    try {
+      const created = await createKeyHolderInvite({ label, holderEmail, holderPhone });
+      const inviteUrl = `${window.location.origin}/invite/${created.invite_token}`;
+      try {
+        await sendInviteEmail(created.id);
+      } catch (sendErr) {
+        // Edge function not deployed yet — fall through with the URL so
+        // the owner can share manually.
+        if (typeof console !== "undefined") {
+          console.warn("[lyfos] invite email send failed; showing manual share URL:", sendErr?.message ?? sendErr);
+        }
+      }
+      setInviteFeedback({ holderId: created.id, inviteUrl });
+      setShowInvite(false);
+      await refresh();
+    } catch (err) {
+      setError(err?.message || "Couldn't create invite.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revoke(holder) {
+    if (!window.confirm(`Revoke ${holder.label}'s invite? They will no longer be a key holder.`)) return;
+    try {
+      await revokeKeyHolder(holder.id);
+      await refresh();
+    } catch (err) {
+      setError(err?.message || "Couldn't revoke.");
+    }
+  }
+
+  return (
+    <div className="mb-12">
+      <div className="text-center">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Release plan</p>
+        <h1 className="mt-3 text-[36px] font-semibold leading-[1.1] tracking-tight md:text-[44px]">
+          {planActive ? "Your circle is active." : "Build your circle of five."}
+        </h1>
+        <p className="mx-auto mt-4 max-w-md text-[14px] leading-6 text-[#6e6e73]">
+          Five trusted humans. Three of them, plus a 14-day hold, are required to release your vault to your nominee. Each is invited by email and accepts on their own device — Lyfos never sees their share of your key.
+        </p>
+      </div>
+
+      {/* Readiness pill row */}
+      <div className="mt-10 grid grid-cols-3 gap-3 rounded-2xl border border-black/8 bg-white p-4 text-center">
+        <ReleaseStat label="Invited" value={holders.length} ok={holders.length === 5} />
+        <ReleaseStat label="Accepted" value={accepted} ok={accepted === 5} />
+        <ReleaseStat label="Verified" value={verified} ok={verified === 5} />
+      </div>
+
+      {error && <div className="mt-4 rounded-xl bg-[#ff453a]/8 px-4 py-3 text-[13px] font-medium text-[#b42318]">{error}</div>}
+      {inviteFeedback && <InviteFeedback feedback={inviteFeedback} onClose={() => setInviteFeedback(null)} />}
+
+      <div className="mt-8 space-y-2">
+        {holders.length === 0 && !loading && (
+          <div className="rounded-2xl border border-dashed border-black/12 bg-white p-6 text-center">
+            <p className="text-[14px] font-medium text-[#1d1d1f]">No key holders yet.</p>
+            <p className="mt-1 text-[12px] text-[#86868b]">Invite five people who would help your nominee if something happens to you.</p>
+          </div>
+        )}
+        {holders.map((h) => <KeyHolderRow key={h.id} holder={h} onRevoke={() => revoke(h)} />)}
+      </div>
+
+      <div className="mt-8 flex flex-col items-center gap-3">
+        {holders.length < 5 && !showInvite && (
+          <button
+            onClick={() => setShowInvite(true)}
+            className="rounded-full bg-[#1d1d1f] px-7 py-3 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition hover:bg-black"
+          >
+            Invite key holder {holders.length + 1} of 5
+          </button>
+        )}
+        {showInvite && (
+          <InviteForm busy={busy} onCancel={() => setShowInvite(false)} onSubmit={handleInviteCreated} />
+        )}
+        {holders.length === 5 && accepted < 5 && (
+          <p className="text-[12px] text-[#86868b]">Waiting on {5 - accepted} {5 - accepted === 1 ? "holder" : "holders"} to accept their invite.</p>
+        )}
+        {holders.length === 5 && accepted === 5 && verified < 5 && (
+          <p className="text-[12px] text-[#86868b]">All 5 accepted. Day 5 will add the "Finalize plan" button here that splits your vault key into shares.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function KeyHolderRow({ holder, onRevoke }) {
+  const inviteUrl = holder.status === "pending"
+    ? `${typeof window !== "undefined" ? window.location.origin : ""}/invite/${holder.invite_token}`
+    : null;
+  const [showUrl, setShowUrl] = useState(false);
+
+  return (
+    <div className="rounded-2xl border border-black/8 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[14px] font-medium text-[#1d1d1f]">{holder.label}</div>
+          <div className="mt-0.5 truncate text-[12px] text-[#86868b]">{holder.holder_email}</div>
+        </div>
+        <div className="shrink-0 text-right">
+          <KeyHolderStatusPill status={holder.status} />
+        </div>
+      </div>
+
+      {holder.status === "pending" && inviteUrl && (
+        <div className="mt-3">
+          <button
+            onClick={() => setShowUrl((v) => !v)}
+            className="text-[11px] font-medium text-[#86868b] underline-offset-2 hover:text-[#1d1d1f] hover:underline"
+          >
+            {showUrl ? "Hide invite link" : "Show invite link"}
+          </button>
+          {showUrl && (
+            <div className="mt-2 break-all rounded-md bg-[#fbfbfd] px-3 py-2 font-mono text-[11px] text-[#3a3a3c]">{inviteUrl}</div>
+          )}
+        </div>
+      )}
+
+      <div className="mt-3 flex items-center justify-end">
+        <button onClick={onRevoke} className="text-[11px] font-medium text-[#b42318] hover:underline">Revoke</button>
+      </div>
+    </div>
+  );
+}
+
+function KeyHolderStatusPill({ status }) {
+  const tone = {
+    pending:  ["bg-[#fff8eb] text-[#7a4b00]", "Pending invite"],
+    accepted: ["bg-[#34c759]/10 text-[#0b6b3a]", "Accepted"],
+    verified: ["bg-[#34c759]/20 text-[#0b6b3a]", "Verified"],
+    revoked:  ["bg-[#ff453a]/8 text-[#b42318]", "Revoked"]
+  }[status] ?? ["bg-[#f2f2f5] text-[#6e6e73]", status];
+  return <span className={cx("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider", tone[0])}>{tone[1]}</span>;
+}
+
+function InviteForm({ busy, onCancel, onSubmit }) {
+  const [label, setLabel] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+
+  function submit(event) {
+    event.preventDefault();
+    onSubmit({ label, holderEmail: email, holderPhone: phone });
+  }
+
+  return (
+    <form onSubmit={submit} className="w-full max-w-md rounded-2xl border border-black/8 bg-white p-5">
+      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Invite a key holder</p>
+      <label className="mt-3 block">
+        <span className="text-[11px] text-[#86868b]">Label</span>
+        <input
+          autoFocus
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          required
+          placeholder="Vikram Sharma (brother)"
+          className="mt-1 w-full rounded-md border border-black/8 bg-white px-3 py-2 text-[14px] outline-none focus:border-[#1d1d1f]"
+        />
+      </label>
+      <label className="mt-3 block">
+        <span className="text-[11px] text-[#86868b]">Their email</span>
+        <input
+          type="email"
+          required
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="vikram@example.com"
+          className="mt-1 w-full rounded-md border border-black/8 bg-white px-3 py-2 text-[14px] outline-none focus:border-[#1d1d1f]"
+        />
+      </label>
+      <label className="mt-3 block">
+        <span className="text-[11px] text-[#86868b]">Their phone <span className="text-[#a1a1a6]">· optional, for SMS alerts</span></span>
+        <input
+          type="tel"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="+91 98765 43210"
+          className="mt-1 w-full rounded-md border border-black/8 bg-white px-3 py-2 text-[14px] outline-none focus:border-[#1d1d1f]"
+        />
+      </label>
+      <div className="mt-5 flex items-center justify-between gap-2">
+        <button type="button" onClick={onCancel} className="text-[12px] text-[#86868b] hover:text-[#1d1d1f]">Cancel</button>
+        <button
+          type="submit"
+          disabled={busy || !label.trim() || !email.trim()}
+          className="rounded-full bg-[#1d1d1f] px-5 py-2 text-[12px] font-semibold text-white transition hover:bg-black disabled:opacity-40"
+        >
+          {busy ? "Sending…" : "Send invite"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function InviteFeedback({ feedback, onClose }) {
+  async function copyLink() {
+    try { await navigator.clipboard.writeText(feedback.inviteUrl); } catch {}
+  }
+  return (
+    <div className="mt-4 rounded-2xl border border-[#34c759]/30 bg-[#34c759]/8 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-medium text-[#0b6b3a]">Invite created.</p>
+          <p className="mt-1 text-[12px] leading-5 text-[#0b6b3a]/85">
+            We tried to email them automatically. If the email doesn't arrive, share this link directly — they need to open it on their own device:
+          </p>
+          <div className="mt-2 break-all rounded-md bg-white/80 px-3 py-2 font-mono text-[11px]">{feedback.inviteUrl}</div>
+          <button onClick={copyLink} className="mt-2 text-[11px] font-medium text-[#0b6b3a] underline-offset-2 hover:underline">Copy link</button>
+        </div>
+        <button onClick={onClose} className="shrink-0 text-[11px] text-[#86868b] hover:text-[#1d1d1f]">Close</button>
+      </div>
+    </div>
   );
 }
 

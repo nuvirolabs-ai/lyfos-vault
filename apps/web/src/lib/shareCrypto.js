@@ -33,8 +33,11 @@
 // Concurrency: libsodium needs an explicit ready() before first use.
 // readySodium() is idempotent and cached.
 
-import sodium from "libsodium-wrappers";
-import secrets from "secrets.js-grempe";
+// Note: libsodium-wrappers and secrets.js-grempe are dynamic-imported
+// inside each function below, NOT statically imported at the top. This
+// keeps the ~150kb gzipped libsodium chunk off the critical path — it
+// only loads when the user opens an invite or finalizes a release plan.
+
 import { argon2id } from "hash-wasm";
 
 const ARGON2_PARAMS = {
@@ -44,11 +47,25 @@ const ARGON2_PARAMS = {
   outputLength: 32
 };
 
-let sodiumReady = null;
+let sodiumPromise = null;
 async function readySodium() {
-  if (!sodiumReady) sodiumReady = sodium.ready;
-  await sodiumReady;
-  return sodium;
+  if (!sodiumPromise) {
+    sodiumPromise = (async () => {
+      const mod = await import("libsodium-wrappers");
+      const sodium = mod.default ?? mod;
+      await sodium.ready;
+      return sodium;
+    })();
+  }
+  return sodiumPromise;
+}
+
+let secretsPromise = null;
+async function readySecrets() {
+  if (!secretsPromise) {
+    secretsPromise = import("secrets.js-grempe").then((mod) => mod.default ?? mod);
+  }
+  return secretsPromise;
 }
 
 // ============================================================
@@ -124,14 +141,16 @@ export async function makeReleaseProcessKeypair() {
 
 /**
  * Split a 32-byte raw AES key into 5 shares with a 3-of-5 threshold.
- * secrets.js works in hex; we encode/decode at the boundary.
+ * secrets.js works in hex; we encode/decode at the boundary. Async
+ * because secrets.js is dynamic-imported on first use.
  *
  * @param {Uint8Array} rawKey  exactly 32 bytes
- * @returns {string[]} 5 share strings (hex)
+ * @returns {Promise<string[]>} 5 share strings (hex)
  */
-export function splitVaultKey(rawKey, { totalShares = 5, threshold = 3 } = {}) {
+export async function splitVaultKey(rawKey, { totalShares = 5, threshold = 3 } = {}) {
   if (!(rawKey instanceof Uint8Array)) throw new Error("rawKey must be Uint8Array");
   if (rawKey.length !== 32) throw new Error(`rawKey must be 32 bytes, got ${rawKey.length}`);
+  const secrets = await readySecrets();
   const hex = bytesToHex(rawKey);
   return secrets.share(hex, totalShares, threshold);
 }
@@ -141,12 +160,13 @@ export function splitVaultKey(rawKey, { totalShares = 5, threshold = 3 } = {}) {
  * matter; extras are tolerated.
  *
  * @param {string[]} shareStrings  at least 3 share strings from splitVaultKey
- * @returns {Uint8Array} 32-byte rawKey
+ * @returns {Promise<Uint8Array>} 32-byte rawKey
  */
-export function combineShares(shareStrings) {
+export async function combineShares(shareStrings) {
   if (!Array.isArray(shareStrings) || shareStrings.length < 3) {
     throw new Error(`need at least 3 shares to combine, got ${shareStrings?.length ?? 0}`);
   }
+  const secrets = await readySecrets();
   const hex = secrets.combine(shareStrings);
   return hexToBytes(hex);
 }

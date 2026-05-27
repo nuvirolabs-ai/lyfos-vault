@@ -17,9 +17,9 @@ function randomKey() {
   return k;
 }
 
-test("splitVaultKey produces 5 shares with 3-of-5 threshold", () => {
+test("splitVaultKey produces 5 shares with 3-of-5 threshold", async () => {
   const key = randomKey();
-  const shares = splitVaultKey(key);
+  const shares = await splitVaultKey(key);
   assert.equal(shares.length, 5);
   for (const s of shares) {
     assert.equal(typeof s, "string");
@@ -27,33 +27,31 @@ test("splitVaultKey produces 5 shares with 3-of-5 threshold", () => {
   }
 });
 
-test("combineShares recovers the key from exactly 3 shares", () => {
+test("combineShares recovers the key from exactly 3 shares", async () => {
   const key = randomKey();
-  const shares = splitVaultKey(key);
+  const shares = await splitVaultKey(key);
   const subset = [shares[0], shares[2], shares[4]];
-  const recovered = combineShares(subset);
+  const recovered = await combineShares(subset);
   assert.deepEqual(Array.from(recovered), Array.from(key));
 });
 
-test("combineShares works with all 5 shares too", () => {
+test("combineShares works with all 5 shares too", async () => {
   const key = randomKey();
-  const shares = splitVaultKey(key);
-  const recovered = combineShares(shares);
+  const shares = await splitVaultKey(key);
+  const recovered = await combineShares(shares);
   assert.deepEqual(Array.from(recovered), Array.from(key));
 });
 
-test("combineShares rejects fewer than 3 shares", () => {
-  const key = randomKey();
-  const shares = splitVaultKey(key);
-  assert.throws(() => combineShares([shares[0], shares[1]]), /at least 3 shares/);
+test("combineShares rejects fewer than 3 shares", async () => {
+  await assert.rejects(() => combineShares([{}, {}]), /at least 3 shares/);
 });
 
-test("splitVaultKey rejects non-Uint8Array input", () => {
-  assert.throws(() => splitVaultKey("not a uint8array"));
+test("splitVaultKey rejects non-Uint8Array input", async () => {
+  await assert.rejects(() => splitVaultKey("not a uint8array"));
 });
 
-test("splitVaultKey rejects non-32-byte input", () => {
-  assert.throws(() => splitVaultKey(new Uint8Array(16)), /32 bytes/);
+test("splitVaultKey rejects non-32-byte input", async () => {
+  await assert.rejects(() => splitVaultKey(new Uint8Array(16)), /32 bytes/);
 });
 
 test("deriveHolderKeypairFromPassphrase is deterministic per (passphrase, userId)", async () => {
@@ -114,7 +112,7 @@ test("openSealedShare with a tampered ciphertext fails", async () => {
 test("end-to-end: 3 holders re-encrypt their shares to a nominee, nominee recovers key", async () => {
   // Owner: split her vault key
   const ownerKey = randomKey();
-  const shares = splitVaultKey(ownerKey);
+  const shares = await splitVaultKey(ownerKey);
 
   // 5 holder keypairs (each from her own passphrase)
   const holders = await Promise.all(
@@ -143,6 +141,6 @@ test("end-to-end: 3 holders re-encrypt their shares to a nominee, nominee recove
   );
 
   // Combine → original vault key
-  const recovered = combineShares(nomineeShares);
+  const recovered = await combineShares(nomineeShares);
   assert.deepEqual(Array.from(recovered), Array.from(ownerKey));
 });

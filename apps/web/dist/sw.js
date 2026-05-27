@@ -2,7 +2,7 @@
 // On each deploy the constant changes, the old cache is purged in 'activate',
 // and clients.claim() takes over open tabs so they see the new bundle without
 // requiring a hard refresh.
-const CACHE_NAME = "lyfos-vault-202605271349-pusgxl";
+const CACHE_NAME = "lyfos-vault-202605272036-qbdxpu";
 const APP_SHELL = ["/", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
