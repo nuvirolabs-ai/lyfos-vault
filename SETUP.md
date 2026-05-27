@@ -23,7 +23,19 @@ Lyfos uses Supabase for auth, Postgres, and (later) edge functions + storage. Th
 3. Repeat with `supabase/migrations/0002_rls_policies.sql`. Run.
 4. Repeat with `supabase/migrations/0003_account_deletion.sql`. Run.
 5. **0004_monthly_reminder_cron.sql** — do NOT run yet. Run after deploying the Edge Function (see step "Monthly reminder email" below).
-6. Verify in **Table editor**: you should see `vault_blobs`, `devices`, `recovery_envelopes`, `audit_log`. All four should have the green "RLS enabled" badge. In **Database → Functions** you should see `append_audit_event` and `delete_account`.
+6. Apply `0005_release_engine.sql`. Run.
+7. Apply `0006_release_engine_rls.sql`. Run.
+8. Verify in **Table editor**: you should see `vault_blobs`, `devices`, `recovery_envelopes`, `audit_log`, `key_holders`, `key_shares`, `release_requests`, `release_share_releases`, `release_alerts`. All should have the green "RLS enabled" badge. In **Database → Functions** you should see `append_audit_event`, `delete_account`, `admin_approve_release`, `admin_reject_release`, `owner_abort_release`, `holder_release_share`, `maybe_start_hold`, `maybe_complete_hold`.
+
+#### Founder admin role
+
+Phase 3's release-claim review queue identifies admins by a `role` claim in `auth.users.raw_user_meta_data`. To make yourself an admin (no UI for this yet, by design — admin grants are deliberate):
+
+```sql
+update auth.users
+   set raw_user_meta_data = raw_user_meta_data || '{"role":"admin"}'::jsonb
+ where email = 'your-founder-email@lyfos.signorvale.com';
+```
 
 ### Configure auth providers
 
