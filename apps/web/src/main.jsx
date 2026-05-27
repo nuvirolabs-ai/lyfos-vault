@@ -1240,6 +1240,7 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
 
 function VaultExperience({ vault, notice, autoLockMs, onAutoLockChange, onSave, onLock, backupSizeWarning, onExport, onReplaceRecoveryKey, onReset }) {
   const [screen, setScreen] = useState("home");
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -1250,6 +1251,7 @@ function VaultExperience({ vault, notice, autoLockMs, onAutoLockChange, onSave, 
     if (!ok) return;
     await onSave(createDemoVault());
     setScreen("home");
+    setSettingsOpen(false);
   }
 
   const inVault = screen === "life" || screen === "capture" || screen === "release";
@@ -1264,9 +1266,8 @@ function VaultExperience({ vault, notice, autoLockMs, onAutoLockChange, onSave, 
             <button onClick={() => setScreen("home")}  className={cx("rounded-full px-5 py-2 text-sm font-semibold transition", inHome  ? "bg-[#1d1d1f] text-white shadow-sm" : "text-[#6e6e73] hover:bg-white hover:text-[#1d1d1f]")}>Home</button>
             <button onClick={() => setScreen("life")}  className={cx("rounded-full px-5 py-2 text-sm font-semibold transition", inVault ? "bg-[#1d1d1f] text-white shadow-sm" : "text-[#6e6e73] hover:bg-white hover:text-[#1d1d1f]")}>Vault</button>
           </nav>
-          <button onClick={loadDemoData} className="order-4 hidden rounded-full border border-black/8 bg-white px-3.5 py-1.5 text-xs font-semibold text-[#6e6e73] transition hover:text-[#1d1d1f] md:order-none md:inline-block">Demo</button>
-          <button onClick={onExport} className="order-4 hidden rounded-full border border-black/8 bg-white px-3.5 py-1.5 text-xs font-semibold text-[#6e6e73] transition hover:text-[#1d1d1f] md:order-none md:inline-block">Backup</button>
-          <button onClick={() => onLock("Manual lock")} className="ml-auto rounded-full bg-[#1d1d1f] px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-black md:ml-0">Seal</button>
+          <button onClick={() => setSettingsOpen(true)} aria-label="Settings" className="ml-auto rounded-full border border-black/8 bg-white px-3 py-1.5 text-xs font-semibold text-[#6e6e73] transition hover:text-[#1d1d1f] md:ml-0">Settings</button>
+          <button onClick={() => onLock("Manual lock")} className="rounded-full bg-[#1d1d1f] px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-black">Seal</button>
         </header>
 
         {notice && <div className="mb-5 rounded-3xl border border-[#34c759]/20 bg-[#34c759]/10 px-5 py-4 text-sm font-semibold text-[#0b6b3a]">{notice}</div>}
@@ -1279,12 +1280,84 @@ function VaultExperience({ vault, notice, autoLockMs, onAutoLockChange, onSave, 
         {screen === "capture" && <VaultSubNav screen={screen} setScreen={setScreen}><CaptureScreen vault={vault} onSave={onSave} onNavigate={setScreen} /></VaultSubNav>}
         {screen === "release" && <VaultSubNav screen={screen} setScreen={setScreen}><ReleaseScreen vault={vault} onSave={onSave} /></VaultSubNav>}
 
-        <footer className="mt-12 flex flex-wrap items-center justify-between gap-4 border-t border-black/8 py-6 text-xs font-medium text-[#a1a1a6]">
-          <span>Local encrypted prototype. No cloud sync, nominee release service, or phrase recovery is active yet.</span>
-          <button onClick={onReset} className="text-[#b42318]">Delete local vault</button>
+        <footer className="mt-12 flex flex-wrap items-center justify-between gap-4 border-t border-black/8 py-6 text-[11px] font-medium text-[#a1a1a6]">
+          <span>Lyfos · Beta · Locally encrypted on this device.</span>
+          <a href="/privacy" className="hover:text-[#1d1d1f]">Privacy</a>
         </footer>
+
+        {settingsOpen && (
+          <SettingsDrawer
+            onClose={() => setSettingsOpen(false)}
+            onLoadDemo={loadDemoData}
+            onExport={onExport}
+            onReset={onReset}
+          />
+        )}
       </div>
     </main>
+  );
+}
+
+function SettingsDrawer({ onClose, onLoadDemo, onExport, onReset }) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-end bg-black/30 backdrop-blur-sm md:items-stretch" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex h-full w-full max-w-sm flex-col bg-[#fbfbfd] p-6 shadow-[-8px_0_40px_rgba(0,0,0,0.08)] md:p-8"
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="text-[20px] font-semibold tracking-tight">Settings</h2>
+          <button onClick={onClose} className="text-[12px] text-[#86868b] hover:text-[#1d1d1f]">Close</button>
+        </div>
+
+        <div className="mt-8 space-y-1">
+          <SettingsRow
+            label="Backup encrypted vault"
+            hint="Download an encrypted file you can restore from any device."
+            actionLabel="Backup"
+            onClick={() => { onExport(); onClose(); }}
+          />
+          <SettingsRow
+            label="Load demo data"
+            hint="Replace your vault with realistic sample data for testing."
+            actionLabel="Load demo"
+            onClick={onLoadDemo}
+            tone="muted"
+          />
+        </div>
+
+        <div className="mt-12 border-t border-black/8 pt-6">
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Danger zone</p>
+          <button
+            onClick={() => { onReset(); onClose(); }}
+            className="mt-4 w-full rounded-xl border border-[#b42318]/30 bg-white px-4 py-3 text-left text-[13px] font-medium text-[#b42318] transition hover:bg-[#b42318]/5"
+          >
+            Delete this local vault
+            <span className="mt-1 block text-[11px] font-normal text-[#86868b]">This cannot be undone. Without an export you will lose everything.</span>
+          </button>
+        </div>
+
+        <div className="mt-auto pt-8 text-[11px] text-[#a1a1a6]">
+          <p>Lyfos · Beta · v0.1</p>
+          <p className="mt-1">Encrypted locally on this device. Cloud sync is coming in Phase 1.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SettingsRow({ label, hint, actionLabel, onClick, tone }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex w-full items-start justify-between gap-4 rounded-xl px-3 py-3 text-left transition hover:bg-white"
+    >
+      <div>
+        <div className={cx("text-[14px] font-medium", tone === "muted" ? "text-[#6e6e73]" : "text-[#1d1d1f]")}>{label}</div>
+        <div className="mt-1 text-[12px] text-[#86868b]">{hint}</div>
+      </div>
+      <span className="rounded-full border border-black/8 bg-white px-3 py-1 text-[11px] font-semibold text-[#1d1d1f]">{actionLabel}</span>
+    </button>
   );
 }
 
@@ -1296,9 +1369,12 @@ function VaultSubNav({ screen, setScreen, children }) {
           {[
             ["life", "Life Map"],
             ["capture", "Capture"],
-            ["release", "Release"]
+            ["release", "Release plan"]
           ].map(([id, label]) => (
-            <button key={id} onClick={() => setScreen(id)} className={cx("rounded-full px-4 py-1.5 text-xs font-semibold transition", screen === id ? "bg-[#1d1d1f] text-white" : "text-[#6e6e73] hover:text-[#1d1d1f]")}>{label}</button>
+            <button key={id} onClick={() => setScreen(id)} className={cx("rounded-full px-4 py-1.5 text-xs font-semibold transition", screen === id ? "bg-[#1d1d1f] text-white" : "text-[#6e6e73] hover:text-[#1d1d1f]")}>
+              {label}
+              {id === "release" && <span className={cx("ml-1.5 rounded-full px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider", screen === id ? "bg-white/20 text-white" : "bg-[#fff8eb] text-[#7a4b00]")}>Draft</span>}
+            </button>
           ))}
         </div>
       </div>
@@ -2779,7 +2855,7 @@ function ReleaseScreen({ vault, onSave }) {
     : filledKeys < RELEASE_POLICY.requiredKeys
       ? `Add ${RELEASE_POLICY.requiredKeys - filledKeys} more trusted key holder${RELEASE_POLICY.requiredKeys - filledKeys === 1 ? "" : "s"}.`
       : confirmed
-        ? "Vault does not open yet. The 14-day owner-protection hold begins."
+        ? "Plan looks complete. The live release service is not active yet — share these details with your nominee manually for now."
         : `Select ${remainingKeys} more trusted key${remainingKeys === 1 ? "" : "s"} to simulate the threshold.`;
 
   useEffect(() => {
@@ -2797,18 +2873,33 @@ function ReleaseScreen({ vault, onSave }) {
       releaseSettings: settings,
       audit: [{ id: crypto.randomUUID(), event: "Release circle updated", at: now }, ...vault.audit]
     }, null);
-    setMessage(confirmed ? "Release circle saved. Emergency access still requires the 14-day owner alert hold." : "Release circle saved as a draft. It is not recovery-ready yet.");
+    setMessage(confirmed ? "Plan saved locally. Lyfos cannot yet contact your nominees — share these details with them yourself." : "Plan saved as a draft.");
   }
 
   return (
     <section className="mx-auto max-w-2xl">
+      <div className="mb-10 rounded-2xl border border-[#c88719]/30 bg-[#fff8eb] px-5 py-4">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[#c88719] text-[11px] font-bold text-white">!</span>
+          <div>
+            <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[#7a4b00]">Draft — not an active service</p>
+            <p className="mt-1.5 text-[13px] leading-5 text-[#7a4b00]">
+              Lyfos does <strong>not</strong> yet contact your nominees or key holders. This page stores your release plan locally on this device so you can think through it. Until the release service launches, you must share these instructions with your nominee yourself (e.g. printed and kept in a safe).
+            </p>
+            <p className="mt-2 text-[11px] text-[#7a4b00]/80">
+              Live release service is on the roadmap. See <a href="/roadmap" className="underline">when it ships</a>.
+            </p>
+          </div>
+        </div>
+      </div>
+
       <div className="text-center">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Release</p>
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Release plan · Draft</p>
         <h1 className="mt-3 text-[36px] font-semibold leading-[1.1] tracking-tight md:text-[44px]">
-          {confirmed ? "Your circle is ready." : "Set up your release circle."}
+          {confirmed ? "Your plan is complete." : "Plan who would help your family."}
         </h1>
         <p className="mx-auto mt-4 max-w-md text-[14px] leading-6 text-[#6e6e73]">
-          No one person can open your life. Three of five trusted keys plus a 14-day hold are required.
+          You name a nominee and five trusted key holders. In the future, three keys plus a 14-day hold will be required to release.
         </p>
       </div>
 
