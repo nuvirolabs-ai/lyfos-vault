@@ -164,8 +164,109 @@ function createEmptyVault() {
       keyHolders: ["", "", "", "", ""],
       emergencyOnly: true
     },
+    balanceSheet: createEmptyBalanceSheet(),
     audit: [{ id: crypto.randomUUID(), event: "Vault created", at: new Date().toISOString() }]
   };
+}
+
+function createEmptyBalanceSheet() {
+  return { accounts: [], snapshots: [] };
+}
+
+export const BALANCE_SHEET_CATEGORIES = [
+  { id: "cash",         kind: "asset",     label: "Cash & bank",      hint: "Savings, current, FDs" },
+  { id: "investments",  kind: "asset",     label: "Investments",      hint: "Stocks, MFs, NPS, PPF, EPF, bonds" },
+  { id: "real_estate",  kind: "asset",     label: "Real estate",      hint: "Property at your own valuation" },
+  { id: "gold",         kind: "asset",     label: "Gold & jewellery", hint: "Physical and digital gold" },
+  { id: "vehicles",     kind: "asset",     label: "Vehicles",         hint: "Cars, bikes (current resale value)" },
+  { id: "crypto",       kind: "asset",     label: "Crypto",           hint: "Holdings in INR" },
+  { id: "other_asset",  kind: "asset",     label: "Other assets",     hint: "Anything else of value" },
+  { id: "home_loan",    kind: "liability", label: "Home loan",        hint: "Outstanding principal" },
+  { id: "personal_loan",kind: "liability", label: "Personal loan",    hint: "Outstanding principal" },
+  { id: "car_loan",     kind: "liability", label: "Car / vehicle loan", hint: "Outstanding principal" },
+  { id: "credit_card",  kind: "liability", label: "Credit card",      hint: "Unpaid balance" },
+  { id: "other_debt",   kind: "liability", label: "Other debt",       hint: "Any other liability" }
+];
+
+function categoryById(id) {
+  return BALANCE_SHEET_CATEGORIES.find((c) => c.id === id) ?? null;
+}
+
+function monthKey(date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthLabel(key) {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleString("en-IN", { month: "long", year: "numeric" });
+}
+
+function shortMonthLabel(key) {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleString("en-IN", { month: "short" });
+}
+
+function snapshotForMonth(snapshots, key) {
+  return (snapshots ?? []).find((s) => s.month === key) ?? null;
+}
+
+function netWorthFromValues(accounts, values) {
+  let assets = 0;
+  let liabilities = 0;
+  for (const acc of accounts) {
+    const v = Number(values?.[acc.id] ?? 0) || 0;
+    if (acc.kind === "liability") liabilities += v;
+    else assets += v;
+  }
+  return { assets, liabilities, net: assets - liabilities };
+}
+
+function buildMonthlySeries(balanceSheet, monthsBack = 12) {
+  const accounts = balanceSheet?.accounts ?? [];
+  const snapshots = [...(balanceSheet?.snapshots ?? [])].sort((a, b) => a.month.localeCompare(b.month));
+  const today = new Date();
+  const keys = [];
+  for (let i = monthsBack - 1; i >= 0; i--) {
+    const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+    keys.push(monthKey(d));
+  }
+  const series = [];
+  let lastValues = null;
+  let lastWasReal = false;
+  for (const key of keys) {
+    const snap = snapshotForMonth(snapshots, key);
+    if (snap) {
+      lastValues = snap.values;
+      lastWasReal = true;
+      const totals = netWorthFromValues(accounts, snap.values);
+      series.push({ month: key, ...totals, carried: false, empty: false });
+    } else if (lastValues) {
+      const totals = netWorthFromValues(accounts, lastValues);
+      series.push({ month: key, ...totals, carried: true, empty: false });
+      lastWasReal = false;
+    } else {
+      series.push({ month: key, assets: 0, liabilities: 0, net: 0, carried: false, empty: true });
+    }
+  }
+  return series;
+}
+
+function formatINR(value) {
+  const n = Number(value) || 0;
+  const abs = Math.abs(n);
+  const formatted = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(abs);
+  return `${n < 0 ? "−" : ""}₹${formatted}`;
+}
+
+function formatINRCompact(value) {
+  const n = Number(value) || 0;
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "−" : "";
+  if (abs >= 10000000) return `${sign}₹${(abs / 10000000).toFixed(abs >= 100000000 ? 0 : 2)} Cr`;
+  if (abs >= 100000) return `${sign}₹${(abs / 100000).toFixed(abs >= 10000000 ? 0 : 1)} L`;
+  if (abs >= 1000) return `${sign}₹${(abs / 1000).toFixed(0)}k`;
+  return `${sign}₹${abs}`;
 }
 
 function createDemoAttachment(name, text) {
@@ -247,12 +348,58 @@ function createDemoVault() {
       ],
       emergencyOnly: true
     },
+    balanceSheet: createDemoBalanceSheet(),
     audit: [
       { id: crypto.randomUUID(), event: "Demo vault loaded", at: now },
       { id: crypto.randomUUID(), event: "Release circle configured", at: now },
       { id: crypto.randomUUID(), event: "Vault created", at: now }
     ]
   };
+}
+
+function createDemoBalanceSheet() {
+  const accounts = [
+    { id: "acc_hdfc",     category: "cash",         kind: "asset",     name: "HDFC savings",        createdAt: new Date().toISOString() },
+    { id: "acc_icici",    category: "cash",         kind: "asset",     name: "ICICI savings",       createdAt: new Date().toISOString() },
+    { id: "acc_fd",       category: "cash",         kind: "asset",     name: "SBI FD",              createdAt: new Date().toISOString() },
+    { id: "acc_mf",       category: "investments",  kind: "asset",     name: "Equity mutual funds", createdAt: new Date().toISOString() },
+    { id: "acc_stocks",   category: "investments",  kind: "asset",     name: "Direct stocks",       createdAt: new Date().toISOString() },
+    { id: "acc_epf",      category: "investments",  kind: "asset",     name: "EPF",                 createdAt: new Date().toISOString() },
+    { id: "acc_ppf",      category: "investments",  kind: "asset",     name: "PPF",                 createdAt: new Date().toISOString() },
+    { id: "acc_flat",     category: "real_estate",  kind: "asset",     name: "Pune flat",           createdAt: new Date().toISOString() },
+    { id: "acc_gold",     category: "gold",         kind: "asset",     name: "Gold (physical)",     createdAt: new Date().toISOString() },
+    { id: "acc_car",      category: "vehicles",     kind: "asset",     name: "Car",                 createdAt: new Date().toISOString() },
+    { id: "acc_home_loan",category: "home_loan",    kind: "liability", name: "HDFC home loan",      createdAt: new Date().toISOString() },
+    { id: "acc_cc",       category: "credit_card",  kind: "liability", name: "HDFC credit card",    createdAt: new Date().toISOString() }
+  ];
+
+  const today = new Date();
+  const months = [];
+  for (let i = 3; i >= 1; i--) {
+    months.push(monthKey(new Date(today.getFullYear(), today.getMonth() - i, 1)));
+  }
+
+  const snapshots = months.map((m, i) => ({
+    id: crypto.randomUUID(),
+    month: m,
+    takenAt: new Date(today.getFullYear(), today.getMonth() - (3 - i), 3).toISOString(),
+    values: {
+      acc_hdfc: 240000 + i * 18000,
+      acc_icici: 85000 + i * 6000,
+      acc_fd: 500000,
+      acc_mf: 1820000 + i * 42000,
+      acc_stocks: 380000 + i * 11000,
+      acc_epf: 940000 + i * 12000,
+      acc_ppf: 620000 + i * 4500,
+      acc_flat: 18500000,
+      acc_gold: 410000 + i * 3000,
+      acc_car: 720000 - i * 8000,
+      acc_home_loan: 4200000 - i * 26000,
+      acc_cc: 42000 - i * 9000
+    }
+  }));
+
+  return { accounts, snapshots };
 }
 
 async function persistVault(key, vault, recordMeta) {
@@ -1092,7 +1239,7 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
 }
 
 function VaultExperience({ vault, notice, autoLockMs, onAutoLockChange, onSave, onLock, backupSizeWarning, onExport, onReplaceRecoveryKey, onReset }) {
-  const [screen, setScreen] = useState("life");
+  const [screen, setScreen] = useState("home");
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -1102,41 +1249,571 @@ function VaultExperience({ vault, notice, autoLockMs, onAutoLockChange, onSave, 
     const ok = vault.items.length === 0 || window.confirm("Replace current vault contents with full demo data?");
     if (!ok) return;
     await onSave(createDemoVault());
-    setScreen("life");
+    setScreen("home");
   }
 
+  const inVault = screen === "life" || screen === "capture" || screen === "release";
+  const inHome  = screen === "home" || screen === "setup" || screen === "update";
+
   return (
-    <main className="min-h-screen bg-[#f5f5f7] text-[#1d1d1f]">
-      <div className="mx-auto max-w-7xl px-5 py-5 lg:px-8">
-        <header className="sticky top-4 z-20 mb-6 flex flex-wrap items-center gap-3 rounded-[1.75rem] border border-black/10 bg-white/76 px-4 py-3 shadow-[0_12px_50px_rgba(0,0,0,0.07)] backdrop-blur-2xl md:flex-nowrap md:rounded-full">
+    <main className="min-h-screen bg-[#fbfbfd] text-[#1d1d1f]">
+      <div className="mx-auto max-w-6xl px-5 py-5 lg:px-8">
+        <header className="sticky top-4 z-20 mb-10 flex flex-wrap items-center gap-3 rounded-full border border-black/8 bg-white/80 px-4 py-2.5 shadow-[0_8px_32px_rgba(0,0,0,0.04)] backdrop-blur-2xl md:flex-nowrap">
           <BrandMini />
-          <nav className="order-3 flex w-full items-center justify-between gap-1 rounded-full bg-[#f5f5f7] p-1 md:order-none md:ml-auto md:w-auto md:justify-start">
-            {[
-              ["life", "Life Map"],
-              ["capture", "Capture"],
-              ["release", "Release"]
-            ].map(([id, label]) => (
-              <button key={id} onClick={() => setScreen(id)} className={cx("rounded-full px-4 py-2 text-sm font-semibold transition", screen === id ? "bg-[#1d1d1f] text-white shadow-sm" : "text-[#6e6e73] hover:bg-white hover:text-[#1d1d1f]")}>{label}</button>
-            ))}
+          <nav className="order-3 flex w-full items-center justify-between gap-1 rounded-full bg-[#f2f2f5] p-1 md:order-none md:ml-auto md:w-auto md:justify-start">
+            <button onClick={() => setScreen("home")}  className={cx("rounded-full px-5 py-2 text-sm font-semibold transition", inHome  ? "bg-[#1d1d1f] text-white shadow-sm" : "text-[#6e6e73] hover:bg-white hover:text-[#1d1d1f]")}>Home</button>
+            <button onClick={() => setScreen("life")}  className={cx("rounded-full px-5 py-2 text-sm font-semibold transition", inVault ? "bg-[#1d1d1f] text-white shadow-sm" : "text-[#6e6e73] hover:bg-white hover:text-[#1d1d1f]")}>Vault</button>
           </nav>
-          <button onClick={loadDemoData} className="order-4 flex-1 rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold shadow-sm transition hover:scale-[1.01] md:order-none md:flex-none">Demo</button>
-          <button onClick={onExport} className="order-4 flex-1 rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold shadow-sm transition hover:scale-[1.01] md:order-none md:flex-none">Backup</button>
-          <button onClick={() => onLock("Manual lock")} className="ml-auto rounded-full bg-[#1d1d1f] px-4 py-2 text-sm font-semibold text-white transition hover:scale-[1.01] md:ml-0">Seal</button>
+          <button onClick={loadDemoData} className="order-4 hidden rounded-full border border-black/8 bg-white px-3.5 py-1.5 text-xs font-semibold text-[#6e6e73] transition hover:text-[#1d1d1f] md:order-none md:inline-block">Demo</button>
+          <button onClick={onExport} className="order-4 hidden rounded-full border border-black/8 bg-white px-3.5 py-1.5 text-xs font-semibold text-[#6e6e73] transition hover:text-[#1d1d1f] md:order-none md:inline-block">Backup</button>
+          <button onClick={() => onLock("Manual lock")} className="ml-auto rounded-full bg-[#1d1d1f] px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-black md:ml-0">Seal</button>
         </header>
 
         {notice && <div className="mb-5 rounded-3xl border border-[#34c759]/20 bg-[#34c759]/10 px-5 py-4 text-sm font-semibold text-[#0b6b3a]">{notice}</div>}
         {backupSizeWarning?.level !== "none" && <BackupSizeNotice warning={backupSizeWarning} />}
 
-        {screen === "life" && <LifeMapScreen vault={vault} autoLockMs={autoLockMs} onAutoLockChange={onAutoLockChange} onReplaceRecoveryKey={onReplaceRecoveryKey} onSave={onSave} onNavigate={setScreen} />}
-        {screen === "capture" && <CaptureScreen vault={vault} onSave={onSave} onNavigate={setScreen} />}
-        {screen === "release" && <ReleaseScreen vault={vault} onSave={onSave} />}
+        {screen === "home"    && <HomeScreen    vault={vault} onSave={onSave} onNavigate={setScreen} />}
+        {screen === "setup"   && <SetupScreen   vault={vault} onSave={onSave} onNavigate={setScreen} />}
+        {screen === "update"  && <UpdateScreen  vault={vault} onSave={onSave} onNavigate={setScreen} />}
+        {screen === "life"    && <VaultSubNav screen={screen} setScreen={setScreen}><LifeMapScreen vault={vault} autoLockMs={autoLockMs} onAutoLockChange={onAutoLockChange} onReplaceRecoveryKey={onReplaceRecoveryKey} onSave={onSave} onNavigate={setScreen} /></VaultSubNav>}
+        {screen === "capture" && <VaultSubNav screen={screen} setScreen={setScreen}><CaptureScreen vault={vault} onSave={onSave} onNavigate={setScreen} /></VaultSubNav>}
+        {screen === "release" && <VaultSubNav screen={screen} setScreen={setScreen}><ReleaseScreen vault={vault} onSave={onSave} /></VaultSubNav>}
 
-        <footer className="mt-8 flex flex-wrap items-center justify-between gap-4 border-t border-black/10 py-6 text-xs font-medium text-[#86868b]">
+        <footer className="mt-12 flex flex-wrap items-center justify-between gap-4 border-t border-black/8 py-6 text-xs font-medium text-[#a1a1a6]">
           <span>Local encrypted prototype. No cloud sync, nominee release service, or phrase recovery is active yet.</span>
           <button onClick={onReset} className="text-[#b42318]">Delete local vault</button>
         </footer>
       </div>
     </main>
+  );
+}
+
+function VaultSubNav({ screen, setScreen, children }) {
+  return (
+    <div>
+      <div className="mb-6 flex justify-center">
+        <div className="inline-flex items-center gap-1 rounded-full border border-black/8 bg-white p-1 shadow-[0_2px_10px_rgba(0,0,0,0.03)]">
+          {[
+            ["life", "Life Map"],
+            ["capture", "Capture"],
+            ["release", "Release"]
+          ].map(([id, label]) => (
+            <button key={id} onClick={() => setScreen(id)} className={cx("rounded-full px-4 py-1.5 text-xs font-semibold transition", screen === id ? "bg-[#1d1d1f] text-white" : "text-[#6e6e73] hover:text-[#1d1d1f]")}>{label}</button>
+          ))}
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// =====================================================================
+// HOME — Net worth / monthly balance sheet
+// =====================================================================
+
+function HomeScreen({ vault, onSave, onNavigate }) {
+  const bs = vault.balanceSheet ?? createEmptyBalanceSheet();
+  const hasAccounts = bs.accounts.length > 0;
+  const currentKey = monthKey();
+  const currentSnap = snapshotForMonth(bs.snapshots, currentKey);
+  const series = useMemo(() => buildMonthlySeries(bs, 12), [bs]);
+
+  if (!hasAccounts) {
+    return <EmptyHome onStartSetup={() => onNavigate("setup")} onEnterVault={() => onNavigate("life")} vault={vault} />;
+  }
+
+  const last = series[series.length - 1];
+  const prev = [...series].slice(0, -1).reverse().find((s) => !s.empty);
+  const delta = prev ? last.net - prev.net : 0;
+  const pct = prev && prev.net !== 0 ? (delta / Math.abs(prev.net)) * 100 : 0;
+  const needsUpdate = !currentSnap;
+
+  return (
+    <section className="mx-auto max-w-2xl">
+      <div className="text-center">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">{monthLabel(currentKey)}</p>
+        <h1 className="mt-3 text-[64px] font-semibold leading-none tracking-tight text-[#1d1d1f] md:text-[80px]">
+          {formatINR(last.net)}
+        </h1>
+        <p className="mt-3 text-sm text-[#86868b]">Net worth</p>
+
+        <div className="mt-10">
+          <Sparkline series={series} />
+        </div>
+
+        {prev && (
+          <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-black/5 bg-white px-3.5 py-1.5 text-xs">
+            <span className={cx("font-semibold", delta >= 0 ? "text-[#0b6b3a]" : "text-[#b42318]")}>
+              {delta >= 0 ? "▲" : "▼"} {formatINR(Math.abs(delta))}
+            </span>
+            <span className="text-[#86868b]">{prev.month === series[series.length - 2]?.month ? "this month" : `since ${shortMonthLabel(prev.month)}`}</span>
+            {Number.isFinite(pct) && pct !== 0 && (
+              <span className="text-[#86868b]">· {pct >= 0 ? "+" : ""}{pct.toFixed(1)}%</span>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-14 space-y-3">
+        <BreakdownRow label="Assets"      value={last.assets}      tone="default" />
+        <BreakdownRow label="Liabilities" value={-last.liabilities} tone="muted" />
+      </div>
+
+      <div className="mt-14 flex flex-col items-center gap-4">
+        {needsUpdate ? (
+          <button
+            onClick={() => onNavigate("update")}
+            className="rounded-full bg-[#1d1d1f] px-7 py-3.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition hover:bg-black"
+          >
+            Update {monthLabel(currentKey).split(" ")[0]} numbers
+          </button>
+        ) : (
+          <button
+            onClick={() => onNavigate("update")}
+            className="rounded-full border border-black/8 bg-white px-6 py-2.5 text-xs font-semibold text-[#6e6e73] transition hover:text-[#1d1d1f]"
+          >
+            Revise {shortMonthLabel(currentKey)} numbers
+          </button>
+        )}
+        {needsUpdate && (
+          <p className="max-w-sm text-center text-xs text-[#a1a1a6]">
+            Five minutes once a month. Your sparkline keeps moving.
+          </p>
+        )}
+      </div>
+
+      <div className="mt-16">
+        <CategoryBreakdown bs={bs} values={last === series[series.length - 1] && currentSnap ? currentSnap.values : (prev ? snapshotForMonth(bs.snapshots, prev.month)?.values : null) ?? {}} />
+      </div>
+
+      <div className="mt-16 border-t border-black/8 pt-6 text-center">
+        <button
+          onClick={() => onNavigate("life")}
+          className="text-xs text-[#86868b] transition hover:text-[#1d1d1f]"
+        >
+          Life Map · {vault.items.length} {vault.items.length === 1 ? "dossier" : "dossiers"} · sealed locally  →
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function EmptyHome({ onStartSetup, onEnterVault, vault }) {
+  return (
+    <section className="mx-auto max-w-xl py-12 text-center">
+      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Welcome</p>
+      <h1 className="mt-4 text-[44px] font-semibold leading-[1.05] tracking-tight md:text-[56px]">
+        Your wealth, in one&nbsp;number.
+      </h1>
+      <p className="mx-auto mt-5 max-w-md text-[15px] leading-7 text-[#6e6e73]">
+        Add your accounts once. Update them in five minutes each month.
+        Watch the line move.
+      </p>
+      <button
+        onClick={onStartSetup}
+        className="mt-10 rounded-full bg-[#1d1d1f] px-7 py-3.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition hover:bg-black"
+      >
+        Set up balance sheet
+      </button>
+      <div className="mt-12 border-t border-black/8 pt-6">
+        <button onClick={onEnterVault} className="text-xs text-[#86868b] transition hover:text-[#1d1d1f]">
+          or open the vault directly · {vault.items.length} {vault.items.length === 1 ? "dossier" : "dossiers"}  →
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function BreakdownRow({ label, value, tone }) {
+  return (
+    <div className={cx("flex items-baseline justify-between border-b border-black/6 pb-3", tone === "muted" && "text-[#6e6e73]")}>
+      <span className="text-[13px] font-medium uppercase tracking-[0.12em] text-[#86868b]">{label}</span>
+      <span className="text-[22px] font-semibold tracking-tight tabular-nums text-[#1d1d1f]">{formatINR(value)}</span>
+    </div>
+  );
+}
+
+function CategoryBreakdown({ bs, values }) {
+  const grouped = useMemo(() => {
+    const map = new Map();
+    for (const cat of BALANCE_SHEET_CATEGORIES) map.set(cat.id, { cat, total: 0, count: 0 });
+    for (const acc of bs.accounts) {
+      const v = Number(values?.[acc.id] ?? 0) || 0;
+      const slot = map.get(acc.category);
+      if (slot) { slot.total += v; slot.count += 1; }
+    }
+    return [...map.values()].filter((g) => g.count > 0);
+  }, [bs, values]);
+
+  if (grouped.length === 0) return null;
+
+  return (
+    <div>
+      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Breakdown</p>
+      <div className="mt-4 space-y-1.5">
+        {grouped.map((g) => (
+          <div key={g.cat.id} className="flex items-center justify-between rounded-2xl px-4 py-3 transition hover:bg-white">
+            <div className="flex items-center gap-3">
+              <span className={cx("h-1.5 w-1.5 rounded-full", g.cat.kind === "liability" ? "bg-[#b42318]" : "bg-[#1d1d1f]")} />
+              <span className="text-[14px] font-medium text-[#1d1d1f]">{g.cat.label}</span>
+              <span className="text-[12px] text-[#a1a1a6]">{g.count}</span>
+            </div>
+            <span className={cx("text-[14px] font-semibold tabular-nums", g.cat.kind === "liability" ? "text-[#b42318]" : "text-[#1d1d1f]")}>
+              {g.cat.kind === "liability" ? "−" : ""}{formatINR(g.total).replace("−", "")}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Sparkline({ series }) {
+  const nonEmpty = series.filter((s) => !s.empty);
+  if (nonEmpty.length < 2) {
+    return <div className="h-16 text-xs text-[#a1a1a6]">A line will appear here after your second monthly update.</div>;
+  }
+  const values = series.map((s) => s.net);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const W = 520, H = 64, P = 6;
+  const stepX = (W - P * 2) / (series.length - 1);
+  const points = series.map((s, i) => {
+    const x = P + i * stepX;
+    const y = P + (H - P * 2) * (1 - (s.net - min) / range);
+    return { x, y, ...s };
+  });
+  const realPath = points
+    .map((p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`))
+    .join(" ");
+  const lastX = points[points.length - 1].x;
+  const lastY = points[points.length - 1].y;
+  const areaPath = `${realPath} L ${lastX} ${H - P} L ${P} ${H - P} Z`;
+
+  return (
+    <div className="mx-auto w-full max-w-xl">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="spark-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#1d1d1f" stopOpacity="0.10" />
+            <stop offset="100%" stopColor="#1d1d1f" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={areaPath} fill="url(#spark-fill)" />
+        <path d={realPath} stroke="#1d1d1f" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        {points.map((p, i) => (
+          <circle key={i}
+            cx={p.x} cy={p.y}
+            r={i === points.length - 1 ? 3 : (p.carried ? 1.2 : 1.8)}
+            fill={i === points.length - 1 ? "#1d1d1f" : (p.carried ? "#c7c7cc" : "#1d1d1f")}
+          />
+        ))}
+      </svg>
+      <div className="mt-2 flex justify-between px-1 text-[10px] uppercase tracking-wider text-[#c7c7cc]">
+        <span>{shortMonthLabel(series[0].month)}</span>
+        <span>{shortMonthLabel(series[Math.floor(series.length / 2)].month)}</span>
+        <span>{shortMonthLabel(series[series.length - 1].month)}</span>
+      </div>
+    </div>
+  );
+}
+
+// =====================================================================
+// SETUP — first-time account configuration
+// =====================================================================
+
+function SetupScreen({ vault, onSave, onNavigate }) {
+  const existing = vault.balanceSheet?.accounts ?? [];
+  const [accounts, setAccounts] = useState(existing.length > 0 ? existing : []);
+  const [openCategory, setOpenCategory] = useState(null);
+  const [draftName, setDraftName] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  function addAccount(category) {
+    if (!draftName.trim()) return;
+    const cat = categoryById(category);
+    if (!cat) return;
+    setAccounts((prev) => [...prev, {
+      id: `acc_${crypto.randomUUID().slice(0, 8)}`,
+      category,
+      kind: cat.kind,
+      name: draftName.trim(),
+      createdAt: new Date().toISOString()
+    }]);
+    setDraftName("");
+  }
+
+  function removeAccount(id) {
+    setAccounts((prev) => prev.filter((a) => a.id !== id));
+  }
+
+  async function finish() {
+    if (accounts.length === 0) return;
+    setBusy(true);
+    const bs = vault.balanceSheet ?? createEmptyBalanceSheet();
+    const nextVault = {
+      ...vault,
+      balanceSheet: { ...bs, accounts }
+    };
+    await onSave(nextVault, "balance_sheet_setup");
+    setBusy(false);
+    if (accounts.some((a) => !bs.snapshots?.[0]?.values?.[a.id])) {
+      onNavigate("update");
+    } else {
+      onNavigate("home");
+    }
+  }
+
+  const byCat = new Map();
+  for (const cat of BALANCE_SHEET_CATEGORIES) byCat.set(cat.id, []);
+  for (const acc of accounts) byCat.get(acc.category)?.push(acc);
+
+  return (
+    <section className="mx-auto max-w-xl">
+      <div className="text-center">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Set up balance sheet</p>
+        <h1 className="mt-4 text-[36px] font-semibold leading-[1.1] tracking-tight md:text-[44px]">List what you own and what you owe.</h1>
+        <p className="mx-auto mt-4 max-w-md text-[14px] leading-6 text-[#6e6e73]">
+          Add an account name under each category. Values come next.
+        </p>
+      </div>
+
+      <div className="mt-12 space-y-2">
+        {BALANCE_SHEET_CATEGORIES.map((cat) => {
+          const list = byCat.get(cat.id) ?? [];
+          const open = openCategory === cat.id;
+          return (
+            <div key={cat.id} className="rounded-2xl border border-black/6 bg-white">
+              <button
+                onClick={() => { setOpenCategory(open ? null : cat.id); setDraftName(""); }}
+                className="flex w-full items-center justify-between px-5 py-4 text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <span className={cx("h-1.5 w-1.5 rounded-full", cat.kind === "liability" ? "bg-[#b42318]" : "bg-[#1d1d1f]")} />
+                  <div>
+                    <div className="text-[14px] font-semibold text-[#1d1d1f]">{cat.label}</div>
+                    <div className="text-[11px] text-[#a1a1a6]">{cat.hint}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  {list.length > 0 && <span className="text-[12px] font-semibold text-[#1d1d1f]">{list.length}</span>}
+                  <span className={cx("text-[#c7c7cc] transition", open && "rotate-90")}>›</span>
+                </div>
+              </button>
+              {open && (
+                <div className="border-t border-black/6 px-5 py-4">
+                  {list.length > 0 && (
+                    <div className="mb-3 space-y-1.5">
+                      {list.map((acc) => (
+                        <div key={acc.id} className="flex items-center justify-between rounded-lg bg-[#fbfbfd] px-3 py-2 text-[13px]">
+                          <span>{acc.name}</span>
+                          <button onClick={() => removeAccount(acc.id)} className="text-[11px] text-[#a1a1a6] hover:text-[#b42318]">remove</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <input
+                      autoFocus
+                      value={draftName}
+                      onChange={(e) => setDraftName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addAccount(cat.id); } }}
+                      placeholder={cat.id === "cash" ? "HDFC savings" : cat.id === "investments" ? "Equity mutual funds" : "Account name"}
+                      className="flex-1 rounded-lg border border-black/8 bg-white px-3 py-2 text-[13px] outline-none focus:border-[#1d1d1f]"
+                    />
+                    <button onClick={() => addAccount(cat.id)} className="rounded-lg bg-[#1d1d1f] px-4 text-[12px] font-semibold text-white">Add</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-12 flex flex-col items-center gap-3">
+        <button
+          onClick={finish}
+          disabled={accounts.length === 0 || busy}
+          className="rounded-full bg-[#1d1d1f] px-8 py-3.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          {accounts.length === 0 ? "Add at least one account" : `Continue · ${accounts.length} ${accounts.length === 1 ? "account" : "accounts"}`}
+        </button>
+        <button onClick={() => onNavigate("home")} className="text-xs text-[#86868b] hover:text-[#1d1d1f]">Cancel</button>
+      </div>
+    </section>
+  );
+}
+
+// =====================================================================
+// UPDATE — guided monthly entry, one account per step
+// =====================================================================
+
+function UpdateScreen({ vault, onSave, onNavigate }) {
+  const bs = vault.balanceSheet ?? createEmptyBalanceSheet();
+  const accounts = bs.accounts;
+  const key = monthKey();
+  const existing = snapshotForMonth(bs.snapshots, key);
+  const sortedSnaps = [...(bs.snapshots ?? [])].sort((a, b) => b.month.localeCompare(a.month));
+  const previousSnap = existing ? sortedSnaps.find((s) => s.month < key) : sortedSnaps[0];
+
+  const [values, setValues] = useState(() => {
+    const seed = {};
+    for (const acc of accounts) {
+      const prev = existing?.values?.[acc.id] ?? previousSnap?.values?.[acc.id] ?? 0;
+      seed[acc.id] = String(prev || "");
+    }
+    return seed;
+  });
+  const [stepIndex, setStepIndex] = useState(0);
+  const [done, setDone] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  if (accounts.length === 0) {
+    return (
+      <section className="mx-auto max-w-md py-16 text-center">
+        <p className="text-sm text-[#6e6e73]">Set up your accounts first.</p>
+        <button onClick={() => onNavigate("setup")} className="mt-6 rounded-full bg-[#1d1d1f] px-6 py-3 text-sm font-semibold text-white">Set up balance sheet</button>
+      </section>
+    );
+  }
+
+  const acc = accounts[stepIndex];
+  const prevValue = previousSnap?.values?.[acc.id] ?? 0;
+  const cat = categoryById(acc.category);
+  const isLast = stepIndex === accounts.length - 1;
+  const numericValues = useMemo(() => {
+    const out = {};
+    for (const a of accounts) out[a.id] = Number(values[a.id]) || 0;
+    return out;
+  }, [values, accounts]);
+  const previewTotals = netWorthFromValues(accounts, numericValues);
+
+  function setCurrent(v) {
+    setValues((prev) => ({ ...prev, [acc.id]: v }));
+  }
+
+  function next() {
+    if (isLast) {
+      commit();
+    } else {
+      setStepIndex((i) => Math.min(accounts.length - 1, i + 1));
+    }
+  }
+
+  function back() {
+    if (stepIndex === 0) {
+      onNavigate("home");
+    } else {
+      setStepIndex((i) => Math.max(0, i - 1));
+    }
+  }
+
+  async function commit() {
+    setBusy(true);
+    const finalValues = {};
+    for (const a of accounts) finalValues[a.id] = Number(values[a.id]) || 0;
+    const otherSnaps = (bs.snapshots ?? []).filter((s) => s.month !== key);
+    const snapshot = {
+      id: existing?.id ?? crypto.randomUUID(),
+      month: key,
+      takenAt: new Date().toISOString(),
+      values: finalValues
+    };
+    const nextVault = {
+      ...vault,
+      balanceSheet: { ...bs, snapshots: [...otherSnaps, snapshot] }
+    };
+    await onSave(nextVault, "balance_sheet_updated");
+    setBusy(false);
+    setDone(true);
+  }
+
+  if (done) {
+    const series = buildMonthlySeries({ ...bs, snapshots: (bs.snapshots ?? []).filter((s) => s.month !== key).concat([{ id: "preview", month: key, takenAt: new Date().toISOString(), values: numericValues }]) }, 12);
+    const last = series[series.length - 1];
+    const prev = [...series].slice(0, -1).reverse().find((s) => !s.empty);
+    const delta = prev ? last.net - prev.net : 0;
+    return (
+      <section className="mx-auto max-w-xl py-12 text-center">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">{monthLabel(key)} · saved</p>
+        <h1 className="mt-4 text-[44px] font-semibold leading-none tracking-tight md:text-[56px]">
+          {delta >= 0 ? "+" : "−"}{formatINR(Math.abs(delta))}
+        </h1>
+        <p className="mt-3 text-sm text-[#86868b]">{delta >= 0 ? "Net worth up this month" : "Net worth down this month"}</p>
+        <div className="mt-10"><Sparkline series={series} /></div>
+        <p className="mt-8 text-[15px] tracking-tight text-[#1d1d1f]">New net worth · <span className="font-semibold">{formatINR(last.net)}</span></p>
+        <button onClick={() => onNavigate("home")} className="mt-10 rounded-full bg-[#1d1d1f] px-7 py-3 text-sm font-semibold text-white">Done</button>
+      </section>
+    );
+  }
+
+  return (
+    <section className="mx-auto max-w-md py-6">
+      <div className="mb-10 flex items-center justify-between">
+        <button onClick={back} className="text-xs text-[#86868b] hover:text-[#1d1d1f]">‹ {stepIndex === 0 ? "Home" : "Back"}</button>
+        <span className="text-[11px] uppercase tracking-[0.18em] text-[#86868b]">{stepIndex + 1} / {accounts.length}</span>
+        <button onClick={() => onNavigate("home")} className="text-xs text-[#86868b] hover:text-[#1d1d1f]">Cancel</button>
+      </div>
+
+      <div className="h-0.5 w-full overflow-hidden rounded-full bg-[#f2f2f5]">
+        <div className="h-full bg-[#1d1d1f] transition-all duration-300" style={{ width: `${((stepIndex + 1) / accounts.length) * 100}%` }} />
+      </div>
+
+      <div className="mt-14 text-center">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">{cat?.label ?? ""}</p>
+        <h2 className="mt-3 text-[32px] font-semibold leading-tight tracking-tight">{acc.name}</h2>
+        <p className="mt-3 text-[13px] text-[#a1a1a6]">
+          {prevValue > 0 ? `Last month · ${formatINR(prevValue)}` : "First entry"}
+        </p>
+
+        <div className="mt-12">
+          <div className="flex items-baseline justify-center gap-1">
+            <span className="text-[36px] font-semibold text-[#c7c7cc]">₹</span>
+            <input
+              autoFocus
+              type="text"
+              inputMode="numeric"
+              value={values[acc.id]}
+              onChange={(e) => setCurrent(e.target.value.replace(/[^0-9]/g, ""))}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); next(); } }}
+              placeholder="0"
+              className="w-full max-w-xs bg-transparent text-center text-[56px] font-semibold leading-none tracking-tight tabular-nums text-[#1d1d1f] outline-none placeholder:text-[#e5e5ea]"
+            />
+          </div>
+          {prevValue > 0 && Number(values[acc.id]) > 0 && (
+            <p className="mt-4 text-[12px] text-[#86868b]">
+              {(() => {
+                const d = Number(values[acc.id]) - prevValue;
+                if (d === 0) return "No change";
+                return `${d > 0 ? "▲" : "▼"} ${formatINR(Math.abs(d))} vs last month`;
+              })()}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-16 flex flex-col items-center gap-3">
+        <button
+          onClick={next}
+          disabled={busy}
+          className="rounded-full bg-[#1d1d1f] px-10 py-3.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition hover:bg-black disabled:opacity-50"
+        >
+          {isLast ? (busy ? "Saving…" : "Save month") : "Next"}
+        </button>
+        <button
+          onClick={() => { setCurrent(String(prevValue)); next(); }}
+          className="text-xs text-[#86868b] hover:text-[#1d1d1f]"
+        >
+          Same as last month
+        </button>
+      </div>
+
+      <div className="mt-16 border-t border-black/8 pt-5 text-center">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-[#86868b]">Running total</p>
+        <p className="mt-2 text-[20px] font-semibold tabular-nums tracking-tight">{formatINR(previewTotals.net)}</p>
+      </div>
+    </section>
   );
 }
 
@@ -1156,88 +1833,105 @@ function BackupSizeNotice({ warning }) {
 
 function LifeMapScreen({ vault, autoLockMs, onAutoLockChange, onReplaceRecoveryKey, onSave, onNavigate }) {
   const model = useMemo(() => getLifeModel(vault), [vault]);
-  const [selectedAreaId, setSelectedAreaId] = useState("identity");
+  const [selectedAreaId, setSelectedAreaId] = useState(null);
+  const [securityOpen, setSecurityOpen] = useState(false);
   const workspaceRef = useRef(null);
-  const selectedArea = model.areas.find((area) => area.id === selectedAreaId) ?? model.areas[0];
+  const selectedArea = selectedAreaId ? model.areas.find((area) => area.id === selectedAreaId) : null;
 
   function selectArea(id) {
-    setSelectedAreaId(id);
-    if (window.innerWidth < 1280) {
+    const next = selectedAreaId === id ? null : id;
+    setSelectedAreaId(next);
+    if (next) {
       window.setTimeout(() => workspaceRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }), 80);
     }
   }
 
   return (
-    <section className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
-      <div className="rounded-[2.25rem] border border-black/10 bg-white p-6 shadow-[0_24px_90px_rgba(0,0,0,0.06)] lg:p-8">
-        <div className="max-w-2xl">
-          <p className="text-sm font-semibold uppercase text-[#0071e3]">Life Map</p>
-          <h1 className="mt-4 text-4xl font-semibold leading-[1.04] md:text-6xl">Select an area. Work inside the dossier.</h1>
-          <p className="mt-5 text-base leading-7 text-[#6e6e73]">
-            The map stays visible. The workspace shows the records, proof, release state, and actions behind each part of your life.
-          </p>
+    <section className="mx-auto max-w-5xl">
+      <div className="text-center">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Life Map</p>
+        <h1 className="mt-3 text-[36px] font-semibold leading-[1.1] tracking-tight text-[#1d1d1f] md:text-[44px]">
+          {model.protectedCount} of {model.areas.length} areas protected
+        </h1>
+        <div className="mt-4 inline-flex items-center gap-4 text-[12px] text-[#86868b]">
+          <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-[#34c759]" />{model.protectedCount} protected</span>
+          {model.reviewCount > 0 && <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-[#c88719]" />{model.reviewCount} review</span>}
+          {model.exposedCount > 0 && <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-[#d70015]" />{model.exposedCount} exposed</span>}
         </div>
-
-        <div className="mt-8 grid gap-3 md:grid-cols-2">
-          {model.areas.map((area, index) => (
-            <LifeMapCategoryCard
-              key={area.id}
-              area={area}
-              index={index}
-              selected={area.id === selectedAreaId}
-              onClick={() => selectArea(area.id)}
-            />
-          ))}
-        </div>
-
-        <div className="mt-6 grid gap-3 sm:grid-cols-3">
-          <Signal label="Protected" value={model.protectedCount} tone="green" />
-          <Signal label="Needs review" value={model.reviewCount} tone="amber" />
-          <Signal label="Exposed" value={model.exposedCount} tone="red" />
-        </div>
-
-        <SecurityPanel autoLockMs={autoLockMs} onAutoLockChange={onAutoLockChange} onReplaceRecoveryKey={onReplaceRecoveryKey} />
-        <AuditTrail vault={vault} />
       </div>
 
-      <div ref={workspaceRef} className="scroll-mt-32">
-        <CategoryWorkspace
-          vault={vault}
-          area={selectedArea}
-          onSave={onSave}
-          onCapture={() => onNavigate("capture")}
-        />
+      <div className="mt-12 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+        {model.areas.map((area, index) => (
+          <LifeMapCategoryCard
+            key={area.id}
+            area={area}
+            index={index}
+            selected={area.id === selectedAreaId}
+            onClick={() => selectArea(area.id)}
+          />
+        ))}
+      </div>
+
+      {selectedArea && (
+        <div ref={workspaceRef} className="mt-12 scroll-mt-28">
+          <CategoryWorkspace
+            vault={vault}
+            area={selectedArea}
+            onSave={onSave}
+            onCapture={() => onNavigate("capture")}
+            onClose={() => setSelectedAreaId(null)}
+          />
+        </div>
+      )}
+
+      <div className="mt-14 border-t border-black/8 pt-6">
+        <button
+          onClick={() => setSecurityOpen((v) => !v)}
+          className="flex w-full items-center justify-between text-left"
+        >
+          <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Security & audit</span>
+          <span className={cx("text-[#c7c7cc] transition", securityOpen && "rotate-90")}>›</span>
+        </button>
+        {securityOpen && (
+          <div className="mt-6">
+            <SecurityPanel autoLockMs={autoLockMs} onAutoLockChange={onAutoLockChange} onReplaceRecoveryKey={onReplaceRecoveryKey} />
+            <AuditTrail vault={vault} />
+          </div>
+        )}
       </div>
     </section>
   );
 }
 
 function LifeMapCategoryCard({ area, index, selected, onClick }) {
+  const dot = area.state === "protected" ? "bg-[#34c759]" : area.state === "review" ? "bg-[#c88719]" : "bg-[#d70015]";
   return (
     <button
       onClick={onClick}
       className={cx(
-        "group min-h-40 rounded-[1.75rem] border p-5 text-left transition duration-300",
+        "group rounded-2xl border bg-white p-5 text-left transition",
         selected
-          ? "border-[#0071e3]/30 bg-[#0071e3]/6 shadow-[0_18px_60px_rgba(0,113,227,0.10)]"
-          : "border-black/10 bg-[#fbfbfd] hover:-translate-y-1 hover:bg-white hover:shadow-[0_18px_60px_rgba(0,0,0,0.08)]"
+          ? "border-[#1d1d1f] shadow-[0_12px_40px_rgba(0,0,0,0.08)]"
+          : "border-black/6 hover:border-black/12 hover:shadow-[0_8px_24px_rgba(0,0,0,0.04)]"
       )}
     >
-      <div className="flex items-start justify-between">
-        <span className={cx("h-3 w-3 rounded-full", area.state === "protected" && "bg-[#34c759]", area.state === "review" && "bg-[#c88719]", area.state === "exposed" && "bg-[#d70015]")} />
-        <span className="text-xs font-semibold text-[#86868b]">{String(index + 1).padStart(2, "0")}</span>
+      <div className="flex items-center justify-between">
+        <span className={cx("h-2 w-2 rounded-full", dot)} />
+        <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-[#c7c7cc]">{String(index + 1).padStart(2, "0")}</span>
       </div>
-      <h3 className="mt-8 text-2xl font-semibold">{area.label}</h3>
-      <p className="mt-2 text-sm leading-5 text-[#6e6e73]">{area.promise}</p>
-      <div className="mt-5 flex items-center justify-between gap-3">
-        <p className="text-sm font-semibold text-[#1d1d1f]">{area.state === "protected" ? "Protected" : area.state === "review" ? "Needs review" : "Not yet protected"}</p>
-        <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#6e6e73] shadow-sm">{area.count} record{area.count === 1 ? "" : "s"}</span>
+      <h3 className="mt-8 text-[20px] font-semibold tracking-tight text-[#1d1d1f]">{area.label}</h3>
+      <p className="mt-1.5 line-clamp-2 text-[13px] leading-5 text-[#86868b]">{area.promise}</p>
+      <div className="mt-6 flex items-center justify-between text-[12px]">
+        <span className="text-[#a1a1a6]">{area.count} {area.count === 1 ? "record" : "records"}</span>
+        <span className={cx("font-medium", area.state === "protected" ? "text-[#0b6b3a]" : area.state === "review" ? "text-[#7a4b00]" : "text-[#b42318]")}>
+          {area.state === "protected" ? "Protected" : area.state === "review" ? "Review" : "Not protected"}
+        </span>
       </div>
     </button>
   );
 }
 
-function CategoryWorkspace({ vault, area, onSave, onCapture }) {
+function CategoryWorkspace({ vault, area, onSave, onCapture, onClose }) {
   const [mode, setMode] = useState("overview");
   const [selectedId, setSelectedId] = useState(null);
   const [editingRecord, setEditingRecord] = useState(null);
@@ -1329,17 +2023,16 @@ function CategoryWorkspace({ vault, area, onSave, onCapture }) {
   }
 
   return (
-    <aside className="min-h-[760px] rounded-[2.25rem] bg-[#111113] p-5 text-white shadow-[0_24px_90px_rgba(0,0,0,0.16)] lg:p-7">
-      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 pb-5">
-        <div>
-          <p className="text-sm font-semibold uppercase text-[#8fd5a6]">Secure workspace</p>
-          <h2 className="mt-2 text-4xl font-semibold">{area.label}</h2>
-          <p className="mt-2 max-w-md text-sm leading-6 text-white/42">Records are decrypted only after unlock. Release visibility here is a rule label, not a live nominee service.</p>
+    <aside className="rounded-3xl bg-[#111113] p-6 text-white lg:p-8">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 pb-5">
+        <div className="flex items-baseline gap-3">
+          <h2 className="text-[26px] font-semibold tracking-tight">{area.label}</h2>
+          <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-white/40">{records.length} {records.length === 1 ? "record" : "records"}</span>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={startCreate} className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#111113] transition hover:scale-[1.02]">Add record</button>
-          <label className="cursor-pointer rounded-full border border-white/10 bg-white/8 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/12">
-            Upload file
+        <div className="flex items-center gap-2">
+          <button onClick={startCreate} className="rounded-full bg-white px-4 py-1.5 text-xs font-semibold text-[#111113] transition hover:bg-white/90">Add record</button>
+          <label className="cursor-pointer rounded-full border border-white/12 bg-white/8 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-white/12">
+            Upload
             <input className="hidden" type="file" multiple accept="image/*,.pdf,.doc,.docx,.txt,.csv,.md,application/pdf" onChange={async (event) => {
               const files = event.target.files;
               if (!files?.length) return;
@@ -1348,6 +2041,9 @@ function CategoryWorkspace({ vault, area, onSave, onCapture }) {
               event.target.value = "";
             }} />
           </label>
+          {onClose && (
+            <button onClick={onClose} className="rounded-full border border-white/12 px-3 py-1.5 text-xs font-semibold text-white/60 transition hover:text-white">Close</button>
+          )}
         </div>
       </div>
 
@@ -1940,123 +2636,125 @@ function CaptureScreen({ vault, onSave, onNavigate }) {
     if (!remainingDrafts.length) onNavigate("life");
   }
 
+  const [showManual, setShowManual] = useState(false);
+
   return (
-    <section className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-      <div className="rounded-[2.25rem] border border-black/10 bg-white p-7 shadow-[0_24px_90px_rgba(0,0,0,0.06)] lg:p-9">
-        <p className="text-sm font-semibold uppercase text-[#0071e3]">Capture</p>
-        <h1 className="mt-4 text-4xl font-semibold leading-[1.04] md:text-5xl">Drop in the mess. OS-One turns it into a dossier.</h1>
-        <p className="mt-5 text-base leading-7 text-[#6e6e73]">Paste a note, upload a screenshot, or attach proof. OS-One proposes drafts; you decide what becomes recovery data.</p>
-        <div className="mt-5">
-          <TrustNote label="What capture does now">
-            This prototype uses local OCR and heuristic extraction. It can organize obvious fields, but it does not truly understand documents yet.
-          </TrustNote>
-        </div>
-
-        <label className="mt-8 block text-sm font-semibold text-[#424245]">
-          Messy capture
-          <textarea className="mt-3 min-h-44 w-full rounded-[1.5rem] border border-black/10 bg-[#f5f5f7] p-5 text-base leading-7 outline-none transition focus:border-[#0071e3] focus:bg-white focus:ring-4 focus:ring-[#0071e3]/10" value={messyText} onChange={(event) => setMessyText(event.target.value)} />
-        </label>
-
-        <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto]">
-          <label className="rounded-[1.5rem] border border-dashed border-black/15 bg-[#fbfbfd] p-5 text-sm font-semibold text-[#424245] transition hover:border-[#0071e3]/40">
-            Upload screenshot or proof
-            <input className="hidden" type="file" accept="image/*,.txt,.csv,.md,application/pdf" onChange={handleUpload} />
-            <span className="mt-2 block text-sm font-medium text-[#86868b]">{ocrBusy ? "Reading locally..." : "Images use local OCR. Files stay attached."}</span>
-          </label>
-          <button onClick={structure} disabled={ocrBusy || !messyText.trim()} className="rounded-full bg-[#1d1d1f] px-6 py-4 text-sm font-semibold text-white transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50">Structure this</button>
-        </div>
-
-        <div className="mt-7 border-t border-black/10 pt-6">
-          <p className="text-sm font-semibold text-[#6e6e73]">Prefer guided entry?</p>
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            <input className="rounded-2xl border border-black/10 bg-[#f5f5f7] px-4 py-3 outline-none focus:border-[#0071e3] focus:bg-white" placeholder="Title" value={manual.title} onChange={(event) => setManual({ ...manual, title: event.target.value })} />
-            <select className="rounded-2xl border border-black/10 bg-[#f5f5f7] px-4 py-3 outline-none focus:border-[#0071e3] focus:bg-white" value={manual.type} onChange={(event) => setManual({ ...manual, type: event.target.value })}>
-              {TYPE_OPTIONS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-            </select>
-            <input className="rounded-2xl border border-black/10 bg-[#f5f5f7] px-4 py-3 outline-none focus:border-[#0071e3] focus:bg-white" placeholder="Login / account / policy" value={manual.username} onChange={(event) => setManual({ ...manual, username: event.target.value })} />
-            <input className="rounded-2xl border border-black/10 bg-[#f5f5f7] px-4 py-3 outline-none focus:border-[#0071e3] focus:bg-white" placeholder="Secret / PIN / key detail" value={manual.secret} onChange={(event) => setManual({ ...manual, secret: event.target.value })} />
-          </div>
-        </div>
-
-        {hasStructuredDrafts && (
-          <div className="mt-6 rounded-[1.5rem] border border-black/10 bg-[#f5f5f7] p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6e6e73]">Review queue</p>
-            <div className="mt-3 grid gap-2">
-              {drafts.map((item, index) => (
-                <button key={item.candidateId} onClick={() => setSelectedDraftIndex(index)} className={cx("rounded-[1.1rem] border p-3 text-left transition", selectedDraftIndex === index ? "border-[#0071e3]/30 bg-white shadow-sm" : "border-black/10 bg-white/60 hover:bg-white")}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <strong className="block text-sm">{item.title}</strong>
-                      <span className="mt-1 block text-xs font-semibold text-[#6e6e73]">{typeLabel(item.type)} · {item.reviewState}</span>
-                    </div>
-                    <span className="rounded-full bg-[#1d1d1f]/6 px-2.5 py-1 text-xs font-semibold text-[#6e6e73]">{confidenceLabel(item.confidence)}</span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {message && <div className="mt-5 rounded-2xl border border-[#34c759]/20 bg-[#34c759]/10 px-4 py-3 text-sm font-semibold text-[#0b6b3a]">{message}</div>}
+    <section className="mx-auto max-w-2xl">
+      <div className="text-center">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Capture</p>
+        <h1 className="mt-3 text-[36px] font-semibold leading-[1.1] tracking-tight md:text-[44px]">Drop in the mess.</h1>
+        <p className="mx-auto mt-4 max-w-md text-[14px] leading-6 text-[#6e6e73]">
+          Paste a note or upload a screenshot. We propose a draft. You decide what becomes a record.
+        </p>
       </div>
 
-      <div className="rounded-[2.25rem] bg-[#111113] p-7 text-white shadow-[0_24px_90px_rgba(0,0,0,0.16)] lg:p-9">
-        <div className="flex items-start justify-between gap-6">
-          <div>
-            <p className="text-sm font-semibold uppercase text-[#8fd5a6]">Structured draft</p>
-            <h2 className="mt-3 text-4xl font-semibold">{activeDraft.title || "Waiting for signal"}</h2>
-          </div>
-          <div className="structure-orb grid h-16 w-16 place-items-center rounded-full border border-white/10 bg-white/10 text-sm font-semibold">
-            {hasStructuredDrafts ? confidenceLabel(activeDraft.confidence) : "AI"}
-          </div>
-        </div>
+      <textarea
+        className="mt-10 min-h-44 w-full rounded-2xl border border-black/8 bg-white p-5 text-[15px] leading-7 outline-none transition focus:border-[#1d1d1f]"
+        placeholder="Paste anything — bank details, a password note, an email screenshot's text…"
+        value={messyText}
+        onChange={(event) => setMessyText(event.target.value)}
+      />
 
-        <div className="relative mt-8 overflow-hidden rounded-[1.75rem] border border-white/10 bg-white/8 p-5">
-          <div className={cx("scan-line absolute inset-y-0 w-20 bg-white/20", hasStructuredDrafts && "animate-scan")} />
-          <p className="relative text-sm leading-6 text-white/54">{messyText.slice(0, 230) || "Paste something unstructured on the left."}</p>
-        </div>
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <label className="cursor-pointer text-[12px] text-[#6e6e73] underline-offset-4 hover:text-[#1d1d1f] hover:underline">
+          <input className="hidden" type="file" accept="image/*,.txt,.csv,.md,application/pdf" onChange={handleUpload} />
+          {ocrBusy ? "Reading locally…" : "Upload screenshot or file"}
+        </label>
+        <button
+          onClick={structure}
+          disabled={ocrBusy || !messyText.trim()}
+          className="rounded-full bg-[#1d1d1f] px-6 py-2.5 text-xs font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          Structure this
+        </button>
+      </div>
 
-        <div className="mt-6 grid gap-3">
-          <DraftRow label="Type" value={TYPE_OPTIONS.find(([id]) => id === activeDraft.type)?.[1] ?? "Not selected"} />
-          <DraftRow label="Identifier" value={activeDraft.username || "Not detected"} />
-          <DraftRow label="Sensitive key" value={activeDraft.secret || "Not detected"} />
-          <DraftRow label="Emergency release" value={activeDraft.emergencyEligible ? "Eligible after confirmation" : "Owner only"} />
-        </div>
+      {message && <div className="mt-6 rounded-2xl border border-[#34c759]/20 bg-[#34c759]/8 px-4 py-3 text-[13px] font-medium text-[#0b6b3a]">{message}</div>}
 
-        {hasStructuredDrafts && (
-          <div className="mt-5 rounded-[1.25rem] border border-white/10 bg-white/8 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-white/40">Extraction status</p>
-            <p className="mt-2 text-sm leading-6 text-white/68">This is a local heuristic draft. Confirm every field before treating it as recovery data.</p>
-          </div>
-        )}
-
-        {activeDraft?.extractedFields?.length > 0 && (
-          <div className="mt-6 grid grid-cols-2 gap-3">
-            {activeDraft.extractedFields.slice(0, 8).map((field) => (
-              <div key={`${field.label}-${field.value}`} className="rounded-2xl border border-white/10 bg-white/8 p-4">
-                <span className="block text-xs font-semibold uppercase text-white/38">{field.label}</span>
-                <strong className="mt-2 block break-words text-sm font-semibold text-white/86">{field.value}</strong>
-                <span className="mt-2 block text-[11px] font-semibold text-white/34">{field.confidence} · {field.source}</span>
-              </div>
+      {hasStructuredDrafts && drafts.length > 1 && (
+        <div className="mt-8">
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Review queue · {drafts.length}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {drafts.map((item, index) => (
+              <button
+                key={item.candidateId}
+                onClick={() => setSelectedDraftIndex(index)}
+                className={cx("rounded-full border px-3 py-1.5 text-[12px] font-medium transition", selectedDraftIndex === index ? "border-[#1d1d1f] bg-[#1d1d1f] text-white" : "border-black/10 bg-white text-[#6e6e73] hover:text-[#1d1d1f]")}
+              >
+                {item.title}
+              </button>
             ))}
           </div>
-        )}
+        </div>
+      )}
 
-        {activeDraft?.warnings?.length > 0 && (
-          <div className="mt-6 rounded-[1.5rem] border border-[#ffd166]/20 bg-[#ffd166]/10 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#ffe0a3]">Review before saving</p>
-            <div className="mt-3 grid gap-2">
-              {activeDraft.warnings.map((warning) => (
-                <p key={warning} className="text-sm leading-6 text-white/72">{warning}</p>
-              ))}
+      {hasStructuredDrafts && (
+        <div className="mt-8 rounded-2xl border border-black/6 bg-white p-6">
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-[20px] font-semibold tracking-tight">{activeDraft.title || "Untitled draft"}</h2>
+            <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-[#86868b]">{confidenceLabel(activeDraft.confidence)}</span>
+          </div>
+
+          <div className="mt-6 divide-y divide-black/6">
+            <DraftRowLight label="Type" value={TYPE_OPTIONS.find(([id]) => id === activeDraft.type)?.[1] ?? "Not selected"} />
+            <DraftRowLight label="Identifier" value={activeDraft.username || "Not detected"} />
+            <DraftRowLight label="Sensitive key" value={activeDraft.secret || "Not detected"} muted={!activeDraft.secret} />
+            <DraftRowLight label="Emergency release" value={activeDraft.emergencyEligible ? "Eligible after confirmation" : "Owner only"} />
+          </div>
+
+          {activeDraft?.warnings?.length > 0 && (
+            <div className="mt-6 rounded-xl bg-[#fff8eb] px-4 py-3">
+              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[#7a4b00]">Review before saving</p>
+              <div className="mt-2 space-y-1">
+                {activeDraft.warnings.map((warning) => (
+                  <p key={warning} className="text-[13px] leading-5 text-[#7a4b00]">{warning}</p>
+                ))}
+              </div>
             </div>
+          )}
+
+          <button onClick={saveRecord} className="mt-8 w-full rounded-full bg-[#1d1d1f] px-5 py-3 text-sm font-semibold text-white transition hover:bg-black">
+            Save as protected record
+          </button>
+          <p className="mt-3 text-center text-[11px] text-[#a1a1a6]">Nothing is saved until you confirm.</p>
+        </div>
+      )}
+
+      <div className="mt-12 border-t border-black/8 pt-5">
+        <button
+          onClick={() => setShowManual((v) => !v)}
+          className="flex w-full items-center justify-between text-left"
+        >
+          <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Or enter manually</span>
+          <span className={cx("text-[#c7c7cc] transition", showManual && "rotate-90")}>›</span>
+        </button>
+        {showManual && (
+          <div className="mt-5 grid gap-3 md:grid-cols-2">
+            <input className="rounded-xl border border-black/8 bg-white px-4 py-3 text-[14px] outline-none focus:border-[#1d1d1f]" placeholder="Title" value={manual.title} onChange={(event) => setManual({ ...manual, title: event.target.value })} />
+            <select className="rounded-xl border border-black/8 bg-white px-4 py-3 text-[14px] outline-none focus:border-[#1d1d1f]" value={manual.type} onChange={(event) => setManual({ ...manual, type: event.target.value })}>
+              {TYPE_OPTIONS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+            </select>
+            <input className="rounded-xl border border-black/8 bg-white px-4 py-3 text-[14px] outline-none focus:border-[#1d1d1f]" placeholder="Login / account / policy" value={manual.username} onChange={(event) => setManual({ ...manual, username: event.target.value })} />
+            <input className="rounded-xl border border-black/8 bg-white px-4 py-3 text-[14px] outline-none focus:border-[#1d1d1f]" placeholder="Secret / PIN / key" value={manual.secret} onChange={(event) => setManual({ ...manual, secret: event.target.value })} />
+            <button
+              onClick={() => { setDrafts([{ ...manual, candidateId: crypto.randomUUID(), confidence: 1, warnings: [], extractedFields: [] }]); setSelectedDraftIndex(0); }}
+              className="md:col-span-2 mt-2 rounded-full border border-black/8 bg-white px-5 py-2.5 text-xs font-semibold text-[#1d1d1f] transition hover:bg-[#fbfbfd]"
+            >
+              Preview as draft
+            </button>
           </div>
         )}
-
-        <button onClick={saveRecord} className="mt-8 w-full rounded-full bg-white px-5 py-4 text-sm font-semibold text-[#111113] transition hover:scale-[1.01]">Save as protected record</button>
-        <p className="mt-4 text-center text-xs font-medium text-white/38">OS-One never saves AI output without confirmation.</p>
       </div>
     </section>
+  );
+}
+
+function DraftRowLight({ label, value, muted }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 py-3">
+      <span className="text-[12px] font-medium uppercase tracking-[0.14em] text-[#86868b]">{label}</span>
+      <span className={cx("max-w-[60%] break-words text-right text-[14px] font-medium", muted ? "text-[#a1a1a6]" : "text-[#1d1d1f]")}>{value}</span>
+    </div>
   );
 }
 
@@ -2103,164 +2801,178 @@ function ReleaseScreen({ vault, onSave }) {
   }
 
   return (
-    <section className="grid gap-6 lg:grid-cols-[1.06fr_0.94fr]">
-      <div className="rounded-[2.25rem] bg-[#111113] p-7 text-white shadow-[0_24px_90px_rgba(0,0,0,0.16)] lg:p-10">
-        <p className="text-sm font-semibold uppercase text-[#8fd5a6]">Emergency Release</p>
-        <h1 className="mt-4 max-w-3xl text-5xl font-semibold leading-[1.03] md:text-6xl">No one person can open your life.</h1>
-        <p className="mt-6 max-w-2xl text-lg leading-8 text-white/58">
-          Configure the rules your real release service must enforce: nominee request, three trusted keys, 14-day hold, and owner alerts.
+    <section className="mx-auto max-w-2xl">
+      <div className="text-center">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Release</p>
+        <h1 className="mt-3 text-[36px] font-semibold leading-[1.1] tracking-tight md:text-[44px]">
+          {confirmed ? "Your circle is ready." : "Set up your release circle."}
+        </h1>
+        <p className="mx-auto mt-4 max-w-md text-[14px] leading-6 text-[#6e6e73]">
+          No one person can open your life. Three of five trusted keys plus a 14-day hold are required.
         </p>
-        <div className="mt-6">
-          <TrustNote label="Prototype boundary" dark>
-            This screen stores release rules locally and simulates readiness. It does not yet send emails, verify nominees, run a 14-day timer, or open records for another person.
-          </TrustNote>
-        </div>
-
-        <div className={cx("mt-7 rounded-[1.75rem] border p-5 transition", confirmed ? "border-[#34c759]/25 bg-[#34c759]/12" : hasDuplicates ? "border-[#ff453a]/25 bg-[#ff453a]/10" : "border-white/10 bg-white/8")}>
-          <p className="text-sm font-semibold text-white/54">{confirmed ? "Circle threshold reached" : `${activeKeys.length}/${RELEASE_POLICY.requiredKeys} trusted keys selected`}</p>
-          <h2 className="mt-2 text-2xl font-semibold">{releaseStatus}</h2>
-          <p className="mt-3 text-sm leading-6 text-white/45">Real release still requires backend identity checks, key-holder participation, alert delivery, and server-enforced waiting periods.</p>
-        </div>
-
-        <ReleaseCircle settings={settings} activeKeys={activeKeys} onToggleKey={(index) => {
-          if (!settings.keyHolders[index]?.trim()) return;
-          setActiveKeys((current) => current.includes(index) ? current.filter((item) => item !== index) : [...current, index].slice(-5));
-        }} />
       </div>
 
-      <div className="rounded-[2.25rem] border border-black/10 bg-white p-7 shadow-[0_24px_90px_rgba(0,0,0,0.06)] lg:p-9">
-        <p className="text-sm font-semibold uppercase text-[#0071e3]">Release circle</p>
-        <h2 className="mt-3 text-4xl font-semibold">Choose the humans who make recovery safe.</h2>
-
-        <ReleaseStepNav step={releaseStep} onStep={setReleaseStep} />
-
-        <div className={cx("mt-6 rounded-[1.5rem] border p-4", confirmed ? "border-[#34c759]/25 bg-[#34c759]/10" : hasDuplicates ? "border-[#ff453a]/25 bg-[#ff453a]/10" : "border-black/10 bg-[#f5f5f7]")}>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6e6e73]">Readiness</p>
-          <div className="mt-3 grid grid-cols-3 gap-3">
-            <div>
-              <strong className="block text-xl">{nomineeReady ? "Yes" : "No"}</strong>
-              <span className="text-xs font-semibold text-[#6e6e73]">Nominee</span>
-            </div>
-            <div>
-              <strong className="block text-xl">{filledKeys}/5</strong>
-              <span className="text-xs font-semibold text-[#6e6e73]">People</span>
-            </div>
-            <div>
-              <strong className="block text-xl">{activeKeys.length}/3</strong>
-              <span className="text-xs font-semibold text-[#6e6e73]">Keys</span>
-            </div>
-          </div>
-          <p className="mt-3 text-sm leading-6 text-[#6e6e73]">{releaseStatus}</p>
+      <div className={cx("mt-10 rounded-2xl border p-5", confirmed ? "border-[#34c759]/25 bg-[#34c759]/8" : hasDuplicates ? "border-[#ff453a]/25 bg-[#ff453a]/6" : "border-black/8 bg-white")}>
+        <div className="grid grid-cols-3 gap-3 text-center">
+          <ReleaseStat label="Nominee" value={nomineeReady ? "Set" : "—"} ok={nomineeReady} />
+          <ReleaseStat label="Key holders" value={`${filledKeys}/5`} ok={filledKeys >= RELEASE_POLICY.requiredKeys} />
+          <ReleaseStat label="Threshold" value={`${activeKeys.length}/3`} ok={activeKeys.length >= RELEASE_POLICY.requiredKeys} />
         </div>
+        <p className={cx("mt-4 text-center text-[13px] leading-5", confirmed ? "text-[#0b6b3a]" : hasDuplicates ? "text-[#b42318]" : "text-[#6e6e73]")}>
+          {releaseStatus}
+        </p>
+      </div>
 
+      <ReleaseStepNav step={releaseStep} onStep={setReleaseStep} />
+
+      <div className="mt-8">
         {releaseStep === 1 && (
-          <ReleasePanel title="Step 1" subtitle="Choose the Main Nominee" body="This is the person who starts a recovery request. They still cannot open the vault alone.">
-            <label className="block text-sm font-semibold text-[#424245]">
-              Main Nominee
-              <input className="mt-2 w-full rounded-2xl border border-black/10 bg-[#f5f5f7] px-4 py-3 outline-none focus:border-[#0071e3] focus:bg-white" value={settings.mainNominee} onChange={(event) => {
-                setMessage("");
-                setSettings({ ...settings, mainNominee: event.target.value });
-              }} placeholder="Name or email" />
-            </label>
-          </ReleasePanel>
+          <ReleasePanelLight subtitle="Choose the Main Nominee" body="This is the person who starts a recovery request. They still cannot open the vault alone.">
+            <input
+              className="w-full rounded-xl border border-black/8 bg-white px-4 py-3 text-[14px] outline-none focus:border-[#1d1d1f]"
+              value={settings.mainNominee}
+              onChange={(event) => { setMessage(""); setSettings({ ...settings, mainNominee: event.target.value }); }}
+              placeholder="Name or email"
+            />
+          </ReleasePanelLight>
         )}
 
         {releaseStep === 2 && (
-          <ReleasePanel title="Step 2" subtitle="Add five independent key holders" body="Key holders should not all be from the same household. Recovery depends on independent humans.">
-            <div className="grid gap-3">
+          <ReleasePanelLight subtitle="Add five independent key holders" body="Not all from the same household. Recovery depends on independent humans.">
+            <div className="grid gap-2.5">
               {settings.keyHolders.map((holder, index) => (
-                <label key={index} className="block text-sm font-semibold text-[#424245]">
-                  Trusted key {index + 1}
-                  <input className={cx("mt-2 w-full rounded-2xl border bg-[#f5f5f7] px-4 py-3 outline-none focus:bg-white", duplicateIndexes.includes(index) ? "border-[#ff453a]/45 focus:border-[#ff453a]" : "border-black/10 focus:border-[#0071e3]")} value={holder} onChange={(event) => {
-                    setMessage("");
-                    const keyHolders = [...settings.keyHolders];
-                    keyHolders[index] = event.target.value;
-                    setSettings({ ...settings, keyHolders });
-                    if (!event.target.value.trim()) setActiveKeys((current) => current.filter((item) => item !== index));
-                  }} placeholder="Name or email" />
-                </label>
-              ))}
-            </div>
-          </ReleasePanel>
-        )}
-
-        {releaseStep === 3 && (
-          <ReleasePanel title="Step 3" subtitle="Owner alert and threshold rules" body="These rules are shown as product logic in this frontend. A production release requires a backend alert service.">
-            <div className="grid gap-3 sm:grid-cols-3">
-              <RuleTile label="Threshold" value="3 of 5 keys" />
-              <RuleTile label="Owner hold" value="14 days" />
-              <RuleTile label="Alerts" value="2 per day" />
-            </div>
-          </ReleasePanel>
-        )}
-
-        {releaseStep === 4 && (
-          <ReleasePanel title="Step 4" subtitle="Preview emergency access" body="This is the exact sequence a nominee should expect. It is a simulation in this prototype, not a live release service.">
-            <div className="rounded-[1.5rem] border border-black/10 bg-[#f5f5f7] p-5">
-              {["Main Nominee signs in", "3 of 5 trusted keys join", "14-day owner alert hold", "Emergency-enabled records open"].map((step, index) => (
-                <div key={step} className="flex items-center gap-4 border-b border-black/10 py-4 last:border-0">
-                  <span className="grid h-8 w-8 place-items-center rounded-full bg-white text-sm font-semibold shadow-sm">{index + 1}</span>
-                  <strong className="text-sm">{step}</strong>
+                <div key={index} className="flex items-center gap-3">
+                  <span className="w-6 text-[12px] font-medium text-[#a1a1a6]">{index + 1}</span>
+                  <input
+                    className={cx("flex-1 rounded-xl border bg-white px-4 py-2.5 text-[14px] outline-none", duplicateIndexes.includes(index) ? "border-[#ff453a]/40 focus:border-[#ff453a]" : "border-black/8 focus:border-[#1d1d1f]")}
+                    value={holder}
+                    onChange={(event) => {
+                      setMessage("");
+                      const keyHolders = [...settings.keyHolders];
+                      keyHolders[index] = event.target.value;
+                      setSettings({ ...settings, keyHolders });
+                      if (!event.target.value.trim()) setActiveKeys((current) => current.filter((item) => item !== index));
+                    }}
+                    placeholder="Name or email"
+                  />
+                  <button
+                    onClick={() => {
+                      if (!settings.keyHolders[index]?.trim()) return;
+                      setActiveKeys((current) => current.includes(index) ? current.filter((item) => item !== index) : [...current, index].slice(-5));
+                    }}
+                    disabled={!holder.trim()}
+                    className={cx("rounded-full border px-3 py-1.5 text-[11px] font-semibold transition", activeKeys.includes(index) ? "border-[#34c759]/40 bg-[#34c759]/10 text-[#0b6b3a]" : "border-black/8 bg-white text-[#86868b] hover:text-[#1d1d1f] disabled:opacity-30")}
+                  >
+                    {activeKeys.includes(index) ? "Selected" : "Select"}
+                  </button>
                 </div>
               ))}
             </div>
-          </ReleasePanel>
+          </ReleasePanelLight>
+        )}
+
+        {releaseStep === 3 && (
+          <ReleasePanelLight subtitle="Owner alert and threshold rules" body="These rules are shown as product logic. A production release requires a backend alert service.">
+            <div className="divide-y divide-black/6">
+              <RuleRow label="Threshold" value="3 of 5 keys" />
+              <RuleRow label="Owner hold" value="14 days" />
+              <RuleRow label="Owner alerts" value="2 per day" />
+            </div>
+          </ReleasePanelLight>
+        )}
+
+        {releaseStep === 4 && (
+          <ReleasePanelLight subtitle="Preview emergency access" body="The exact sequence a nominee should expect. Simulated in this prototype.">
+            <div className="space-y-0">
+              {["Main Nominee signs in", "3 of 5 trusted keys join", "14-day owner alert hold", "Emergency-enabled records open"].map((step, index) => (
+                <div key={step} className="flex items-center gap-4 border-b border-black/6 py-3.5 last:border-0">
+                  <span className="grid h-7 w-7 place-items-center rounded-full bg-[#fbfbfd] text-[12px] font-semibold text-[#6e6e73]">{index + 1}</span>
+                  <span className="text-[14px] text-[#1d1d1f]">{step}</span>
+                </div>
+              ))}
+            </div>
+          </ReleasePanelLight>
         )}
 
         {releaseStep === 5 && (
-          <ReleasePanel title="Step 5" subtitle="Readiness state" body={confirmed ? "This release circle is coherent for demo. Production still needs identity, alert delivery, and server-side enforcement." : "This release circle is not ready. Fix the readiness gaps before relying on it."}>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <RuleTile label="Nominee" value={nomineeReady ? "Ready" : "Missing"} />
-              <RuleTile label="Key holders" value={`${filledKeys}/5 added`} />
-              <RuleTile label="Threshold" value={`${activeKeys.length}/3 selected`} />
+          <ReleasePanelLight subtitle="Readiness state" body={confirmed ? "Coherent for demo. Production still needs identity, alert delivery, and server-side enforcement." : "Not ready. Fix the readiness gaps before relying on it."}>
+            <div className="divide-y divide-black/6">
+              <RuleRow label="Nominee" value={nomineeReady ? "Ready" : "Missing"} tone={nomineeReady ? "ok" : "warn"} />
+              <RuleRow label="Key holders" value={`${filledKeys}/5 added`} tone={filledKeys >= 5 ? "ok" : "warn"} />
+              <RuleRow label="Threshold" value={`${activeKeys.length}/3 selected`} tone={activeKeys.length >= 3 ? "ok" : "warn"} />
             </div>
-          </ReleasePanel>
+          </ReleasePanelLight>
         )}
+      </div>
 
-        <div className="mt-5 flex flex-wrap gap-2">
-          <button onClick={() => setReleaseStep(Math.max(1, releaseStep - 1))} className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold disabled:opacity-40" disabled={releaseStep === 1}>Back</button>
-          <button onClick={() => setReleaseStep(Math.min(5, releaseStep + 1))} className="rounded-full bg-[#1d1d1f] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40" disabled={releaseStep === 5}>Next step</button>
-        </div>
+      <div className="mt-6 flex items-center justify-between">
+        <button onClick={() => setReleaseStep(Math.max(1, releaseStep - 1))} disabled={releaseStep === 1} className="text-xs font-medium text-[#86868b] hover:text-[#1d1d1f] disabled:opacity-30">‹ Back</button>
+        <button onClick={() => setReleaseStep(Math.min(5, releaseStep + 1))} disabled={releaseStep === 5} className="text-xs font-medium text-[#1d1d1f] hover:text-black disabled:opacity-30">Next ›</button>
+      </div>
 
-        {message && <div className={cx("mt-5 rounded-2xl border px-4 py-3 text-sm font-semibold", message.includes("Duplicate") ? "border-[#ff453a]/25 bg-[#ff453a]/10 text-[#b42318]" : "border-[#34c759]/20 bg-[#34c759]/10 text-[#0b6b3a]")}>{message}</div>}
-        <button onClick={saveSettings} className="mt-6 w-full rounded-full bg-[#1d1d1f] px-5 py-4 text-sm font-semibold text-white transition hover:scale-[1.01]">Save release circle</button>
+      {message && <div className={cx("mt-6 rounded-2xl px-4 py-3 text-[13px] font-medium", message.includes("Duplicate") ? "bg-[#ff453a]/8 text-[#b42318]" : "bg-[#34c759]/8 text-[#0b6b3a]")}>{message}</div>}
+
+      <div className="mt-10 flex flex-col items-center">
+        <button onClick={saveSettings} className="rounded-full bg-[#1d1d1f] px-8 py-3.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition hover:bg-black">
+          Save release circle
+        </button>
+        <p className="mt-3 text-[11px] text-[#a1a1a6]">Saved locally. No emails are sent in this prototype.</p>
       </div>
     </section>
+  );
+}
+
+function ReleaseStat({ label, value, ok }) {
+  return (
+    <div>
+      <div className={cx("text-[26px] font-semibold tracking-tight", ok ? "text-[#1d1d1f]" : "text-[#a1a1a6]")}>{value}</div>
+      <div className="mt-0.5 text-[11px] font-medium uppercase tracking-[0.12em] text-[#86868b]">{label}</div>
+    </div>
   );
 }
 
 function ReleaseStepNav({ step, onStep }) {
   const steps = ["Nominee", "Keys", "Rules", "Preview", "Ready"];
   return (
-    <div className="mt-6 grid grid-cols-5 gap-1 rounded-full bg-[#f5f5f7] p-1">
-      {steps.map((label, index) => {
-        const id = index + 1;
-        return (
-          <button key={label} onClick={() => onStep(id)} className={cx("rounded-full px-2 py-2 text-xs font-semibold transition", step === id ? "bg-[#1d1d1f] text-white shadow-sm" : "text-[#6e6e73] hover:bg-white")}>
-            {label}
-          </button>
-        );
-      })}
+    <div className="mt-10 flex justify-center">
+      <div className="inline-flex items-center gap-1 rounded-full border border-black/8 bg-white p-1">
+        {steps.map((label, index) => {
+          const id = index + 1;
+          return (
+            <button key={label} onClick={() => onStep(id)} className={cx("rounded-full px-3 py-1.5 text-[11px] font-semibold transition", step === id ? "bg-[#1d1d1f] text-white" : "text-[#86868b] hover:text-[#1d1d1f]")}>
+              {label}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
-function ReleasePanel({ title, subtitle, body, children }) {
+function ReleasePanelLight({ subtitle, body, children }) {
   return (
-    <section className="mt-6 rounded-[1.75rem] border border-black/10 bg-white p-5 shadow-sm">
-      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#0071e3]">{title}</p>
-      <h3 className="mt-2 text-2xl font-semibold">{subtitle}</h3>
-      <p className="mt-2 text-sm leading-6 text-[#6e6e73]">{body}</p>
-      <div className="mt-5">{children}</div>
-    </section>
+    <div>
+      <h3 className="text-[20px] font-semibold tracking-tight">{subtitle}</h3>
+      <p className="mt-2 text-[13px] leading-5 text-[#6e6e73]">{body}</p>
+      <div className="mt-6">{children}</div>
+    </div>
+  );
+}
+
+function RuleRow({ label, value, tone }) {
+  return (
+    <div className="flex items-baseline justify-between py-3.5">
+      <span className="text-[12px] font-medium uppercase tracking-[0.14em] text-[#86868b]">{label}</span>
+      <span className={cx("text-[14px] font-medium", tone === "warn" ? "text-[#b42318]" : tone === "ok" ? "text-[#0b6b3a]" : "text-[#1d1d1f]")}>{value}</span>
+    </div>
   );
 }
 
 function RuleTile({ label, value }) {
   return (
-    <div className="rounded-[1.25rem] border border-black/10 bg-[#f5f5f7] p-4">
-      <span className="block text-xs font-semibold uppercase tracking-[0.12em] text-[#86868b]">{label}</span>
-      <strong className="mt-2 block text-lg">{value}</strong>
+    <div className="rounded-xl border border-black/8 bg-white p-4">
+      <span className="block text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">{label}</span>
+      <strong className="mt-2 block text-[15px] font-semibold">{value}</strong>
     </div>
   );
 }
