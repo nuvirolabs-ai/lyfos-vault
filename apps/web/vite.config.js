@@ -25,5 +25,18 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), serviceWorkerBuildIdPlugin()],
   define: {
     __BUILD_ID__: JSON.stringify(BUILD_ID)
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        // Split heavy third-party deps into their own chunks so they cache
+        // independently of the app code and don't bloat the main bundle.
+        manualChunks(id) {
+          if (id.includes("node_modules/@supabase/")) return "supabase";
+          if (id.includes("node_modules/react") || id.includes("node_modules/scheduler")) return "react";
+          if (id.includes("node_modules/tesseract.js")) return "tesseract";
+        }
+      }
+    }
   }
 });

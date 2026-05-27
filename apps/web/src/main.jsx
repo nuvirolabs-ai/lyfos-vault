@@ -46,7 +46,10 @@ import {
 import { verifyBackup } from "./lib/stage2BackupVerification.js";
 import { getBackupReminderCopy } from "./lib/stage2BackupReminders.js";
 import { prepareStage2BackupExport } from "./lib/stage2BackupManifest.js";
-import { initTelemetry, registerServiceWorker, trackEvent } from "./lib/telemetry.js";
+import { initTelemetry, registerServiceWorker } from "./lib/telemetry.js";
+import { isSupabaseConfigured } from "./lib/supabaseClient.js";
+import { getSession, onAuthStateChange, signOut, appendServerAuditEvent, ensureDeviceToken } from "./lib/auth.js";
+import { AuthScreen } from "./AuthScreen.jsx";
 import {
   canConfirmDestructiveRestore,
   createRestoreDryRun,
@@ -663,6 +666,10 @@ function App() {
   const [lockNotice, setLockNotice] = useState("");
   const [autoLockMs, setAutoLockMs] = useState(() => loadAutoLockPolicy(localStorage));
   const [backupHealth, setBackupHealth] = useState(() => loadBackupHealth(localStorage));
+  const [session, setSession] = useState(null);
+  const [sessionLoaded, setSessionLoaded] = useState(!isSupabaseConfigured());
+  const [authBypass, setAuthBypass] = useState(false);     // user chose "continue without account"
+  const [authPanelOpen, setAuthPanelOpen] = useState(false); // user clicked "Sign in" from Settings while having a local vault
   const backupSizeWarning = useMemo(() => getBackupSizeWarning({
     encryptedPayloadBytes: storedRecord ? new TextEncoder().encode(JSON.stringify(storedRecord, null, 2)).byteLength : 0,
     encryptedAttachmentBytes: 0
@@ -676,6 +683,23 @@ function App() {
   useEffect(() => {
     document.body.dataset.theme = "light";
     setStoredRecord(loadStage1Record(localStorage));
+  }, []);
+
+  // Hydrate the current Supabase session (if any) on first load, and stay
+  // in sync if it changes (token refresh, sign-in in another tab, etc.).
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    ensureDeviceToken();
+    let mounted = true;
+    getSession()
+      .then((s) => { if (mounted) { setSession(s); setSessionLoaded(true); } })
+      .catch(() => { if (mounted) { setSession(null); setSessionLoaded(true); } });
+    const unsubscribe = onAuthStateChange((next) => {
+      if (!mounted) return;
+      setSession(next);
+      setSessionLoaded(true);
+    });
+    return () => { mounted = false; unsubscribe(); };
   }, []);
 
   useEffect(() => {
@@ -769,6 +793,33 @@ function App() {
     setNotice("Local vault removed from this browser.");
   }
 
+  // Hold the screen while we hydrate the Supabase session — flicker-free
+  // so we don't briefly show AuthScreen and then yank it away.
+  if (!sessionLoaded) {
+    return <main className="min-h-screen bg-[#fbfbfd]" aria-hidden="true" />;
+  }
+
+  // Account gate. Render AuthScreen when:
+  //  (a) user explicitly opened it from Settings ("Sign in" while having
+  //      a local vault), OR
+  //  (b) Supabase configured AND no session AND no local vault AND user
+  //      hasn't chosen to bypass.
+  const showAuthGate = authPanelOpen || (isSupabaseConfigured() && !session && !storedRecord && !authBypass);
+  if (showAuthGate) {
+    return (
+      <AuthScreen
+        onSignedIn={(s) => {
+          setSession(s);
+          setAuthPanelOpen(false);
+          appendServerAuditEvent("sign_in", { method: "password" }).catch(() => {});
+        }}
+        onContinueLocalOnly={authPanelOpen
+          ? () => setAuthPanelOpen(false)
+          : () => setAuthBypass(true)}
+      />
+    );
+  }
+
   if (!vault || !vaultKey) {
     return (
       <EntryScreen
@@ -827,6 +878,13 @@ function App() {
       onLock={lockVault}
       backupHealth={backupHealth}
       backupSizeWarning={backupSizeWarning}
+      session={session}
+      onShowAuthScreen={() => setAuthPanelOpen(true)}
+      onSignOut={async () => {
+        await appendServerAuditEvent("sign_out", {}).catch(() => {});
+        await signOut();
+        setSession(null);
+      }}
       onExport={async () => {
         const exportedAt = new Date().toISOString();
         const exportPackage = prepareStage2BackupExport({
@@ -1126,7 +1184,7 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
   );
 }
 
-function VaultExperience({ vault, notice, autoLockMs, onAutoLockChange, onSave, onLock, backupHealth, backupSizeWarning, onExport, onReplaceRecoveryKey, onReset }) {
+function VaultExperience({ vault, notice, autoLockMs, onAutoLockChange, onSave, onLock, backupHealth, backupSizeWarning, onExport, onReplaceRecoveryKey, onReset, session, onShowAuthScreen, onSignOut }) {
   const [screen, setScreen] = useState("home");
   const [settingsOpen, setSettingsOpen] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -1187,6 +1245,9 @@ function VaultExperience({ vault, notice, autoLockMs, onAutoLockChange, onSave, 
             onLoadDemo={loadDemoData}
             onExport={onExport}
             onReset={onReset}
+            session={session}
+            onShowAuthScreen={onShowAuthScreen}
+            onSignOut={async () => { await onSignOut?.(); setSettingsOpen(false); }}
           />
         )}
       </div>
@@ -1194,19 +1255,54 @@ function VaultExperience({ vault, notice, autoLockMs, onAutoLockChange, onSave, 
   );
 }
 
-function SettingsDrawer({ onClose, onLoadDemo, onExport, onReset }) {
+function SettingsDrawer({ onClose, onLoadDemo, onExport, onReset, session, onShowAuthScreen, onSignOut }) {
+  const supabaseOn = isSupabaseConfigured();
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-end bg-black/30 backdrop-blur-sm md:items-stretch" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex h-full w-full max-w-sm flex-col bg-[#fbfbfd] p-6 shadow-[-8px_0_40px_rgba(0,0,0,0.08)] md:p-8"
+        className="flex h-full w-full max-w-sm flex-col overflow-y-auto bg-[#fbfbfd] p-6 shadow-[-8px_0_40px_rgba(0,0,0,0.08)] md:p-8"
       >
         <div className="flex items-center justify-between">
           <h2 className="text-[20px] font-semibold tracking-tight">Settings</h2>
           <button onClick={onClose} className="text-[12px] text-[#86868b] hover:text-[#1d1d1f]">Close</button>
         </div>
 
+        {supabaseOn && (
+          <div className="mt-8">
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Account</p>
+            {session ? (
+              <div className="mt-3 rounded-2xl border border-black/8 bg-white p-4">
+                <p className="text-[13px] font-medium text-[#1d1d1f]">{session.user?.email ?? "Signed in"}</p>
+                <p className="mt-1 text-[12px] text-[#86868b]">
+                  Cloud sync coming next — your vault will encrypt locally and upload as ciphertext only.
+                </p>
+                <button
+                  onClick={() => { onSignOut?.(); }}
+                  className="mt-4 rounded-full border border-black/8 bg-white px-4 py-1.5 text-[11px] font-semibold text-[#1d1d1f]"
+                >
+                  Sign out
+                </button>
+              </div>
+            ) : (
+              <div className="mt-3 rounded-2xl border border-[#c88719]/30 bg-[#fff8eb] p-4">
+                <p className="text-[13px] font-medium text-[#7a4b00]">Not signed in</p>
+                <p className="mt-1 text-[12px] text-[#7a4b00]/85">
+                  Without an account, your vault lives on this browser only. Clearing browser data deletes it.
+                </p>
+                <button
+                  onClick={() => { onClose(); onShowAuthScreen?.(); }}
+                  className="mt-4 rounded-full bg-[#1d1d1f] px-4 py-1.5 text-[11px] font-semibold text-white"
+                >
+                  Sign in or create account
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="mt-8 space-y-1">
+          <p className="px-3 text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Vault</p>
           <SettingsRow
             label="Backup encrypted vault"
             hint="Download an encrypted file you can restore from any device."
