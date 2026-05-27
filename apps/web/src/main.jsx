@@ -1081,41 +1081,16 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
               )}
 
               {!hasVault && (
-                <div className="mt-4 rounded-[0.95rem] border border-black/10 bg-[#ebe4d9] p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7c746a]">Recovery key</p>
-                      <p className="mt-1 text-sm text-[#645d54]">Generate and confirm the key before sealing this vault.</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const key = generateRecoveryKey();
-                        setRecoveryKey(key);
-                        setRecoveryConfirm("");
-                      }}
-                      className="rounded-[0.65rem] border border-black/10 bg-[#f8f4ec] px-4 py-2 text-sm font-semibold text-[#221d16] transition hover:bg-white"
-                    >
-                      {recoveryKey ? "Regenerate" : "Generate key"}
-                    </button>
-                  </div>
-                  {recoveryKey && (
-                    <div className="mt-4">
-                      <div className="select-all break-words rounded-[0.8rem] border border-black/8 bg-[#f8f4ec] px-4 py-3 font-mono text-xs font-semibold text-[#322c24]">
-                        {recoveryKey}
-                      </div>
-                      <label className="mt-3 block">
-                        <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-[#7c746a]">Confirm recovery key</span>
-                        <input
-                          className="w-full rounded-[0.8rem] border border-black/12 bg-white/82 px-4 py-3 text-sm text-[#221d16] outline-none transition placeholder:text-[#8f867a] focus:border-[#53614d]/45 focus:bg-white focus:ring-4 focus:ring-[#53614d]/10"
-                          value={recoveryConfirm}
-                          onChange={(event) => setRecoveryConfirm(event.target.value)}
-                          placeholder="OS1A-..."
-                        />
-                      </label>
-                    </div>
-                  )}
-                </div>
+                <RecoveryKeyPanel
+                  recoveryKey={recoveryKey}
+                  recoveryConfirm={recoveryConfirm}
+                  onGenerate={() => {
+                    const key = generateRecoveryKey();
+                    setRecoveryKey(key);
+                    setRecoveryConfirm("");
+                  }}
+                  onConfirmChange={setRecoveryConfirm}
+                />
               )}
 
               {(lockNotice || notice || error) && (
@@ -3323,6 +3298,98 @@ function BrandBar() {
         <div className="text-lg font-semibold">OS-One Vault</div>
         <div className="text-sm font-medium text-[#86868b]">Private life infrastructure</div>
       </div>
+    </div>
+  );
+}
+
+function RecoveryKeyPanel({ recoveryKey, recoveryConfirm, onGenerate, onConfirmChange }) {
+  const isBip39 = recoveryKey && /\s/.test(recoveryKey);
+  const words = isBip39 ? recoveryKey.split(/\s+/).filter(Boolean) : [];
+
+  async function copy() {
+    if (!recoveryKey) return;
+    try {
+      await navigator.clipboard.writeText(recoveryKey);
+    } catch {
+      // some browsers block clipboard outside HTTPS or focus; fail silently
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-[0.95rem] border border-black/10 bg-[#ebe4d9] p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7c746a]">Recovery phrase</p>
+          <p className="mt-1 text-sm text-[#645d54]">
+            {recoveryKey
+              ? "Write these 24 words down on paper. Lyfos cannot show this again."
+              : "A 24-word phrase you keep separately from your passphrase. The only way to open your vault if you forget the passphrase."}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onGenerate}
+          className="rounded-[0.65rem] border border-black/10 bg-[#f8f4ec] px-4 py-2 text-sm font-semibold text-[#221d16] transition hover:bg-white"
+        >
+          {recoveryKey ? "Regenerate" : "Generate phrase"}
+        </button>
+      </div>
+
+      {recoveryKey && (
+        <div className="mt-4">
+          {isBip39 ? (
+            <div className="grid grid-cols-3 gap-1.5 rounded-[0.8rem] border border-black/8 bg-[#f8f4ec] p-3 sm:grid-cols-4">
+              {words.map((word, i) => (
+                <div key={i} className="flex items-baseline gap-2 rounded-md bg-white/60 px-2 py-1.5">
+                  <span className="w-5 text-right text-[10px] font-medium tabular-nums text-[#a39d92]">{i + 1}</span>
+                  <span className="select-all text-[13px] font-medium text-[#322c24]">{word}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="select-all break-words rounded-[0.8rem] border border-black/8 bg-[#f8f4ec] px-4 py-3 font-mono text-xs font-semibold text-[#322c24]">
+              {recoveryKey}
+            </div>
+          )}
+
+          <div className="mt-2 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={copy}
+              className="text-[11px] font-medium text-[#7c746a] underline-offset-4 hover:text-[#221d16] hover:underline"
+            >
+              Copy to clipboard
+            </button>
+            <span className="text-[10px] uppercase tracking-[0.14em] text-[#a39d92]">
+              Store offline · paper, safe, or password manager
+            </span>
+          </div>
+
+          <label className="mt-4 block">
+            <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-[#7c746a]">
+              Confirm by re-typing
+            </span>
+            {isBip39 ? (
+              <textarea
+                rows={3}
+                className="w-full rounded-[0.8rem] border border-black/12 bg-white/82 px-4 py-3 text-sm leading-6 text-[#221d16] outline-none transition placeholder:text-[#8f867a] focus:border-[#53614d]/45 focus:bg-white focus:ring-4 focus:ring-[#53614d]/10"
+                value={recoveryConfirm}
+                onChange={(event) => onConfirmChange(event.target.value)}
+                placeholder="Type the 24 words separated by spaces"
+                autoComplete="off"
+                spellCheck="false"
+              />
+            ) : (
+              <input
+                className="w-full rounded-[0.8rem] border border-black/12 bg-white/82 px-4 py-3 text-sm text-[#221d16] outline-none transition placeholder:text-[#8f867a] focus:border-[#53614d]/45 focus:bg-white focus:ring-4 focus:ring-[#53614d]/10"
+                value={recoveryConfirm}
+                onChange={(event) => onConfirmChange(event.target.value)}
+                placeholder="OS1A-..."
+              />
+            )}
+          </label>
+        </div>
+      )}
     </div>
   );
 }

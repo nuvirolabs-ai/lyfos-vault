@@ -35,6 +35,8 @@ export default defineConfig({
           if (id.includes("node_modules/@supabase/")) return "supabase";
           if (id.includes("node_modules/react") || id.includes("node_modules/scheduler")) return "react";
           if (id.includes("node_modules/tesseract.js")) return "tesseract";
+          if (id.includes("node_modules/hash-wasm")) return "crypto-argon2";
+          if (id.includes("node_modules/@scure/bip39")) return "crypto-bip39";
         }
       }
     }

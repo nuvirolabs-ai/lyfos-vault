@@ -80,7 +80,7 @@ test("creates a Stage 2 backup manifest around an existing encrypted Stage 1 vau
   assert.equal(manifest.recordCount, 2);
   assert.equal(manifest.attachmentCount, 1);
   assert.equal(manifest.auditEventCount, 2);
-  assert.equal(manifest.kdfName, "PBKDF2-SHA256");
+  assert.equal(manifest.kdfName, "argon2id");
   assert.equal(manifest.encryptedAttachmentBytes, 0);
   assert.ok(manifest.encryptedPayloadBytes > 0);
   assert.equal(manifest.encryptedVaultContainer, encryptedVaultContainer);

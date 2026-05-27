@@ -101,17 +101,23 @@ test("confirmed replacement invalidates old recovery key and makes new key unloc
   assert.notEqual(confirmed.record.keyEnvelopes.recovery.wrappedKey.ciphertext, record.keyEnvelopes.recovery.wrappedKey.ciphertext);
 });
 
-test("normalized-looking but non-exact confirmation is refused", async () => {
+test("close-but-not-exact confirmation is refused", async () => {
   const oldRecoveryKey = generateRecoveryKey();
   const record = await createStage1VaultRecord({ vault, passphrase, recoveryKey: oldRecoveryKey });
   const unlocked = await decryptVaultWithPassphrase(record, passphrase);
   const started = startRecoveryKeyReplacement({ vaultKey: unlocked.vaultKey });
 
+  // BIP39 phrases are already lowercase + space-separated, so "looking
+  // normalized" isn't a mistake the user can make. The real mistake we
+  // want to catch is a dropped or substituted word.
+  const words = started.generatedRecoveryKey.split(/\s+/);
+  const mutated = words.slice(0, -1).join(" "); // drop last word
+
   const confirmed = await confirmRecoveryKeyReplacement({
     encryptedRecord: record,
     vaultKey: unlocked.vaultKey,
     newRecoveryKey: started.generatedRecoveryKey,
-    confirmation: started.generatedRecoveryKey.toLowerCase().replaceAll("-", " ")
+    confirmation: mutated
   });
 
   assert.equal(confirmed.ok, false);

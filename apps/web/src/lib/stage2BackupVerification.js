@@ -1,7 +1,6 @@
-import { normalizeRecoveryKey } from "./stage1Crypto.js";
+import { normalizeRecoveryKey, deriveWrappingKeyFromEnvelope } from "./stage1Crypto.js";
 import { getBackupFormatLabel, normalizeImportedBackup, STAGE2_BACKUP_KIND } from "./stage2BackupManifest.js";
 
-const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 export async function verifyBackup({ backupText, secret, mode = "passphrase" }) {
@@ -80,7 +79,9 @@ async function unwrapVaultKeyForVerification(record, secret, mode) {
 
   try {
     const normalizedSecret = mode === "recovery" ? normalizeRecoveryKey(secret) : secret;
-    const wrappingKey = await deriveWrappingKey(normalizedSecret, decodeBase64(envelope.kdf.salt), envelope.kdf.iterations);
+    // Shared dispatcher handles both Argon2id (new vaults) and PBKDF2 (legacy)
+    // based on envelope.kdf.name.
+    const wrappingKey = await deriveWrappingKeyFromEnvelope(envelope, normalizedSecret);
     const raw = await decryptJson(wrappingKey, envelope.wrappedKey, "wrong_secret");
     return globalThis.crypto.subtle.importKey(
       "raw",
@@ -97,29 +98,6 @@ async function unwrapVaultKeyForVerification(record, secret, mode) {
 
 async function decryptVaultPayloadForVerification(vaultKey, encryptedVault) {
   return decryptJson(vaultKey, encryptedVault, "corrupted_payload");
-}
-
-async function deriveWrappingKey(secret, salt, iterations) {
-  const baseKey = await globalThis.crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secret),
-    "PBKDF2",
-    false,
-    ["deriveKey"]
-  );
-
-  return globalThis.crypto.subtle.deriveKey(
-    {
-      name: "PBKDF2",
-      salt,
-      iterations,
-      hash: "SHA-256"
-    },
-    baseKey,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["encrypt", "decrypt"]
-  );
 }
 
 async function decryptJson(key, encrypted, failureCode) {

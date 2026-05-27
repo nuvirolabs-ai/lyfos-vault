@@ -1,6 +1,16 @@
+import { deriveArgon2idKey, ARGON2ID_NAME, ARGON2ID_DEFAULT_PARAMS } from "./argon2.js";
+import { generateRecoveryPhrase, isValidRecoveryPhrase, normalizeRecoveryPhrase } from "./recoveryPhrase.js";
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-const DEFAULT_ITERATIONS = 600000;
+
+// Legacy KDF (kept readable for backward compat with existing beta vaults).
+const PBKDF2_ITERATIONS = 600000;
+const PBKDF2_NAME = "PBKDF2-SHA256";
+
+// Default KDF for new vaults.
+const DEFAULT_KDF = ARGON2ID_NAME;
+
 const RECOVERY_GROUPS = 8;
 const RECOVERY_GROUP_SIZE = 4;
 
@@ -15,7 +25,14 @@ export function randomId() {
   return getCrypto().randomUUID();
 }
 
+// New vaults produce a BIP39 24-word phrase. Existing OS1A-XXXX-... keys
+// remain valid forever — see normalizeRecoveryKey().
 export function generateRecoveryKey() {
+  return generateRecoveryPhrase();
+}
+
+// Legacy form for explicit callers/tests that want the old layout.
+export function generateLegacyRecoveryKey() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const bytes = getCrypto().getRandomValues(new Uint8Array(RECOVERY_GROUPS * RECOVERY_GROUP_SIZE));
   const groups = [];
@@ -31,15 +48,35 @@ export function generateRecoveryKey() {
   return `OS1A-${groups.join("-")}`;
 }
 
+// Normalize either format. BIP39 phrases (any input containing spaces or
+// only a-z) get word-normalized; everything else goes through the legacy
+// path so old OS1A-XXXX keys keep unlocking.
 export function normalizeRecoveryKey(value) {
-  const cleaned = String(value ?? "")
+  const raw = String(value ?? "").trim();
+  if (looksLikeBip39(raw)) return normalizeRecoveryPhrase(raw);
+
+  const cleaned = raw
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "");
-
   const withoutPrefix = cleaned.startsWith("OS1A") ? cleaned.slice(4) : cleaned;
   const groups = withoutPrefix.match(/.{1,4}/g) ?? [];
   return `OS1A-${groups.join("-")}`;
 }
+
+function looksLikeBip39(raw) {
+  if (!raw) return false;
+  // BIP39 wordlist is pure lowercase a-z with spaces. Any digit, dash, or
+  // an "OS1A" prefix (case-insensitive) means it's a legacy OS1A-XXXX key.
+  if (/\d/.test(raw)) return false;
+  if (/[-_]/.test(raw)) return false;
+  if (/^os1a/i.test(raw.replace(/\s+/g, ""))) return false;
+  // Either has whitespace (multi-word) or is a single 3+ letter word.
+  if (/\s/.test(raw)) return true;
+  if (/^[a-zA-Z]+$/.test(raw) && raw.length >= 3) return true;
+  return false;
+}
+
+export { isValidRecoveryPhrase };
 
 export async function createStage1VaultRecord({ vault, passphrase, recoveryKey }) {
   assertUsablePassphrase(passphrase);
@@ -64,8 +101,8 @@ export async function createStage1VaultRecord({ vault, passphrase, recoveryKey }
     updatedAt: new Date().toISOString(),
     crypto: {
       vaultAlgorithm: "AES-GCM",
-      keyWrap: "PBKDF2-SHA256",
-      note: "Stage 1 beta uses WebCrypto PBKDF2. Production should move to Argon2id."
+      keyWrap: DEFAULT_KDF,
+      note: "New vaults wrap with Argon2id. Vaults created before the Argon2id migration keep using PBKDF2-SHA256 and will be auto-upgraded on next successful unlock."
     },
     plaintextNotice: {
       accountLoginDecryptsVault: false,
@@ -157,24 +194,20 @@ async function generateVaultKey() {
   );
 }
 
-async function wrapVaultKeyWithSecret({ vaultKey, secret, type }) {
+async function wrapVaultKeyWithSecret({ vaultKey, secret, type, kdf = DEFAULT_KDF }) {
   const salt = randomBytes(16);
-  const wrappingKey = await deriveWrappingKey(secret, salt, DEFAULT_ITERATIONS);
+  const wrappingKey = await deriveWrappingKey({ secret, salt, kdf });
   const rawVaultKey = await getCrypto().subtle.exportKey("raw", vaultKey);
 
   return {
     type,
-    kdf: {
-      name: "PBKDF2-SHA256",
-      salt: toBase64(salt),
-      iterations: DEFAULT_ITERATIONS
-    },
+    kdf: kdfMetadata({ kdf, salt }),
     wrappedKey: await encryptJson(wrappingKey, { vaultKey: toBase64(new Uint8Array(rawVaultKey)) })
   };
 }
 
 async function unwrapVaultKeyWithSecret(envelope, secret) {
-  const wrappingKey = await deriveWrappingKey(secret, fromBase64(envelope.kdf.salt), envelope.kdf.iterations);
+  const wrappingKey = await deriveWrappingKeyFromEnvelope(envelope, secret);
   const raw = await decryptJson(wrappingKey, envelope.wrappedKey);
 
   return getCrypto().subtle.importKey(
@@ -186,7 +219,40 @@ async function unwrapVaultKeyWithSecret(envelope, secret) {
   );
 }
 
-async function deriveWrappingKey(secret, salt, iterations) {
+function kdfMetadata({ kdf, salt }) {
+  if (kdf === ARGON2ID_NAME) {
+    return {
+      name: ARGON2ID_NAME,
+      salt: toBase64(salt),
+      params: { ...ARGON2ID_DEFAULT_PARAMS }
+    };
+  }
+  // PBKDF2 (legacy and explicit)
+  return {
+    name: PBKDF2_NAME,
+    salt: toBase64(salt),
+    iterations: PBKDF2_ITERATIONS
+  };
+}
+
+// Exposed so other modules (e.g. stage2BackupVerification) can decrypt
+// envelopes without duplicating the KDF dispatch logic.
+export async function deriveWrappingKeyFromEnvelope(envelope, secret) {
+  const name = envelope?.kdf?.name;
+  const salt = fromBase64(envelope.kdf.salt);
+  if (name === ARGON2ID_NAME) {
+    return deriveArgon2idKey(secret, salt, envelope.kdf.params ?? ARGON2ID_DEFAULT_PARAMS);
+  }
+  // Legacy PBKDF2 path (envelope.kdf.iterations is set).
+  return derivePBKDF2Key(secret, salt, envelope.kdf.iterations ?? PBKDF2_ITERATIONS);
+}
+
+async function deriveWrappingKey({ secret, salt, kdf }) {
+  if (kdf === ARGON2ID_NAME) return deriveArgon2idKey(secret, salt);
+  return derivePBKDF2Key(secret, salt, PBKDF2_ITERATIONS);
+}
+
+async function derivePBKDF2Key(secret, salt, iterations) {
   const baseKey = await getCrypto().subtle.importKey(
     "raw",
     encoder.encode(secret),

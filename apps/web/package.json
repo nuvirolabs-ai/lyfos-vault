@@ -13,8 +13,10 @@
   "dependencies": {
     "@os-one/crypto": "0.1.0",
     "@os-one/vault-model": "0.1.0",
+    "@scure/bip39": "^2.2.0",
     "@supabase/supabase-js": "^2.106.2",
     "@vitejs/plugin-react": "^5.0.4",
+    "hash-wasm": "^4.12.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "vite": "^7.1.12"
