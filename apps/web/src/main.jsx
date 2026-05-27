@@ -49,6 +49,8 @@ import { verifyBackup } from "./lib/stage2BackupVerification.js";
 import { getBackupReminderCopy } from "./lib/stage2BackupReminders.js";
 import { prepareStage2BackupExport } from "./lib/stage2BackupManifest.js";
 import { initTelemetry, registerServiceWorker } from "./lib/telemetry.js";
+import { buildSnapshotsCsv, suggestedCsvFilename } from "./lib/csvExport.js";
+import { formatCurrency, formatCompact, DEFAULT_CURRENCY } from "./lib/currency.js";
 import { isSupabaseConfigured } from "./lib/supabaseClient.js";
 import { getSession, onAuthStateChange, signOut, appendServerAuditEvent, ensureDeviceToken, getDeviceToken, deleteAccount } from "./lib/auth.js";
 import {
@@ -186,7 +188,33 @@ function createEmptyVault() {
 }
 
 function createEmptyBalanceSheet() {
-  return { accounts: [], snapshots: [] };
+  return { accounts: [], snapshots: [], goal: null };
+}
+
+/**
+ * Goal shape (single goal at a time in v1):
+ *   { id, targetNet: number, targetDate: "YYYY-MM-DD", label?: string, createdAt: ISO }
+ *
+ * Progress is computed live against the latest snapshot — the goal itself
+ * doesn't store the starting net worth (a user might add a goal mid-journey
+ * and the chart should show progress from "now", not from zero).
+ */
+function computeGoalProgress({ goal, currentNet, firstSnapshotNet }) {
+  if (!goal || !goal.targetNet) return null;
+  const start = Number.isFinite(firstSnapshotNet) ? firstSnapshotNet : currentNet;
+  const target = Number(goal.targetNet) || 0;
+  const range = target - start;
+  if (range === 0) return { pct: 100, currentNet, target, daysLeft: daysUntil(goal.targetDate) };
+  const raw = ((currentNet - start) / range) * 100;
+  const pct = Math.max(0, Math.min(100, raw));
+  return { pct, currentNet, target, daysLeft: daysUntil(goal.targetDate) };
+}
+
+function daysUntil(iso) {
+  if (!iso) return null;
+  const target = new Date(iso).getTime();
+  if (Number.isNaN(target)) return null;
+  return Math.round((target - Date.now()) / (1000 * 60 * 60 * 24));
 }
 
 export const BALANCE_SHEET_CATEGORIES = [
@@ -225,6 +253,11 @@ function shortMonthLabel(key) {
 
 function snapshotForMonth(snapshots, key) {
   return (snapshots ?? []).find((s) => s.month === key) ?? null;
+}
+
+function hasAnyHistory(vault, accountId) {
+  const snaps = vault?.balanceSheet?.snapshots ?? [];
+  return snaps.some((s) => (s.values?.[accountId] ?? 0) > 0);
 }
 
 function netWorthFromValues(accounts, values) {
@@ -268,21 +301,25 @@ function buildMonthlySeries(balanceSheet, monthsBack = 12) {
   return series;
 }
 
-function formatINR(value) {
-  const n = Number(value) || 0;
-  const abs = Math.abs(n);
-  const formatted = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(abs);
-  return `${n < 0 ? "−" : ""}₹${formatted}`;
+// Currency formatters routed through ./lib/currency.js so swapping the
+// vault's currency (or going multi-currency later) is a one-line change.
+// `formatINR` / `formatINRCompact` names kept for backward compatibility
+// with the rest of the file; they accept an optional currency code.
+function formatINR(value, code) {
+  return formatCurrencyForVault(value, code);
 }
 
-function formatINRCompact(value) {
-  const n = Number(value) || 0;
-  const abs = Math.abs(n);
-  const sign = n < 0 ? "−" : "";
-  if (abs >= 10000000) return `${sign}₹${(abs / 10000000).toFixed(abs >= 100000000 ? 0 : 2)} Cr`;
-  if (abs >= 100000) return `${sign}₹${(abs / 100000).toFixed(abs >= 10000000 ? 0 : 1)} L`;
-  if (abs >= 1000) return `${sign}₹${(abs / 1000).toFixed(0)}k`;
-  return `${sign}₹${abs}`;
+function formatINRCompact(value, code) {
+  return formatCompactForVault(value, code);
+}
+
+// Wrap the lib helpers so we can route the vault's `currency` preference
+// in once we expose UI for it. For now both read DEFAULT_CURRENCY (INR).
+function formatCurrencyForVault(value, code) {
+  return formatCurrency(value, code ?? DEFAULT_CURRENCY);
+}
+function formatCompactForVault(value, code) {
+  return formatCompact(value, code ?? DEFAULT_CURRENCY);
 }
 
 // Demo vault data is intentionally NOT bundled with the default chunk.
@@ -1308,6 +1345,8 @@ function VaultExperience({ vault, notice, autoLockMs, onAutoLockChange, onSave, 
             session={session}
             onShowAuthScreen={onShowAuthScreen}
             onSignOut={async () => { await onSignOut?.(); setSettingsOpen(false); }}
+            vault={vault}
+            onSaveVault={onSave}
           />
         )}
       </div>
@@ -1315,8 +1354,20 @@ function VaultExperience({ vault, notice, autoLockMs, onAutoLockChange, onSave, 
   );
 }
 
-function SettingsDrawer({ onClose, onLoadDemo, onExport, onReset, session, onShowAuthScreen, onSignOut }) {
+function SettingsDrawer({ onClose, onLoadDemo, onExport, onReset, session, onShowAuthScreen, onSignOut, vault, onSaveVault }) {
   const supabaseOn = isSupabaseConfigured();
+  const [editingGoal, setEditingGoal] = useState(false);
+
+  function downloadCsv() {
+    const csv = buildSnapshotsCsv(vault?.balanceSheet ?? {});
+    downloadTextFile(suggestedCsvFilename(), csv, "text/csv");
+  }
+
+  async function saveGoal(nextGoal) {
+    const bs = vault.balanceSheet ?? createEmptyBalanceSheet();
+    await onSaveVault({ ...vault, balanceSheet: { ...bs, goal: nextGoal } }, "goal_changed");
+    setEditingGoal(false);
+  }
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-end bg-black/30 backdrop-blur-sm md:items-stretch" onClick={onClose}>
       <div
@@ -1364,12 +1415,39 @@ function SettingsDrawer({ onClose, onLoadDemo, onExport, onReset, session, onSho
         {supabaseOn && session && <DeviceListSection />}
 
         <div className="mt-8 space-y-1">
+          <p className="px-3 text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Balance sheet</p>
+          {editingGoal ? (
+            <GoalEditor
+              currentGoal={vault?.balanceSheet?.goal ?? null}
+              onCancel={() => setEditingGoal(false)}
+              onSave={saveGoal}
+            />
+          ) : (
+            <SettingsRow
+              label={vault?.balanceSheet?.goal ? "Edit goal" : "Set a net-worth goal"}
+              hint={vault?.balanceSheet?.goal
+                ? `${formatINR(vault.balanceSheet.goal.targetNet)} by ${new Date(vault.balanceSheet.goal.targetDate).toLocaleDateString(undefined, { month: "short", year: "numeric" })}`
+                : "One goal at a time. Tracked on Home."}
+              actionLabel={vault?.balanceSheet?.goal ? "Edit" : "Set goal"}
+              onClick={() => setEditingGoal(true)}
+              tone={vault?.balanceSheet?.goal ? "default" : "muted"}
+            />
+          )}
+        </div>
+
+        <div className="mt-8 space-y-1">
           <p className="px-3 text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Vault</p>
           <SettingsRow
             label="Backup encrypted vault"
             hint="Download an encrypted file you can restore from any device."
             actionLabel="Backup"
             onClick={() => { onExport(); onClose(); }}
+          />
+          <SettingsRow
+            label="Export balance sheet as CSV"
+            hint="Plaintext spreadsheet of every month's account values. Don't store it where you wouldn't store the originals."
+            actionLabel="Export CSV"
+            onClick={() => { downloadCsv(); onClose(); }}
           />
           <SettingsRow
             label="Load demo data"
@@ -1663,7 +1741,7 @@ function HomeScreen({ vault, onSave, onNavigate, backupHealth, onExport }) {
         <p className="mt-3 text-sm text-[#86868b]">Net worth</p>
 
         <div className="mt-10">
-          <Sparkline series={series} />
+          <NetWorthChart bs={bs} />
         </div>
 
         {prev && (
@@ -1683,6 +1761,14 @@ function HomeScreen({ vault, onSave, onNavigate, backupHealth, onExport }) {
         <BreakdownRow label="Assets"      value={last.assets}      tone="default" />
         <BreakdownRow label="Liabilities" value={-last.liabilities} tone="muted" />
       </div>
+
+      {bs.goal && (
+        <GoalCard
+          goal={bs.goal}
+          currentNet={last.net}
+          firstSnapshotNet={series.find((s) => !s.empty)?.net ?? last.net}
+        />
+      )}
 
       <div className="mt-14 flex flex-col items-center gap-4">
         {needsUpdate ? (
@@ -1709,6 +1795,14 @@ function HomeScreen({ vault, onSave, onNavigate, backupHealth, onExport }) {
 
       <div className="mt-16">
         <CategoryBreakdown bs={bs} values={last === series[series.length - 1] && currentSnap ? currentSnap.values : (prev ? snapshotForMonth(bs.snapshots, prev.month)?.values : null) ?? {}} />
+        <div className="mt-4 text-center">
+          <button
+            onClick={() => onNavigate("setup")}
+            className="text-[12px] text-[#86868b] underline-offset-4 transition hover:text-[#1d1d1f] hover:underline"
+          >
+            Manage accounts
+          </button>
+        </div>
       </div>
 
       <div className="mt-16 border-t border-black/8 pt-6 text-center">
@@ -1785,6 +1879,132 @@ function EmptyHome({ onStartSetup, onEnterVault, vault }) {
   );
 }
 
+function GoalEditor({ currentGoal, onSave, onCancel }) {
+  const [label, setLabel] = useState(currentGoal?.label ?? "");
+  const [targetNet, setTargetNet] = useState(currentGoal?.targetNet ? String(currentGoal.targetNet) : "");
+  const [targetDate, setTargetDate] = useState(currentGoal?.targetDate ?? "");
+  const [busy, setBusy] = useState(false);
+
+  async function commit() {
+    const target = Number(targetNet);
+    if (!target || target <= 0) return;
+    setBusy(true);
+    await onSave({
+      id: currentGoal?.id ?? crypto.randomUUID(),
+      label: label.trim() || null,
+      targetNet: target,
+      targetDate: targetDate || null,
+      createdAt: currentGoal?.createdAt ?? new Date().toISOString()
+    });
+    setBusy(false);
+  }
+
+  async function clear() {
+    setBusy(true);
+    await onSave(null);
+    setBusy(false);
+  }
+
+  return (
+    <div className="rounded-2xl border border-black/8 bg-white p-4">
+      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Goal</p>
+      <input
+        autoFocus
+        value={label}
+        onChange={(e) => setLabel(e.target.value)}
+        placeholder="Optional label · e.g. House down payment"
+        className="mt-3 w-full rounded-md border border-black/10 bg-white px-2.5 py-2 text-[13px] outline-none focus:border-[#1d1d1f]"
+      />
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <label className="block">
+          <span className="block text-[10px] font-medium uppercase tracking-[0.12em] text-[#86868b]">Target net worth</span>
+          <div className="mt-1 flex items-baseline">
+            <span className="text-[13px] text-[#c7c7cc]">₹</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={targetNet}
+              onChange={(e) => setTargetNet(e.target.value.replace(/[^0-9]/g, ""))}
+              placeholder="10000000"
+              className="ml-1 w-full rounded-md border border-black/10 bg-white px-2 py-1.5 text-[13px] tabular-nums outline-none focus:border-[#1d1d1f]"
+            />
+          </div>
+        </label>
+        <label className="block">
+          <span className="block text-[10px] font-medium uppercase tracking-[0.12em] text-[#86868b]">By</span>
+          <input
+            type="date"
+            value={targetDate}
+            onChange={(e) => setTargetDate(e.target.value)}
+            className="mt-1 w-full rounded-md border border-black/10 bg-white px-2 py-1.5 text-[13px] outline-none focus:border-[#1d1d1f]"
+          />
+        </label>
+      </div>
+      <div className="mt-4 flex items-center justify-between gap-2">
+        <button onClick={onCancel} className="text-[11px] text-[#86868b] hover:text-[#1d1d1f]" disabled={busy}>Cancel</button>
+        <div className="flex items-center gap-2">
+          {currentGoal && (
+            <button onClick={clear} className="text-[11px] font-medium text-[#b42318] hover:underline" disabled={busy}>
+              Remove
+            </button>
+          )}
+          <button
+            onClick={commit}
+            disabled={busy || !targetNet || Number(targetNet) <= 0}
+            className="rounded-full bg-[#1d1d1f] px-4 py-1.5 text-[11px] font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {busy ? "Saving…" : "Save goal"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GoalCard({ goal, currentNet, firstSnapshotNet }) {
+  const progress = computeGoalProgress({ goal, currentNet, firstSnapshotNet });
+  if (!progress) return null;
+  const reached = currentNet >= progress.target;
+  const daysLeft = progress.daysLeft;
+  const dateLabel = goal.targetDate
+    ? new Date(goal.targetDate).toLocaleDateString(undefined, { month: "short", year: "numeric" })
+    : "no deadline";
+
+  return (
+    <div className="mt-10 rounded-2xl border border-black/6 bg-white p-5">
+      <div className="flex items-baseline justify-between">
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Goal</p>
+          <p className="mt-1 text-[14px] font-medium text-[#1d1d1f]">
+            {goal.label ? goal.label : `Reach ${formatINR(progress.target)}`}
+            <span className="text-[#86868b]"> · {dateLabel}</span>
+          </p>
+        </div>
+        <div className="text-right">
+          <div className="text-[22px] font-semibold tabular-nums text-[#1d1d1f]">{progress.pct.toFixed(0)}%</div>
+          {daysLeft !== null && (
+            <div className={cx("text-[11px]", daysLeft < 0 ? "text-[#b42318]" : "text-[#86868b]")}>
+              {daysLeft < 0 ? `${Math.abs(daysLeft)} d past due` : daysLeft === 0 ? "due today" : `${daysLeft} d left`}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-[#f2f2f5]">
+        <div
+          className={cx("h-full transition-all duration-500", reached ? "bg-[#0b6b3a]" : "bg-[#1d1d1f]")}
+          style={{ width: `${progress.pct}%` }}
+        />
+      </div>
+
+      <div className="mt-3 flex items-baseline justify-between text-[11px] text-[#86868b]">
+        <span>{formatINRCompact(currentNet)}</span>
+        <span>{formatINRCompact(progress.target)}</span>
+      </div>
+    </div>
+  );
+}
+
 function BreakdownRow({ label, value, tone }) {
   return (
     <div className={cx("flex items-baseline justify-between border-b border-black/6 pb-3", tone === "muted" && "text-[#6e6e73]")}>
@@ -1795,6 +2015,8 @@ function BreakdownRow({ label, value, tone }) {
 }
 
 function CategoryBreakdown({ bs, values }) {
+  const [openCategoryId, setOpenCategoryId] = useState(null);
+
   const grouped = useMemo(() => {
     const map = new Map();
     for (const cat of BALANCE_SHEET_CATEGORIES) map.set(cat.id, { cat, total: 0, count: 0 });
@@ -1806,26 +2028,301 @@ function CategoryBreakdown({ bs, values }) {
     return [...map.values()].filter((g) => g.count > 0);
   }, [bs, values]);
 
+  // Asset allocation: % of total assets per category
+  const assetTotal = useMemo(
+    () => grouped.filter((g) => g.cat.kind === "asset").reduce((s, g) => s + g.total, 0),
+    [grouped]
+  );
+
   if (grouped.length === 0) return null;
 
   return (
     <div>
       <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Breakdown</p>
       <div className="mt-4 space-y-1.5">
-        {grouped.map((g) => (
-          <div key={g.cat.id} className="flex items-center justify-between rounded-2xl px-4 py-3 transition hover:bg-white">
-            <div className="flex items-center gap-3">
-              <span className={cx("h-1.5 w-1.5 rounded-full", g.cat.kind === "liability" ? "bg-[#b42318]" : "bg-[#1d1d1f]")} />
-              <span className="text-[14px] font-medium text-[#1d1d1f]">{g.cat.label}</span>
-              <span className="text-[12px] text-[#a1a1a6]">{g.count}</span>
-            </div>
-            <span className={cx("text-[14px] font-semibold tabular-nums", g.cat.kind === "liability" ? "text-[#b42318]" : "text-[#1d1d1f]")}>
-              {g.cat.kind === "liability" ? "−" : ""}{formatINR(g.total).replace("−", "")}
-            </span>
-          </div>
+        {grouped.map((g) => {
+          const pct = g.cat.kind === "asset" && assetTotal > 0 ? (g.total / assetTotal) * 100 : null;
+          return (
+            <button
+              key={g.cat.id}
+              onClick={() => setOpenCategoryId(g.cat.id)}
+              className="group flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left transition hover:bg-white"
+            >
+              <div className="flex items-center gap-3">
+                <span className={cx("h-1.5 w-1.5 rounded-full", g.cat.kind === "liability" ? "bg-[#b42318]" : "bg-[#1d1d1f]")} />
+                <span className="text-[14px] font-medium text-[#1d1d1f]">{g.cat.label}</span>
+                <span className="text-[12px] text-[#a1a1a6]">{g.count}</span>
+                {pct !== null && <span className="text-[11px] text-[#a1a1a6]">· {pct.toFixed(0)}%</span>}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={cx("text-[14px] font-semibold tabular-nums", g.cat.kind === "liability" ? "text-[#b42318]" : "text-[#1d1d1f]")}>
+                  {g.cat.kind === "liability" ? "−" : ""}{formatINR(g.total).replace("−", "")}
+                </span>
+                <span className="text-[#c7c7cc] opacity-0 transition group-hover:opacity-100">›</span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {assetTotal > 0 && <AllocationBar grouped={grouped} assetTotal={assetTotal} />}
+
+      {openCategoryId && (
+        <CategorySheet
+          bs={bs}
+          categoryId={openCategoryId}
+          values={values}
+          onClose={() => setOpenCategoryId(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function AllocationBar({ grouped, assetTotal }) {
+  const assets = grouped.filter((g) => g.cat.kind === "asset" && g.total > 0);
+  if (assets.length < 2) return null;
+
+  // Distinct grayscale shades — one per category — for a calm visualisation.
+  // No semantic colour because the colour itself doesn't carry meaning, just
+  // separation. The numbers underneath are the actual signal.
+  const tones = ["#1d1d1f", "#3a3a3c", "#6e6e73", "#86868b", "#a1a1a6", "#c7c7cc", "#d2d2d7"];
+
+  return (
+    <div className="mt-6">
+      <div className="flex h-1.5 w-full overflow-hidden rounded-full">
+        {assets.map((g, i) => (
+          <div
+            key={g.cat.id}
+            style={{
+              width: `${(g.total / assetTotal) * 100}%`,
+              background: tones[i % tones.length]
+            }}
+            title={`${g.cat.label} · ${((g.total / assetTotal) * 100).toFixed(0)}%`}
+          />
         ))}
       </div>
+      <p className="mt-2 text-[10px] uppercase tracking-[0.14em] text-[#a1a1a6]">Asset allocation</p>
     </div>
+  );
+}
+
+function CategorySheet({ bs, categoryId, values, onClose }) {
+  const cat = categoryById(categoryId);
+  const accounts = bs.accounts.filter((a) => a.category === categoryId);
+  const snaps = useMemo(
+    () => [...(bs.snapshots ?? [])].sort((a, b) => a.month.localeCompare(b.month)),
+    [bs.snapshots]
+  );
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/30 backdrop-blur-sm md:items-center" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-[#fbfbfd] p-6 shadow-[0_-12px_40px_rgba(0,0,0,0.12)] md:rounded-3xl md:p-8"
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">{cat?.kind === "liability" ? "Liability" : "Asset"}</p>
+            <h2 className="mt-1 text-[24px] font-semibold tracking-tight">{cat?.label}</h2>
+          </div>
+          <button onClick={onClose} className="text-[12px] text-[#86868b] hover:text-[#1d1d1f]">Close</button>
+        </div>
+
+        <div className="mt-6 space-y-3">
+          {accounts.length === 0 && (
+            <p className="text-[13px] text-[#86868b]">No accounts in this category yet.</p>
+          )}
+          {accounts.map((acc) => (
+            <AccountHistoryRow key={acc.id} account={acc} snaps={snaps} values={values} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AccountHistoryRow({ account, snaps, values }) {
+  const current = Number(values?.[account.id] ?? 0) || 0;
+  const history = snaps
+    .map((s) => ({ month: s.month, value: Number(s.values?.[account.id] ?? 0) || 0 }))
+    .filter((p) => p.value > 0);
+  const first = history[0]?.value ?? 0;
+  const last = history[history.length - 1]?.value ?? current;
+  const totalDelta = first > 0 ? last - first : 0;
+
+  return (
+    <div className="rounded-2xl border border-black/6 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[15px] font-medium text-[#1d1d1f]">{account.name}</div>
+          {history.length >= 2 && (
+            <div className="mt-0.5 text-[11px] text-[#86868b]">
+              {totalDelta >= 0 ? "▲" : "▼"} {formatINR(Math.abs(totalDelta))} since {shortMonthLabel(history[0].month)}
+            </div>
+          )}
+        </div>
+        <div className="shrink-0 text-right">
+          <div className={cx("text-[17px] font-semibold tabular-nums", account.kind === "liability" ? "text-[#b42318]" : "text-[#1d1d1f]")}>
+            {account.kind === "liability" ? "−" : ""}{formatINR(current).replace("−", "")}
+          </div>
+        </div>
+      </div>
+      {history.length >= 2 && <MiniSparkline points={history.map((p) => p.value)} />}
+    </div>
+  );
+}
+
+function MiniSparkline({ points }) {
+  if (!points || points.length < 2) return null;
+  const W = 280, H = 32, P = 2;
+  const min = Math.min(...points);
+  const max = Math.max(...points);
+  const range = max - min || 1;
+  const step = (W - P * 2) / (points.length - 1);
+  const path = points
+    .map((v, i) => {
+      const x = P + i * step;
+      const y = P + (H - P * 2) * (1 - (v - min) / range);
+      return `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
+    })
+    .join(" ");
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="mt-3 w-full" preserveAspectRatio="none">
+      <path d={path} stroke="#1d1d1f" strokeWidth="1" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+const CHART_RANGES = [
+  { id: "12mo", label: "12mo", months: 12 },
+  { id: "3yr",  label: "3yr",  months: 36 },
+  { id: "all",  label: "All",  months: null }
+];
+
+function NetWorthChart({ bs }) {
+  const [rangeId, setRangeId] = useState("12mo");
+  const [hoverIdx, setHoverIdx] = useState(null);
+
+  const series = useMemo(() => {
+    if (rangeId === "all") {
+      // Find earliest real snapshot; if none, fall back to 12 months.
+      const snaps = bs?.snapshots ?? [];
+      if (snaps.length === 0) return buildMonthlySeries(bs, 12);
+      const earliest = [...snaps].sort((a, b) => a.month.localeCompare(b.month))[0].month;
+      const [y, m] = earliest.split("-").map(Number);
+      const start = new Date(y, m - 1, 1);
+      const now = new Date();
+      const months = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth()) + 1;
+      return buildMonthlySeries(bs, Math.max(2, months));
+    }
+    const range = CHART_RANGES.find((r) => r.id === rangeId) ?? CHART_RANGES[0];
+    return buildMonthlySeries(bs, range.months);
+  }, [bs, rangeId]);
+
+  const nonEmpty = series.filter((s) => !s.empty);
+  if (nonEmpty.length < 2) {
+    return <Sparkline series={series} />;
+  }
+
+  // Active point: hover if set, otherwise the latest.
+  const activeIdx = hoverIdx ?? series.length - 1;
+  const active = series[activeIdx];
+
+  return (
+    <div className="mx-auto w-full max-w-xl">
+      <ChartSvg series={series} activeIdx={activeIdx} onHover={setHoverIdx} />
+
+      <div className="mt-3 flex items-center justify-between">
+        <div className="min-h-[28px]">
+          {hoverIdx !== null && active && (
+            <div className="text-[12px] leading-tight">
+              <div className="font-semibold tabular-nums text-[#1d1d1f]">{formatINR(active.net)}</div>
+              <div className="text-[#86868b]">{monthLabel(active.month)}</div>
+            </div>
+          )}
+        </div>
+        <div className="inline-flex items-center gap-1 rounded-full border border-black/8 bg-white p-1">
+          {CHART_RANGES.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => { setRangeId(r.id); setHoverIdx(null); }}
+              className={cx("rounded-full px-3 py-1 text-[11px] font-semibold transition", rangeId === r.id ? "bg-[#1d1d1f] text-white" : "text-[#86868b] hover:text-[#1d1d1f]")}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChartSvg({ series, activeIdx, onHover }) {
+  const values = series.map((s) => s.net);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const W = 520, H = 96, P = 6;
+  const stepX = (W - P * 2) / (series.length - 1);
+  const points = series.map((s, i) => {
+    const x = P + i * stepX;
+    const y = P + (H - P * 2) * (1 - (s.net - min) / range);
+    return { x, y, ...s };
+  });
+  const path = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+  const area = `${path} L ${points[points.length - 1].x.toFixed(1)} ${H - P} L ${P} ${H - P} Z`;
+  const active = points[activeIdx];
+
+  function move(clientX, target) {
+    const rect = target.getBoundingClientRect();
+    const x = ((clientX - rect.left) / rect.width) * W;
+    // Find closest point by x
+    let best = 0;
+    let bestDist = Infinity;
+    for (let i = 0; i < points.length; i++) {
+      const d = Math.abs(points[i].x - x);
+      if (d < bestDist) { bestDist = d; best = i; }
+    }
+    onHover(best);
+  }
+
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      className="w-full touch-none"
+      preserveAspectRatio="none"
+      onMouseMove={(e) => move(e.clientX, e.currentTarget)}
+      onMouseLeave={() => onHover(null)}
+      onTouchStart={(e) => move(e.touches[0].clientX, e.currentTarget)}
+      onTouchMove={(e) => move(e.touches[0].clientX, e.currentTarget)}
+      onTouchEnd={() => onHover(null)}
+    >
+      <defs>
+        <linearGradient id="netchart-fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stopColor="#1d1d1f" stopOpacity="0.10" />
+          <stop offset="100%" stopColor="#1d1d1f" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={area} fill="url(#netchart-fill)" />
+      <path d={path} stroke="#1d1d1f" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+
+      {/* All dots — small, dim for carried-forward */}
+      {points.map((p, i) => (
+        <circle
+          key={i}
+          cx={p.x}
+          cy={p.y}
+          r={i === activeIdx ? 3.5 : 1.4}
+          fill={p.carried ? "#c7c7cc" : "#1d1d1f"}
+        />
+      ))}
+
+      {/* Vertical guide for active point */}
+      {active && (
+        <line x1={active.x} x2={active.x} y1={P} y2={H - P} stroke="#1d1d1f" strokeOpacity="0.15" strokeDasharray="2,3" />
+      )}
+    </svg>
   );
 }
 
@@ -1886,9 +2383,12 @@ function Sparkline({ series }) {
 
 function SetupScreen({ vault, onSave, onNavigate }) {
   const existing = vault.balanceSheet?.accounts ?? [];
+  const isManageMode = existing.length > 0; // first-time setup vs ongoing edit
   const [accounts, setAccounts] = useState(existing.length > 0 ? existing : []);
   const [openCategory, setOpenCategory] = useState(null);
   const [draftName, setDraftName] = useState("");
+  const [renamingId, setRenamingId] = useState(null);
+  const [renameDraft, setRenameDraft] = useState("");
   const [busy, setBusy] = useState(false);
 
   function addAccount(category) {
@@ -1906,7 +2406,30 @@ function SetupScreen({ vault, onSave, onNavigate }) {
   }
 
   function removeAccount(id) {
+    const acc = accounts.find((a) => a.id === id);
+    if (!acc) return;
+    // If snapshots reference this account, warn the user. We don't strip
+    // the historical values — they stay inside snapshots for audit — but
+    // future totals stop counting this account.
+    if (isManageMode && hasAnyHistory(vault, id)) {
+      const ok = window.confirm(`Remove "${acc.name}"? Its past values stay in your monthly history but stop counting toward future net worth.`);
+      if (!ok) return;
+    }
     setAccounts((prev) => prev.filter((a) => a.id !== id));
+  }
+
+  function startRename(id, currentName) {
+    setRenamingId(id);
+    setRenameDraft(currentName);
+  }
+
+  function commitRename(id) {
+    const name = renameDraft.trim();
+    if (name) {
+      setAccounts((prev) => prev.map((a) => a.id === id ? { ...a, name } : a));
+    }
+    setRenamingId(null);
+    setRenameDraft("");
   }
 
   async function finish() {
@@ -1919,11 +2442,20 @@ function SetupScreen({ vault, onSave, onNavigate }) {
     };
     await onSave(nextVault, "balance_sheet_setup");
     setBusy(false);
-    if (accounts.some((a) => !bs.snapshots?.[0]?.values?.[a.id])) {
-      onNavigate("update");
-    } else {
-      onNavigate("home");
+
+    if (!isManageMode) {
+      onNavigate("update"); // first-time setup → go straight to entering values
+      return;
     }
+    // Manage mode: if any newly-added accounts have no value for the current
+    // month yet, route into update; otherwise back to home.
+    const currentKey = monthKey();
+    const currentSnap = snapshotForMonth(bs.snapshots, currentKey);
+    const hasUnseen = accounts.some((a) => {
+      const isNew = !existing.find((e) => e.id === a.id);
+      return isNew && !(currentSnap?.values?.[a.id]);
+    });
+    onNavigate(hasUnseen ? "update" : "home");
   }
 
   const byCat = new Map();
@@ -1933,10 +2465,16 @@ function SetupScreen({ vault, onSave, onNavigate }) {
   return (
     <section className="mx-auto max-w-xl">
       <div className="text-center">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Set up balance sheet</p>
-        <h1 className="mt-4 text-[36px] font-semibold leading-[1.1] tracking-tight md:text-[44px]">List what you own and what you owe.</h1>
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">
+          {isManageMode ? "Manage accounts" : "Set up balance sheet"}
+        </p>
+        <h1 className="mt-4 text-[36px] font-semibold leading-[1.1] tracking-tight md:text-[44px]">
+          {isManageMode ? "Rename, add, or remove." : "List what you own and what you owe."}
+        </h1>
         <p className="mx-auto mt-4 max-w-md text-[14px] leading-6 text-[#6e6e73]">
-          Add an account name under each category. Values come next.
+          {isManageMode
+            ? "Past monthly history stays attached to each account. Removed accounts stop counting from this month forward."
+            : "Add an account name under each category. Values come next."}
         </p>
       </div>
 
@@ -1967,16 +2505,36 @@ function SetupScreen({ vault, onSave, onNavigate }) {
                   {list.length > 0 && (
                     <div className="mb-3 space-y-1.5">
                       {list.map((acc) => (
-                        <div key={acc.id} className="flex items-center justify-between rounded-lg bg-[#fbfbfd] px-3 py-2 text-[13px]">
-                          <span>{acc.name}</span>
-                          <button onClick={() => removeAccount(acc.id)} className="text-[11px] text-[#a1a1a6] hover:text-[#b42318]">remove</button>
+                        <div key={acc.id} className="flex items-center justify-between gap-2 rounded-lg bg-[#fbfbfd] px-3 py-2 text-[13px]">
+                          {renamingId === acc.id ? (
+                            <input
+                              autoFocus
+                              value={renameDraft}
+                              onChange={(e) => setRenameDraft(e.target.value)}
+                              onBlur={() => commitRename(acc.id)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") commitRename(acc.id);
+                                if (e.key === "Escape") { setRenamingId(null); setRenameDraft(""); }
+                              }}
+                              className="flex-1 rounded border border-black/10 bg-white px-2 py-1 text-[13px] outline-none focus:border-[#1d1d1f]"
+                            />
+                          ) : (
+                            <button
+                              onClick={() => startRename(acc.id, acc.name)}
+                              className="flex-1 truncate text-left hover:underline"
+                              title="Click to rename"
+                            >
+                              {acc.name}
+                            </button>
+                          )}
+                          <button onClick={() => removeAccount(acc.id)} className="shrink-0 text-[11px] text-[#a1a1a6] hover:text-[#b42318]">remove</button>
                         </div>
                       ))}
                     </div>
                   )}
                   <div className="flex gap-2">
                     <input
-                      autoFocus
+                      autoFocus={list.length === 0}
                       value={draftName}
                       onChange={(e) => setDraftName(e.target.value)}
                       onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addAccount(cat.id); } }}
@@ -1998,7 +2556,13 @@ function SetupScreen({ vault, onSave, onNavigate }) {
           disabled={accounts.length === 0 || busy}
           className="rounded-full bg-[#1d1d1f] px-8 py-3.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-30"
         >
-          {accounts.length === 0 ? "Add at least one account" : `Continue · ${accounts.length} ${accounts.length === 1 ? "account" : "accounts"}`}
+          {accounts.length === 0
+            ? "Add at least one account"
+            : busy
+              ? "Saving…"
+              : isManageMode
+                ? `Save · ${accounts.length} ${accounts.length === 1 ? "account" : "accounts"}`
+                : `Continue · ${accounts.length} ${accounts.length === 1 ? "account" : "accounts"}`}
         </button>
         <button onClick={() => onNavigate("home")} className="text-xs text-[#86868b] hover:text-[#1d1d1f]">Cancel</button>
       </div>
@@ -2029,6 +2593,9 @@ function UpdateScreen({ vault, onSave, onNavigate }) {
   const [stepIndex, setStepIndex] = useState(0);
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Default to bulk when there's an existing snapshot (revising), since the
+  // user has been here before. Guided for first-time-this-month entries.
+  const [mode, setMode] = useState(existing ? "bulk" : "guided");
 
   if (accounts.length === 0) {
     return (
@@ -2109,12 +2676,33 @@ function UpdateScreen({ vault, onSave, onNavigate }) {
     );
   }
 
+  if (mode === "bulk") {
+    return (
+      <BulkUpdateView
+        accounts={accounts}
+        values={values}
+        setValues={setValues}
+        previousSnap={previousSnap}
+        existing={existing}
+        previewTotals={previewTotals}
+        monthKeyValue={key}
+        busy={busy}
+        onCommit={commit}
+        onSwitchToGuided={() => setMode("guided")}
+        onCancel={() => onNavigate("home")}
+      />
+    );
+  }
+
   return (
     <section className="mx-auto max-w-md py-6">
       <div className="mb-10 flex items-center justify-between">
         <button onClick={back} className="text-xs text-[#86868b] hover:text-[#1d1d1f]">‹ {stepIndex === 0 ? "Home" : "Back"}</button>
         <span className="text-[11px] uppercase tracking-[0.18em] text-[#86868b]">{stepIndex + 1} / {accounts.length}</span>
-        <button onClick={() => onNavigate("home")} className="text-xs text-[#86868b] hover:text-[#1d1d1f]">Cancel</button>
+        <div className="flex items-center gap-3">
+          <button onClick={() => setMode("bulk")} className="text-xs text-[#86868b] hover:text-[#1d1d1f]">Bulk</button>
+          <button onClick={() => onNavigate("home")} className="text-xs text-[#86868b] hover:text-[#1d1d1f]">Cancel</button>
+        </div>
       </div>
 
       <div className="h-0.5 w-full overflow-hidden rounded-full bg-[#f2f2f5]">
@@ -2173,6 +2761,134 @@ function UpdateScreen({ vault, onSave, onNavigate }) {
       <div className="mt-16 border-t border-black/8 pt-5 text-center">
         <p className="text-[11px] uppercase tracking-[0.18em] text-[#86868b]">Running total</p>
         <p className="mt-2 text-[20px] font-semibold tabular-nums tracking-tight">{formatINR(previewTotals.net)}</p>
+      </div>
+    </section>
+  );
+}
+
+function BulkUpdateView({
+  accounts,
+  values,
+  setValues,
+  previousSnap,
+  existing,
+  previewTotals,
+  monthKeyValue,
+  busy,
+  onCommit,
+  onSwitchToGuided,
+  onCancel
+}) {
+  // Group accounts by category for the read-down ordering. Skipped accounts
+  // (no value in this month and none last month) render with placeholder.
+  const byCat = useMemo(() => {
+    const groups = new Map();
+    for (const cat of BALANCE_SHEET_CATEGORIES) groups.set(cat.id, []);
+    for (const acc of accounts) groups.get(acc.category)?.push(acc);
+    return groups;
+  }, [accounts]);
+
+  const monthLabelText = monthLabel(monthKeyValue);
+  const totalDelta = previousSnap
+    ? previewTotals.net - netWorthFromValues(accounts, previousSnap.values).net
+    : 0;
+
+  function set(id, raw) {
+    setValues((prev) => ({ ...prev, [id]: raw.replace(/[^0-9]/g, "") }));
+  }
+  function copyLast(id) {
+    const prev = previousSnap?.values?.[id] ?? 0;
+    set(id, String(prev || 0));
+  }
+
+  return (
+    <section className="mx-auto max-w-2xl pb-32">
+      <div className="mb-8 flex items-center justify-between">
+        <button onClick={onCancel} className="text-xs text-[#86868b] hover:text-[#1d1d1f]">‹ Home</button>
+        <span className="text-[11px] uppercase tracking-[0.18em] text-[#86868b]">{monthLabelText}</span>
+        <button onClick={onSwitchToGuided} className="text-xs text-[#86868b] hover:text-[#1d1d1f]">Guided</button>
+      </div>
+
+      <div className="text-center">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">{existing ? "Revise" : "Update"} all numbers</p>
+        <h1 className="mt-3 text-[32px] font-semibold leading-tight tracking-tight md:text-[36px]">{monthLabelText}</h1>
+      </div>
+
+      <div className="mt-10 space-y-6">
+        {BALANCE_SHEET_CATEGORIES.map((cat) => {
+          const list = byCat.get(cat.id) ?? [];
+          if (list.length === 0) return null;
+          return (
+            <div key={cat.id}>
+              <p className="px-1 text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">{cat.label}</p>
+              <div className="mt-2 divide-y divide-black/6 rounded-2xl border border-black/6 bg-white">
+                {list.map((acc) => {
+                  const prev = previousSnap?.values?.[acc.id] ?? 0;
+                  const current = Number(values[acc.id]) || 0;
+                  const delta = current - prev;
+                  return (
+                    <div key={acc.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[14px] font-medium text-[#1d1d1f]">{acc.name}</div>
+                        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-[#86868b]">
+                          {prev > 0 ? <span>Last · {formatINR(prev)}</span> : <span className="text-[#a1a1a6]">No prior value</span>}
+                          {prev > 0 && (
+                            <button onClick={() => copyLast(acc.id)} className="text-[#86868b] underline-offset-2 hover:text-[#1d1d1f] hover:underline">
+                              same
+                            </button>
+                          )}
+                          {prev > 0 && current > 0 && delta !== 0 && (
+                            <span className={delta > 0 ? "text-[#0b6b3a]" : "text-[#b42318]"}>
+                              {delta > 0 ? "▲" : "▼"} {formatINRCompact(Math.abs(delta))}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-[13px] text-[#c7c7cc]">₹</span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={values[acc.id] ?? ""}
+                          onChange={(e) => set(acc.id, e.target.value)}
+                          placeholder="0"
+                          className={cx(
+                            "w-32 rounded-md border border-transparent bg-[#fbfbfd] px-2 py-1.5 text-right text-[15px] tabular-nums outline-none focus:border-[#1d1d1f] focus:bg-white",
+                            acc.kind === "liability" ? "text-[#b42318]" : "text-[#1d1d1f]"
+                          )}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Sticky save bar at the bottom */}
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-black/8 bg-[#fbfbfd]/95 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-2xl items-center justify-between gap-4 px-5 py-3">
+          <div>
+            <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Net worth</div>
+            <div className="mt-0.5 flex items-baseline gap-2">
+              <span className="text-[20px] font-semibold tabular-nums tracking-tight">{formatINR(previewTotals.net)}</span>
+              {previousSnap && totalDelta !== 0 && (
+                <span className={cx("text-[12px] font-medium", totalDelta > 0 ? "text-[#0b6b3a]" : "text-[#b42318]")}>
+                  {totalDelta > 0 ? "▲" : "▼"} {formatINRCompact(Math.abs(totalDelta))}
+                </span>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={onCommit}
+            disabled={busy}
+            className="rounded-full bg-[#1d1d1f] px-6 py-2.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.15)] transition hover:bg-black disabled:opacity-50"
+          >
+            {busy ? "Saving…" : (existing ? "Save changes" : "Save month")}
+          </button>
+        </div>
       </div>
     </section>
   );

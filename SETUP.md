@@ -22,7 +22,8 @@ Lyfos uses Supabase for auth, Postgres, and (later) edge functions + storage. Th
 2. Paste the contents of `supabase/migrations/0001_initial_schema.sql`. Run.
 3. Repeat with `supabase/migrations/0002_rls_policies.sql`. Run.
 4. Repeat with `supabase/migrations/0003_account_deletion.sql`. Run.
-5. Verify in **Table editor**: you should see `vault_blobs`, `devices`, `recovery_envelopes`, `audit_log`. All four should have the green "RLS enabled" badge. In **Database → Functions** you should see `append_audit_event` and `delete_account`.
+5. **0004_monthly_reminder_cron.sql** — do NOT run yet. Run after deploying the Edge Function (see step "Monthly reminder email" below).
+6. Verify in **Table editor**: you should see `vault_blobs`, `devices`, `recovery_envelopes`, `audit_log`. All four should have the green "RLS enabled" badge. In **Database → Functions** you should see `append_audit_event` and `delete_account`.
 
 ### Configure auth providers
 
@@ -53,7 +54,60 @@ Wherever lyfos.signorvale.com is hosted (Cloudflare Pages, Vercel, Netlify), add
 
 ---
 
-## 2. Plausible Analytics (Phase 0 telemetry)
+## 2. Monthly reminder email (Phase 2)
+
+Sends the calm "Five minutes for January numbers" email on the 1st of each month to users who haven't pushed an update yet that month. Email goes through Resend.
+
+### One-time setup
+
+1. **Sign up for Resend** at <https://resend.com> (free tier: 100 emails/day, plenty for the beta).
+2. Verify your sending domain (e.g. `lyfos.signorvale.com`) by adding the DNS records Resend gives you. Without this, emails will hit spam.
+3. Create an API key in Resend (Project → API Keys). Keep it private.
+
+### Install the Supabase CLI on your machine
+
+```bash
+brew install supabase/tap/supabase
+supabase login
+supabase link --project-ref <your-project-ref>   # find in Project Settings → General
+```
+
+### Deploy the Edge Function
+
+```bash
+cd supabase
+supabase functions deploy monthly-reminder
+supabase secrets set RESEND_API_KEY=re_xxxxxxxxxxxxxxxx
+supabase secrets set FROM_EMAIL="Lyfos <hello@lyfos.signorvale.com>"
+supabase secrets set APP_URL="https://lyfos.signorvale.com"
+```
+
+### Schedule it
+
+1. In the Supabase dashboard: **Database → Extensions**. Enable **pg_cron** and **pg_net**.
+2. In **Project Settings → Database**, find your Postgres URL. Then in **SQL Editor**, run:
+   ```sql
+   alter database postgres set "app.settings.supabase_url" = 'https://<your-ref>.supabase.co';
+   alter database postgres set "app.settings.cron_bearer" = '<your-service-role-key>';
+   ```
+   (The service-role key is in **Project Settings → API**. Keep it out of git.)
+3. Now run `supabase/migrations/0004_monthly_reminder_cron.sql` in the SQL Editor.
+4. Verify with: `select * from cron.job where jobname = 'lyfos-monthly-reminder';`
+
+### Test it without waiting until the 1st
+
+```bash
+# From your local machine, invoke the function manually
+curl -X POST \
+  "https://<your-ref>.supabase.co/functions/v1/monthly-reminder" \
+  -H "Authorization: Bearer <your-service-role-key>"
+```
+
+You should get back `{"ok": true, "sent": N, "failed": 0, "monthLabel": "..."}`.
+
+---
+
+## 3. Plausible Analytics (Phase 0 telemetry)
 
 Free for personal projects with public dashboards; paid tier ($9/mo) for private dashboards. For a vault product, **use the paid tier** so usage analytics aren't publicly indexable.
 
@@ -67,7 +121,7 @@ Free for personal projects with public dashboards; paid tier ($9/mo) for private
 
 ---
 
-## 3. Sentry (error monitoring — wire up after Phase 1)
+## 4. Sentry (error monitoring — wire up after Phase 1)
 
 Skip for now. The code path is ready in `apps/web/src/lib/telemetry.js`. When you decide to enable:
 
@@ -80,7 +134,7 @@ Skip for now. The code path is ready in `apps/web/src/lib/telemetry.js`. When yo
 
 ---
 
-## 4. Hosting security headers (Phase 0 closeout)
+## 5. Hosting security headers (Phase 0 closeout)
 
 Wherever you deploy (Cloudflare Pages recommended for free India edge), add response headers:
 
@@ -97,7 +151,7 @@ On Cloudflare Pages: project → Settings → Headers → add a `_headers` file 
 
 ---
 
-## 5. Domain ownership
+## 6. Domain ownership
 
 The repo references `lyfos.signorvale.com`. When you migrate to a primary domain (e.g. `lyfos.com` or `lyfos.app`):
 

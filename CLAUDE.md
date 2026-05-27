@@ -39,7 +39,8 @@ npm workspaces, two app entry points and two shared packages:
 
 - `apps/web/` — the **product** (React 18 + Vite 7 + Tailwind v4). This is what users see. **The entire UI lives in a single ~3.5k-line file: [apps/web/src/main.jsx](apps/web/src/main.jsx).** Treat that file as the application — components are not split out.
 - `apps/backend/` — 75-line Node http server stub. Largely superseded by Supabase (see `supabase/migrations/`). Kept for reference; not part of the production stack.
-- `supabase/migrations/` — SQL migrations for the Phase 1 backend: `0001_initial_schema.sql`, `0002_rls_policies.sql`, `0003_account_deletion.sql`. Apply in order via the Supabase SQL editor or the supabase CLI.
+- `supabase/migrations/` — SQL migrations. Apply in order via the Supabase SQL editor or the supabase CLI: `0001_initial_schema.sql`, `0002_rls_policies.sql`, `0003_account_deletion.sql`, `0004_monthly_reminder_cron.sql` (only after deploying the Edge Function — see SETUP.md).
+- `supabase/functions/` — Edge Functions. `monthly-reminder/` sends the calm 1st-of-month nudge to users whose `vault_blobs.client_updated_at` predates the current month. Uses Resend; reads `RESEND_API_KEY` / `FROM_EMAIL` / `APP_URL` from secrets.
 - `apps/app/` — Tauri desktop scaffold (not active).
 - `packages/crypto/` — WebCrypto primitives: PBKDF2 (600k iterations, SHA-256) → AES-GCM-256. Plain ESM, no dependencies.
 - `packages/vault-model/` — pure data: vault item types and release policy constants. Imported by both `apps/web` and `apps/backend`.
@@ -131,7 +132,7 @@ The file is organized top-to-bottom roughly as:
 - Persistence: every vault mutation must call `onSave(nextVault, changeReason)` which routes through `persistVault`. The `changeReason` (e.g. `"record_change"`, `"attachment_change"`, `"balance_sheet_updated"`) is used by backup-health heuristics — pass it accurately.
 - Audit log: long-lived events should be appended via the audit array (`appendAuditEvent` helper) so the in-product audit trail and recovery flows can show them.
 - Tests use `node --test` — `assert` from `node:assert/strict`. Keep them pure-function only; no DOM, no React.
-- Currency: `formatINR` / `formatINRCompact` are the only formatters that should output money. Phase 2 of the roadmap introduces a currency abstraction — do not hardcode `₹` outside those helpers.
+- Currency: `formatINR` / `formatINRCompact` in `main.jsx` are the only formatters that should output money. They route through `apps/web/src/lib/currency.js` which supports INR / USD / EUR / GBP with locale-aware compact units (lakh / crore for INR; k / M / B for Western). Vault has an optional `balanceSheet.currency` field; default is INR. Never hardcode `₹` in JSX.
 
 ## Reference
 
