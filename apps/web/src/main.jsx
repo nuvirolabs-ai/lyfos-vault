@@ -51,7 +51,7 @@ import { prepareStage2BackupExport } from "./lib/stage2BackupManifest.js";
 import { initTelemetry, registerServiceWorker } from "./lib/telemetry.js";
 import { buildSnapshotsCsv, suggestedCsvFilename } from "./lib/csvExport.js";
 import { formatCurrency, formatCompact, DEFAULT_CURRENCY } from "./lib/currency.js";
-import { listMyKeyHolders, createKeyHolderInvite, revokeKeyHolder, sendInviteEmail } from "./lib/releasePlan.js";
+import { listMyKeyHolders, createKeyHolderInvite, revokeKeyHolder, sendInviteEmail, finalizeReleasePlan } from "./lib/releasePlan.js";
 import { isSupabaseConfigured } from "./lib/supabaseClient.js";
 import { getSession, onAuthStateChange, signOut, appendServerAuditEvent, ensureDeviceToken, getDeviceToken, deleteAccount } from "./lib/auth.js";
 import {
@@ -1012,6 +1012,7 @@ function App() {
   return (
     <VaultExperience
       vault={vault}
+      vaultKey={vaultKey}
       notice={notice}
       autoLockMs={autoLockMs}
       onAutoLockChange={(timeoutMs) => {
@@ -1303,7 +1304,7 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
   );
 }
 
-function VaultExperience({ vault, notice, autoLockMs, onAutoLockChange, onSave, onLock, backupHealth, backupSizeWarning, onExport, onReplaceRecoveryKey, onReset, session, onShowAuthScreen, onSignOut }) {
+function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange, onSave, onLock, backupHealth, backupSizeWarning, onExport, onReplaceRecoveryKey, onReset, session, onShowAuthScreen, onSignOut }) {
   const [screen, setScreen] = useState("home");
   const [settingsOpen, setSettingsOpen] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -1347,7 +1348,7 @@ function VaultExperience({ vault, notice, autoLockMs, onAutoLockChange, onSave, 
         {screen === "update"  && <UpdateScreen  vault={vault} onSave={onSave} onNavigate={setScreen} />}
         {screen === "life"    && <VaultSubNav screen={screen} setScreen={setScreen}><LifeMapScreen vault={vault} autoLockMs={autoLockMs} onAutoLockChange={onAutoLockChange} onReplaceRecoveryKey={onReplaceRecoveryKey} onSave={onSave} onNavigate={setScreen} /></VaultSubNav>}
         {screen === "capture" && <VaultSubNav screen={screen} setScreen={setScreen}><CaptureScreen vault={vault} onSave={onSave} onNavigate={setScreen} /></VaultSubNav>}
-        {screen === "release" && <VaultSubNav screen={screen} setScreen={setScreen}><ReleaseScreen vault={vault} onSave={onSave} session={session} /></VaultSubNav>}
+        {screen === "release" && <VaultSubNav screen={screen} setScreen={setScreen}><ReleaseScreen vault={vault} onSave={onSave} session={session} vaultKey={vaultKey} /></VaultSubNav>}
 
         <footer className="mt-12 flex flex-wrap items-center justify-between gap-4 border-t border-black/8 py-6 text-[11px] font-medium text-[#a1a1a6]">
           <span>Lyfos · Beta · Locally encrypted on this device.</span>
@@ -3857,7 +3858,7 @@ function DraftRowLight({ label, value, muted }) {
   );
 }
 
-function ReleaseScreen({ vault, onSave, session }) {
+function ReleaseScreen({ vault, onSave, session, vaultKey }) {
   const [settings, setSettings] = useState(vault.releaseSettings);
   const [activeKeys, setActiveKeys] = useState(() => settings.keyHolders.map((holder, index) => holder.trim() ? index : null).filter((index) => index !== null).slice(0, RELEASE_POLICY.requiredKeys));
   const [releaseStep, setReleaseStep] = useState(1);
@@ -3904,7 +3905,7 @@ function ReleaseScreen({ vault, onSave, session }) {
 
   return (
     <section className="mx-auto max-w-2xl">
-      {cloudEnabled && <CloudKeyHolders />}
+      {cloudEnabled && <CloudKeyHolders vaultKey={vaultKey} />}
 
       {!cloudEnabled && (
       <div className="mb-10 rounded-2xl border border-[#c88719]/30 bg-[#fff8eb] px-5 py-4">
@@ -3925,6 +3926,7 @@ function ReleaseScreen({ vault, onSave, session }) {
       </div>
       )}
 
+      {!cloudEnabled && (
       <div className="text-center">
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Release plan · Draft</p>
         <h1 className="mt-3 text-[36px] font-semibold leading-[1.1] tracking-tight md:text-[44px]">
@@ -3934,7 +3936,9 @@ function ReleaseScreen({ vault, onSave, session }) {
           You name a nominee and five trusted key holders. In the future, three keys plus a 14-day hold will be required to release.
         </p>
       </div>
+      )}
 
+      {!cloudEnabled && (
       <div className={cx("mt-10 rounded-2xl border p-5", confirmed ? "border-[#34c759]/25 bg-[#34c759]/8" : hasDuplicates ? "border-[#ff453a]/25 bg-[#ff453a]/6" : "border-black/8 bg-white")}>
         <div className="grid grid-cols-3 gap-3 text-center">
           <ReleaseStat label="Nominee" value={nomineeReady ? "Set" : "—"} ok={nomineeReady} />
@@ -3945,7 +3949,10 @@ function ReleaseScreen({ vault, onSave, session }) {
           {releaseStatus}
         </p>
       </div>
+      )}
 
+      {!cloudEnabled && (
+      <>
       <ReleaseStepNav step={releaseStep} onStep={setReleaseStep} />
 
       <div className="mt-8">
@@ -4041,21 +4048,29 @@ function ReleaseScreen({ vault, onSave, session }) {
         </button>
         <p className="mt-3 text-[11px] text-[#a1a1a6]">Saved locally. No emails are sent in this prototype.</p>
       </div>
+      </>
+      )}
     </section>
   );
 }
 
-function CloudKeyHolders() {
+function CloudKeyHolders({ vaultKey }) {
   const [holders, setHolders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showInvite, setShowInvite] = useState(false);
   const [busy, setBusy] = useState(false);
   const [inviteFeedback, setInviteFeedback] = useState(null); // { holderId, inviteUrl }
+  const [finalizeOpen, setFinalizeOpen] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
+  const [finalizeFeedback, setFinalizeFeedback] = useState("");
 
-  const accepted = holders.filter((h) => h.status === "accepted" || h.status === "verified").length;
-  const verified = holders.filter((h) => h.status === "verified").length;
+  const acceptedHolders = holders.filter((h) => h.status === "accepted");
+  const verifiedHolders = holders.filter((h) => h.status === "verified");
+  const accepted = acceptedHolders.length + verifiedHolders.length;
+  const verified = verifiedHolders.length;
   const planActive = verified >= 5;
+  const canFinalize = !planActive && holders.length === 5 && accepted === 5;
 
   async function refresh() {
     setLoading(true);
@@ -4098,12 +4113,39 @@ function CloudKeyHolders() {
   }
 
   async function revoke(holder) {
-    if (!window.confirm(`Revoke ${holder.label}'s invite? They will no longer be a key holder.`)) return;
+    const extraWarning = holder.status === "verified"
+      ? `\n\nThis holder's share is part of your active plan. Revoking them drops you to 4-of-5 (still functional). Revoking another would break the plan — you'd need to re-finalize with new holders.`
+      : "";
+    if (!window.confirm(`Revoke ${holder.label}'s invite? They will no longer be a key holder.${extraWarning}`)) return;
     try {
       await revokeKeyHolder(holder.id);
       await refresh();
     } catch (err) {
       setError(err?.message || "Couldn't revoke.");
+    }
+  }
+
+  async function finalize() {
+    if (!vaultKey) {
+      setError("Unlock your vault first.");
+      return;
+    }
+    if (!canFinalize) return;
+    setFinalizing(true);
+    setError("");
+    try {
+      // Export the raw 32-byte AES key from the unlocked CryptoKey
+      const rawKey = new Uint8Array(await crypto.subtle.exportKey("raw", vaultKey));
+      await finalizeReleasePlan({ rawVaultKey: rawKey, holders: acceptedHolders });
+      // Zero the buffer best-effort (JS doesn't guarantee but better than not)
+      for (let i = 0; i < rawKey.length; i++) rawKey[i] = 0;
+      setFinalizeOpen(false);
+      setFinalizeFeedback("Plan active. Your circle is ready.");
+      await refresh();
+    } catch (err) {
+      setError(err?.message || "Couldn't finalize.");
+    } finally {
+      setFinalizing(false);
     }
   }
 
@@ -4140,7 +4182,7 @@ function CloudKeyHolders() {
       </div>
 
       <div className="mt-8 flex flex-col items-center gap-3">
-        {holders.length < 5 && !showInvite && (
+        {holders.length < 5 && !showInvite && !planActive && (
           <button
             onClick={() => setShowInvite(true)}
             className="rounded-full bg-[#1d1d1f] px-7 py-3 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition hover:bg-black"
@@ -4152,11 +4194,111 @@ function CloudKeyHolders() {
           <InviteForm busy={busy} onCancel={() => setShowInvite(false)} onSubmit={handleInviteCreated} />
         )}
         {holders.length === 5 && accepted < 5 && (
-          <p className="text-[12px] text-[#86868b]">Waiting on {5 - accepted} {5 - accepted === 1 ? "holder" : "holders"} to accept their invite.</p>
+          <p className="text-[12px] text-[#86868b]">Waiting on {5 - accepted} {5 - accepted === 1 ? "holder" : "holders"} to accept.</p>
         )}
-        {holders.length === 5 && accepted === 5 && verified < 5 && (
-          <p className="text-[12px] text-[#86868b]">All 5 accepted. Day 5 will add the "Finalize plan" button here that splits your vault key into shares.</p>
+        {canFinalize && (
+          <>
+            <button
+              onClick={() => setFinalizeOpen(true)}
+              className="rounded-full bg-[#1d1d1f] px-7 py-3 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition hover:bg-black"
+            >
+              Finalize plan
+            </button>
+            <p className="max-w-sm text-center text-[12px] text-[#86868b]">
+              All 5 accepted. Finalize to split your vault key into shares — one for each holder.
+            </p>
+          </>
         )}
+        {planActive && (
+          <p className="text-[12px] text-[#0b6b3a]">Your circle is active. If something happens to you, 3 of 5 plus a 14-day hold are required to release.</p>
+        )}
+      </div>
+
+      {finalizeFeedback && (
+        <div className="mt-6 rounded-2xl border border-[#34c759]/30 bg-[#34c759]/8 px-4 py-3 text-center text-[13px] font-medium text-[#0b6b3a]">
+          {finalizeFeedback}
+        </div>
+      )}
+
+      {finalizeOpen && (
+        <FinalizeModal
+          acceptedHolders={acceptedHolders}
+          finalizing={finalizing}
+          hasVaultKey={Boolean(vaultKey)}
+          onCancel={() => setFinalizeOpen(false)}
+          onConfirm={finalize}
+        />
+      )}
+    </div>
+  );
+}
+
+function FinalizeModal({ acceptedHolders, finalizing, hasVaultKey, onCancel, onConfirm }) {
+  const [confirmText, setConfirmText] = useState("");
+  const ready = confirmText.trim().toLowerCase() === "finalize";
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/30 backdrop-blur-sm md:items-center" onClick={onCancel}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-[#fbfbfd] p-6 shadow-[0_-12px_40px_rgba(0,0,0,0.12)] md:rounded-3xl md:p-8"
+      >
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Finalize</p>
+        <h2 className="mt-2 text-[24px] font-semibold tracking-tight">Activate your release plan.</h2>
+
+        <p className="mt-4 text-[14px] leading-6 text-[#6e6e73]">
+          Lyfos will split your vault key into 5 cryptographic shares and seal one to each holder's release public key. Your key holders will be able to release their shares only when:
+        </p>
+        <ul className="mt-3 space-y-1.5 pl-5 text-[13px] leading-5 text-[#6e6e73] list-disc">
+          <li>Your nominee files a death/incapacity claim with proof</li>
+          <li>Lyfos approves the claim after review</li>
+          <li>3 of your 5 holders approve their share release</li>
+          <li>A 14-day hold passes during which you are alerted daily and can cancel with one tap</li>
+        </ul>
+
+        <div className="mt-5 rounded-xl bg-[#fff8eb] px-4 py-3 text-[12px] leading-5 text-[#7a4b00]">
+          <strong>Nothing happens to your vault.</strong> Your vault stays encrypted; Lyfos still cannot read it. You can continue using Lyfos exactly as before.
+        </div>
+
+        <div className="mt-6">
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Provisioning shares to</p>
+          <ul className="mt-2 space-y-1">
+            {acceptedHolders.map((h, i) => (
+              <li key={h.id} className="flex items-center justify-between rounded-md bg-white px-3 py-1.5 text-[12px]">
+                <span>{i + 1}. {h.label}</span>
+                <span className="text-[10px] text-[#86868b]">{h.holder_email}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {!hasVaultKey && (
+          <div className="mt-5 rounded-xl bg-[#ff453a]/8 px-4 py-3 text-[12px] font-medium text-[#b42318]">
+            Unlock your vault first. The unlock has to happen on this device so the key never leaves your browser.
+          </div>
+        )}
+
+        <label className="mt-6 block">
+          <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Type <strong>finalize</strong> to confirm</span>
+          <input
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            placeholder="finalize"
+            disabled={!hasVaultKey || finalizing}
+            className="mt-2 w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-[14px] outline-none focus:border-[#1d1d1f] disabled:opacity-50"
+          />
+        </label>
+
+        <div className="mt-6 flex items-center justify-between gap-3">
+          <button onClick={onCancel} disabled={finalizing} className="text-[12px] text-[#86868b] hover:text-[#1d1d1f]">Cancel</button>
+          <button
+            onClick={onConfirm}
+            disabled={!ready || !hasVaultKey || finalizing}
+            className="rounded-full bg-[#1d1d1f] px-6 py-2.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.15)] transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {finalizing ? "Sealing shares…" : "Activate plan"}
+          </button>
+        </div>
       </div>
     </div>
   );
