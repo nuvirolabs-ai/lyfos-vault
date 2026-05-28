@@ -1178,167 +1178,157 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
   }
 
   const entryTrustCopy = hasVault
-    ? "The vault phrase unwraps the local vault key. Account login alone cannot decrypt records."
-    : "Your vault phrase wraps the key that encrypts this local vault. OS-One does not store the phrase or a server recovery copy. Stage 1 creates a user-held recovery key; if both are lost, the encrypted vault cannot be opened.";
+    ? "Your vault phrase unwraps the encrypted vault on this device. Signing into your account alone cannot decrypt records."
+    : "Your vault phrase is the master key for everything you put in Lyfos. We never see it and we cannot recover it for you. Write down the 24-word recovery phrase too — it's the only way back if you forget the vault phrase.";
 
   return (
-    <main className="min-h-screen bg-[#d8d2c7] text-[#211c16] lg:h-screen lg:overflow-hidden">
-      <div className="mx-auto flex min-h-screen max-w-[94rem] items-stretch px-4 py-4 sm:px-6 sm:py-6 lg:h-screen lg:px-8 lg:py-8">
-        <div className="entry-shell grid w-full overflow-hidden rounded-[1.6rem] border border-black/8 shadow-[0_26px_86px_rgba(26,22,17,0.14)] lg:grid-cols-[1.02fr_0.98fr]">
-          <section className="entry-archive-scene relative min-h-[17rem] overflow-hidden border-b border-black/8 lg:min-h-0 lg:border-b-0" aria-hidden="true">
-            <div className="entry-archive-scene__light" />
-            <div className="entry-archive-scene__grain" />
-            <div className="entry-archive-scene__table" />
-            <div className="entry-archive-scene__tray" />
-            <div className="entry-archive-scene__folio" />
-            <div className="entry-archive-scene__papers" />
-            <div className="entry-archive-scene__band" />
-            <div className="entry-archive-scene__seal" />
-            <div className="entry-archive-scene__key" />
-            <div className="entry-archive-scene__key-bit" />
-            <div className="entry-archive-scene__annotation">Local archive</div>
-          </section>
+    <main className="min-h-screen bg-[#fbfbfd] text-[#1d1d1f]">
+      <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 py-12">
+        <header className="text-center">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#86868b]">Lyfos</p>
+          <h1 className="mx-auto mt-5 max-w-sm text-[36px] font-semibold leading-[1.05] tracking-[-0.02em] text-[#1d1d1f] md:text-[44px]">
+            {hasVault ? "Welcome back." : "Create your vault."}
+          </h1>
+          <p className="mx-auto mt-4 max-w-sm text-[15px] leading-[1.55] text-[#6e6e73]">
+            {hasVault
+              ? "Enter your vault phrase to unlock. Lyfos never sees it."
+              : "Pick a phrase you'll remember. It encrypts everything on this device. We never see it."}
+          </p>
+        </header>
 
-          <section className="entry-access relative flex min-h-[calc(100vh-2rem)] items-center justify-center px-5 py-8 sm:px-8 lg:min-h-0 lg:px-12 lg:py-10">
-            <form id="vault-entry" onSubmit={submit} className="w-full max-w-[27rem]">
-              <div className="mb-7">
-                <div className="entry-mark">
-                  <span className="entry-mark__ring" />
-                  <span className="entry-mark__core">O</span>
-                </div>
-                <p className="mt-5 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#53614d]">OS-One Vault</p>
-                <p className="mt-2 text-sm text-[#6a635b]">Private life infrastructure</p>
-                <h1 className="entry-headline mt-7 text-[2.35rem] leading-[1.02] text-[#1f1a15] sm:text-[3rem]">
-                  {hasVault ? "Access your private records" : "Create your private vault"}
-                </h1>
-                <p className="mt-4 max-w-md text-[0.98rem] leading-7 text-[#625b52]">
-                  {hasVault ? "Unlock the encrypted local archive with the vault phrase or recovery key." : "Create a local encrypted archive in this browser with a phrase you control."}
-                </p>
-              </div>
-
-              {hasVault && hasRecoveryEnvelope && (
-                <div className="entry-segment mb-5 grid grid-cols-2 border border-black/10 bg-[#e6dfd4]">
-                  {[
-                    ["passphrase", "Vault phrase"],
-                    ["recovery", "Recovery key"]
-                  ].map(([id, label]) => (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => setUnlockMode(id)}
-                      aria-pressed={unlockMode === id}
-                      className={cx(
-                        "px-4 py-2.5 text-sm font-semibold transition",
-                        unlockMode === id
-                          ? "bg-[#f8f4ec] text-[#1f1a15] shadow-[inset_0_0_0_1px_rgba(34,29,22,0.05),0_8px_18px_rgba(22,18,14,0.06)]"
-                          : "text-[#6f685f] hover:text-[#1f1a15]"
-                      )}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <label className="block">
-                <span className="sr-only">{hasVault && unlockMode === "recovery" ? "Recovery key" : "Vault phrase"}</span>
-                <input
-                  className="w-full rounded-[0.85rem] border border-black/12 bg-[#fbf8f1]/82 px-5 py-4 text-base text-[#221d16] outline-none transition placeholder:text-[#8f867a] focus:border-[#53614d]/45 focus:bg-white focus:ring-4 focus:ring-[#53614d]/10"
-                  type={hasVault && unlockMode === "recovery" ? "text" : "password"}
-                  value={passphrase}
-                  onChange={(event) => setPassphrase(event.target.value)}
-                  autoComplete={hasVault ? "current-password" : "new-password"}
-                  placeholder={hasVault ? "Enter your vault phrase" : "Use at least 12 characters"}
-                />
-              </label>
-
-              {!hasVault && (
-                <label className="mt-3 block">
-                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-[#7c746a]">Confirm phrase</span>
-                  <input
-                    className="w-full rounded-[0.85rem] border border-black/12 bg-[#fbf8f1]/82 px-5 py-4 text-base text-[#221d16] outline-none transition focus:border-[#53614d]/45 focus:bg-white focus:ring-4 focus:ring-[#53614d]/10"
-                    type="password"
-                    value={confirm}
-                    onChange={(event) => setConfirm(event.target.value)}
-                    autoComplete="new-password"
-                  />
-                </label>
-              )}
-
-              {!hasVault && (
-                <RecoveryKeyPanel
-                  recoveryKey={recoveryKey}
-                  recoveryConfirm={recoveryConfirm}
-                  onGenerate={() => {
-                    const key = generateRecoveryKey();
-                    setRecoveryKey(key);
-                    setRecoveryConfirm("");
-                  }}
-                  onConfirmChange={setRecoveryConfirm}
-                />
-              )}
-
-              {(lockNotice || notice || error) && (
-                <div
-                  aria-live="polite"
-                  className={cx(
-                    "mt-4 rounded-[0.85rem] border px-4 py-3 text-sm leading-6",
-                    error
-                      ? "border-[#c98979]/45 bg-[#f5d9d2] text-[#7d4033]"
-                      : lockNotice
-                        ? "border-[#a5ad92]/55 bg-[#ebefe4] text-[#4f5a43]"
-                        : "border-[#b8c0a9]/55 bg-[#eff2ea] text-[#516046]"
-                  )}
-                >
-                  {error || lockNotice || notice}
-                </div>
-              )}
-
-              <button
-                className="mt-5 w-full rounded-[0.85rem] bg-[#211d16] px-5 py-4 text-base font-semibold text-[#f8f4ec] shadow-[0_16px_30px_rgba(23,19,15,0.14)] transition hover:bg-[#17140f] disabled:cursor-wait disabled:opacity-60"
-                disabled={busy}
-              >
-                {busy ? hasVault ? "Unlocking..." : "Sealing..." : hasVault ? "Unlock vault" : "Create encrypted vault"}
-              </button>
-
-              {!hasVault && (
-                <button
-                  type="button"
-                  onClick={createSampleVault}
-                  disabled={busy}
-                  className="mt-3 w-full rounded-[0.85rem] border border-black/10 bg-transparent px-5 py-3 text-sm font-semibold text-[#5d564f] transition hover:bg-white/50 disabled:cursor-wait disabled:opacity-60"
-                >
-                  Create vault with sample records
-                </button>
-              )}
-
-              <div className="my-5 grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-xs font-semibold uppercase tracking-[0.16em] text-[#8f867a]">
-                <div className="h-px bg-black/8" />
-                <span>or</span>
-                <div className="h-px bg-black/8" />
-              </div>
-
-              <div className="entry-restore">
-                <ImportBackup currentRecord={record} onImported={onImported} onRestoreConfirmed={onRestoreConfirmed} />
-              </div>
-
-              <div className="mt-3 flex items-center justify-between gap-4">
-                <div className="entry-verify">
-                  <BackupVerificationPanel currentRecord={record} backupHealth={backupHealth} onBackupHealthChange={onBackupHealthChange} />
-                </div>
-                {hasVault && (
-                  <button type="button" onClick={onReset} className="shrink-0 rounded-full px-1 py-2 text-xs font-semibold text-[#8d5f56] transition hover:text-[#5f3b34]">
-                    Delete local vault
+        <form id="vault-entry" onSubmit={submit} className="mt-10">
+          {hasVault && hasRecoveryEnvelope && (
+            <div className="mb-6 flex justify-center">
+              <div className="inline-flex items-center gap-1 rounded-full border border-black/8 bg-white p-1 shadow-[0_2px_10px_rgba(0,0,0,0.03)]">
+                {[
+                  ["passphrase", "Vault phrase"],
+                  ["recovery", "Recovery phrase"]
+                ].map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setUnlockMode(id)}
+                    aria-pressed={unlockMode === id}
+                    className={cx(
+                      "rounded-full px-4 py-1.5 text-[12px] font-semibold transition",
+                      unlockMode === id ? "bg-[#1d1d1f] text-white" : "text-[#6e6e73] hover:text-[#1d1d1f]"
+                    )}
+                  >
+                    {label}
                   </button>
-                )}
+                ))}
               </div>
+            </div>
+          )}
 
-              <div className="mt-6 border-t border-black/8 pt-5">
-                <p className="max-w-md text-xs leading-6 text-[#6f685f]">{entryTrustCopy}</p>
-              </div>
-            </form>
-          </section>
-        </div>
+          <label className="block">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86868b]">
+              {hasVault && unlockMode === "recovery" ? "24-word recovery phrase" : "Vault phrase"}
+            </span>
+            <input
+              className="mt-2 w-full rounded-xl border border-black/8 bg-white px-4 py-3 text-[15px] text-[#1d1d1f] outline-none transition placeholder:text-[#a1a1a6] focus:border-[#1d1d1f]"
+              type={hasVault && unlockMode === "recovery" ? "text" : "password"}
+              value={passphrase}
+              onChange={(event) => setPassphrase(event.target.value)}
+              autoComplete={hasVault ? "current-password" : "new-password"}
+              autoFocus={hasVault}
+              placeholder={hasVault ? "Your vault phrase" : "At least 12 characters"}
+            />
+          </label>
+
+          {!hasVault && (
+            <label className="mt-3 block">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86868b]">Confirm phrase</span>
+              <input
+                className="mt-2 w-full rounded-xl border border-black/8 bg-white px-4 py-3 text-[15px] text-[#1d1d1f] outline-none transition focus:border-[#1d1d1f]"
+                type="password"
+                value={confirm}
+                onChange={(event) => setConfirm(event.target.value)}
+                autoComplete="new-password"
+              />
+            </label>
+          )}
+
+          {!hasVault && (
+            <div className="mt-4">
+              <RecoveryKeyPanel
+                recoveryKey={recoveryKey}
+                recoveryConfirm={recoveryConfirm}
+                onGenerate={() => {
+                  const key = generateRecoveryKey();
+                  setRecoveryKey(key);
+                  setRecoveryConfirm("");
+                }}
+                onConfirmChange={setRecoveryConfirm}
+              />
+            </div>
+          )}
+
+          {(lockNotice || notice || error) && (
+            <div
+              aria-live="polite"
+              className={cx(
+                "mt-4 rounded-xl px-4 py-3 text-[13px] font-medium",
+                error
+                  ? "bg-[#ff453a]/8 text-[#b42318]"
+                  : lockNotice
+                    ? "bg-[#c88719]/10 text-[#7a4b00]"
+                    : "bg-[#34c759]/10 text-[#0b6b3a]"
+              )}
+            >
+              {error || lockNotice || notice}
+            </div>
+          )}
+
+          <button
+            className="mt-5 w-full rounded-full bg-[#1d1d1f] px-5 py-3 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition hover:bg-black disabled:cursor-wait disabled:opacity-40"
+            disabled={busy}
+          >
+            {busy ? (hasVault ? "Unlocking…" : "Creating…") : hasVault ? "Unlock vault" : "Create vault"}
+          </button>
+
+          {!hasVault && (
+            <button
+              type="button"
+              onClick={createSampleVault}
+              disabled={busy}
+              className="mt-3 w-full rounded-full border border-black/8 bg-white px-5 py-3 text-sm font-semibold text-[#1d1d1f] transition hover:bg-black/[0.02] disabled:cursor-wait disabled:opacity-40"
+            >
+              Try with sample records
+            </button>
+          )}
+
+          <div className="my-7 grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#a1a1a6]">
+            <div className="h-px bg-black/8" />
+            <span>or</span>
+            <div className="h-px bg-black/8" />
+          </div>
+
+          <ImportBackup currentRecord={record} onImported={onImported} onRestoreConfirmed={onRestoreConfirmed} />
+
+          <div className="mt-4 flex items-center justify-between gap-4">
+            <BackupVerificationPanel currentRecord={record} backupHealth={backupHealth} onBackupHealthChange={onBackupHealthChange} />
+            {hasVault && (
+              <button type="button" onClick={onReset} className="shrink-0 text-[11px] font-medium text-[#b42318] transition hover:text-[#7a1812]">
+                Delete local vault
+              </button>
+            )}
+          </div>
+
+          <div className="mt-8 border-t border-black/8 pt-6">
+            <p className="text-[12px] leading-[1.6] text-[#86868b]">{entryTrustCopy}</p>
+          </div>
+        </form>
+
+        <footer className="mt-auto pt-10 text-center text-[11px] text-[#a1a1a6]">
+          <p>
+            By continuing you agree to the{" "}
+            <a href="/legal/terms.html" className="underline">Terms</a>,{" "}
+            <a href="/legal/privacy.html" className="underline">Privacy</a> and{" "}
+            <a href="/legal/beta-disclaimer.html" className="underline">Beta disclaimer</a>.
+          </p>
+          <p className="mt-3">Lyfos · Locally encrypted on this device.</p>
+        </footer>
       </div>
     </main>
   );
@@ -5244,63 +5234,63 @@ function RecoveryKeyPanel({ recoveryKey, recoveryConfirm, onGenerate, onConfirmC
   }
 
   return (
-    <div className="mt-4 rounded-[0.95rem] border border-black/10 bg-[#ebe4d9] p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7c746a]">Recovery phrase</p>
-          <p className="mt-1 text-sm text-[#645d54]">
+    <div className="rounded-2xl border border-black/8 bg-white p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex-1">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86868b]">Recovery phrase</p>
+          <p className="mt-1.5 text-[13px] leading-[1.55] text-[#6e6e73]">
             {recoveryKey
-              ? "Write these 24 words down on paper. Lyfos cannot show this again."
-              : "A 24-word phrase you keep separately from your passphrase. The only way to open your vault if you forget the passphrase."}
+              ? "Write these 24 words on paper. Lyfos cannot show them again."
+              : "A 24-word phrase, separate from your vault phrase. The only way back if you forget the vault phrase."}
           </p>
         </div>
         <button
           type="button"
           onClick={onGenerate}
-          className="rounded-[0.65rem] border border-black/10 bg-[#f8f4ec] px-4 py-2 text-sm font-semibold text-[#221d16] transition hover:bg-white"
+          className="rounded-full border border-black/8 bg-white px-4 py-1.5 text-[12px] font-semibold text-[#1d1d1f] transition hover:bg-black/[0.03]"
         >
-          {recoveryKey ? "Regenerate" : "Generate phrase"}
+          {recoveryKey ? "Regenerate" : "Generate"}
         </button>
       </div>
 
       {recoveryKey && (
         <div className="mt-4">
           {isBip39 ? (
-            <div className="grid grid-cols-3 gap-1.5 rounded-[0.8rem] border border-black/8 bg-[#f8f4ec] p-3 sm:grid-cols-4">
+            <div className="grid grid-cols-3 gap-1.5 rounded-xl border border-black/8 bg-[#fbfbfd] p-3 sm:grid-cols-4">
               {words.map((word, i) => (
-                <div key={i} className="flex items-baseline gap-2 rounded-md bg-white/60 px-2 py-1.5">
-                  <span className="w-5 text-right text-[10px] font-medium tabular-nums text-[#a39d92]">{i + 1}</span>
-                  <span className="select-all text-[13px] font-medium text-[#322c24]">{word}</span>
+                <div key={i} className="flex items-baseline gap-2 rounded-md bg-white px-2 py-1.5">
+                  <span className="w-5 text-right text-[10px] font-medium tabular-nums text-[#a1a1a6]">{i + 1}</span>
+                  <span className="select-all text-[13px] font-medium text-[#1d1d1f]">{word}</span>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="select-all break-words rounded-[0.8rem] border border-black/8 bg-[#f8f4ec] px-4 py-3 font-mono text-xs font-semibold text-[#322c24]">
+            <div className="select-all break-words rounded-xl border border-black/8 bg-[#fbfbfd] px-4 py-3 font-mono text-xs font-semibold text-[#1d1d1f]">
               {recoveryKey}
             </div>
           )}
 
-          <div className="mt-2 flex items-center justify-between">
+          <div className="mt-3 flex items-center justify-between">
             <button
               type="button"
               onClick={copy}
-              className="text-[11px] font-medium text-[#7c746a] underline-offset-4 hover:text-[#221d16] hover:underline"
+              className="text-[11px] font-medium text-[#6e6e73] underline-offset-4 hover:text-[#1d1d1f] hover:underline"
             >
               Copy to clipboard
             </button>
-            <span className="text-[10px] uppercase tracking-[0.14em] text-[#a39d92]">
-              Store offline · paper, safe, or password manager
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#a1a1a6]">
+              Store offline · paper, safe
             </span>
           </div>
 
           <label className="mt-4 block">
-            <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-[#7c746a]">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86868b]">
               Confirm by re-typing
             </span>
             {isBip39 ? (
               <textarea
                 rows={3}
-                className="w-full rounded-[0.8rem] border border-black/12 bg-white/82 px-4 py-3 text-sm leading-6 text-[#221d16] outline-none transition placeholder:text-[#8f867a] focus:border-[#53614d]/45 focus:bg-white focus:ring-4 focus:ring-[#53614d]/10"
+                className="mt-2 w-full rounded-xl border border-black/8 bg-white px-4 py-3 text-[14px] leading-6 text-[#1d1d1f] outline-none transition placeholder:text-[#a1a1a6] focus:border-[#1d1d1f]"
                 value={recoveryConfirm}
                 onChange={(event) => onConfirmChange(event.target.value)}
                 placeholder="Type the 24 words separated by spaces"
@@ -5309,10 +5299,10 @@ function RecoveryKeyPanel({ recoveryKey, recoveryConfirm, onGenerate, onConfirmC
               />
             ) : (
               <input
-                className="w-full rounded-[0.8rem] border border-black/12 bg-white/82 px-4 py-3 text-sm text-[#221d16] outline-none transition placeholder:text-[#8f867a] focus:border-[#53614d]/45 focus:bg-white focus:ring-4 focus:ring-[#53614d]/10"
+                className="mt-2 w-full rounded-xl border border-black/8 bg-white px-4 py-3 text-[14px] text-[#1d1d1f] outline-none transition placeholder:text-[#a1a1a6] focus:border-[#1d1d1f]"
                 value={recoveryConfirm}
                 onChange={(event) => onConfirmChange(event.target.value)}
-                placeholder="OS1A-..."
+                placeholder="OS1A-…"
               />
             )}
           </label>
@@ -5325,10 +5315,10 @@ function RecoveryKeyPanel({ recoveryKey, recoveryConfirm, onGenerate, onConfirmC
 function BrandMini() {
   return (
     <div className="flex items-center gap-3">
-      <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#1d1d1f] text-sm font-semibold text-white">O</div>
+      <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#1d1d1f] text-sm font-semibold text-white">L</div>
       <div className="hidden sm:block">
-        <div className="text-sm font-semibold">OS-One Vault</div>
-        <div className="text-xs font-medium text-[#86868b]">Sealed locally</div>
+        <div className="text-sm font-semibold">Lyfos</div>
+        <div className="text-xs font-medium text-[#86868b]">Locally encrypted</div>
       </div>
     </div>
   );
