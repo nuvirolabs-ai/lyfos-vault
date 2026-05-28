@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Lyfos · Design prototypes</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    background: #1a1a1a; color: #fff;
+    display: grid; place-items: center; padding: 48px 24px;
+  }
+  main { max-width: 720px; width: 100%; }
+  h1 {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 56px; letter-spacing: -0.025em; line-height: 1.05;
+    font-weight: 400; margin: 0 0 16px;
+  }
+  p { color: #a3a3a3; font-size: 18px; line-height: 1.55; max-width: 560px; }
+  .lede { margin-bottom: 64px; }
+  .pair { display: grid; gap: 16px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 720px) { .pair { grid-template-columns: 1fr; } }
+  a.card {
+    display: block; padding: 40px 32px; border-radius: 22px;
+    text-decoration: none; color: inherit;
+    background: #262626; border: 1px solid #2e2e2e;
+    transition: transform 200ms ease, border-color 200ms ease;
+  }
+  a.card:hover { transform: translateY(-2px); border-color: #404040; }
+  .num {
+    font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: #737373; font-weight: 600; margin-bottom: 12px;
+  }
+  .card h2 {
+    font-family: Georgia, serif; font-weight: 400;
+    font-size: 32px; margin: 0 0 8px; letter-spacing: -0.02em;
+  }
+  .card .one-liner { color: #d4d4d4; font-size: 15px; margin-bottom: 24px; line-height: 1.5; }
+  .meta {
+    display: flex; gap: 16px; font-size: 12px; color: #737373;
+    border-top: 1px solid #2e2e2e; padding-top: 16px;
+  }
+  .meta span strong { color: #fff; font-weight: 500; }
+  footer { color: #737373; font-size: 13px; margin-top: 64px; }
+  .badge {
+    display: inline-block; padding: 4px 10px; border-radius: 999px;
+    font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+    background: #fafafa; color: #1a1a1a; font-weight: 600;
+    margin-left: 8px; vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Two ways Lyfos could look.</h1>
+  <p class="lede">Pick a direction by spending 30 seconds in each. The Home screen is where most users live, so it's the right place to decide. Both prototypes are at production fidelity — typography, color, motion, copy.</p>
+
+  <div class="pair">
+    <a class="card" href="./a-quiet-archive/index.html">
+      <div class="num">Direction A</div>
+      <h2>Quiet Archive</h2>
+      <p class="one-liner">Editorial minimalism. Serif headlines, hairlines, near-zero color. Reads like a slim book about your life.</p>
+      <div class="meta">
+        <span><strong>Serif</strong> headlines</span>
+        <span><strong>Paper</strong> tone</span>
+        <span><strong>One</strong> accent</span>
+      </div>
+    </a>
+
+    <a class="card" href="./b-soft-concierge/index.html">
+      <div class="num">Direction B</div>
+      <h2>Soft Concierge<span class="badge">Mobile</span></h2>
+      <p class="one-liner">Warm, gentle, mobile-first. Cards, soft shadows, light illustration. A kind assistant, not an enterprise tool.</p>
+      <div class="meta">
+        <span><strong>Sans</strong> humanist</span>
+        <span><strong>Warm</strong> gradient</span>
+        <span><strong>Three</strong> accents</span>
+      </div>
+    </a>
+  </div>
+
+  <footer>
+    Tip: try each one at full-screen, then resize the window to see how it feels on mobile.
+  </footer>
+</main>
+</body>
+</html>
