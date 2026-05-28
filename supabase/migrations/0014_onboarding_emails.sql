@@ -27,7 +27,7 @@ language sql security definer set search_path = public as $$
          coalesce((select bool_or(al.event_type = 'recovery_phrase_downloaded')
                      from public.audit_log al where al.user_id = u.id), false)
            as recovery_phrase_downloaded,
-         coalesce((select s.state = 'active'
+         coalesce((select s.status in ('active','trialing')
                      from public.subscriptions s where s.user_id = u.id
                     order by s.created_at desc limit 1), false) as is_paid,
          coalesce((select array_agg((al.event_meta->>'email_number')::int)
