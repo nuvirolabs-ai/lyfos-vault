@@ -92,8 +92,8 @@ Deno.serve(async () => {
       await sendEmail(u.email, email.subject, email.body(name));
       await sb.from("audit_log").insert({
         user_id: u.user_id,
-        event: "onboarding_email_sent",
-        payload: { email_number: email.n, subject: email.subject }
+        event_type: "onboarding_email_sent",
+        event_meta: { email_number: email.n, subject: email.subject }
       });
       sent++;
     } catch (e: any) {
