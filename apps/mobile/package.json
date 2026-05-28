@@ -29,7 +29,7 @@
     "react-native-svg": "15.8.0",
     "react-native-gesture-handler": "~2.20.2",
     "react-native-reanimated": "~3.16.0",
-    "react-native-async-storage": "1.23.1",
+    "@react-native-async-storage/async-storage": "1.23.1",
     "@supabase/supabase-js": "^2.106.2",
     "@scure/bip39": "^2.2.0",
     "secrets.js-grempe": "^2.0.0",
