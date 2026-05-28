@@ -295,3 +295,64 @@ The repo references `lyfos.signorvale.com`. When you migrate to a primary domain
 4. Update `ROADMAP.md` and `README.md`.
 
 Not urgent — `lyfos.signorvale.com` is fine for the beta.
+
+
+---
+
+## 9. Phase 6 — Compliance, security, trust (operator-side)
+
+These are the non-code items needed before public launch. Most cost money or take real-world time. Code-side artefacts are already in the repo under `docs/security/`, `docs/compliance/`, and `docs/runbooks/`.
+
+### 9.1 Security audit (~₹2L)
+
+Engage **Payatu** (or alternative — see `docs/security/audit-prep-checklist.md`) for a pre-launch audit. Plus an independent academic crypto review for the release engine + Shamir + Curve25519. Six-week window, no shipping during the audit. Hand them `docs/security/threat-model.md` and `docs/security/audit-prep-checklist.md` on day one. Re-test must pass before public launch.
+
+### 9.2 Cyber liability insurance (~₹40k-₹1.2L/year)
+
+Quote via **PolicyBazaar for Business** or **Marsh India**. Target aggregate ₹5-7 crore (see `docs/compliance/cyber-insurance-procurement.md` for sub-limits + provider comparison). Application packet template included; pull from threat model + audit prep checklist. Sign + pay first premium 2 weeks before launch.
+
+### 9.3 PGP key for security mailbox
+
+```bash
+gpg --quick-generate-key "Lyfos Security <security@lyfos.signorvale.com>" rsa4096 default 2y
+gpg --armor --export security@lyfos.signorvale.com > apps/web/public/.well-known/pgp-key.txt
+```
+
+Commit + redeploy. Replaces the placeholder at `/.well-known/pgp-key.txt`.
+
+### 9.4 Status page
+
+A minimal static page is already at `apps/web/public/status/index.html`. To declare an incident, edit that file by hand — see `docs/runbooks/status-page-update.md`. When > 500 paid users, move to **Instatus** (~$20/month).
+
+### 9.5 DPDPA grievance officer + sub-processor page
+
+The privacy page now lists the grievance officer email `grievance@lyfos.signorvale.com` (forward this to founder mailbox). Sub-processor list at `/legal/sub-processors.html`. Both are mandatory. Hindi translation of privacy page still to-do.
+
+### 9.6 Continuity envelope
+
+Print + seal the credentials envelope per `docs/runbooks/founder-bus-factor.md`. Identify and brief the primary + secondary backup operators. Place in a fireproof safe at the founder's primary residence.
+
+### 9.7 Bug bounty
+
+Programme published at `/security/bug-bounty`. Funding line: budget ₹2L/year for payouts during year one. Track received reports in `docs/security/hall-of-fame.md` and the public mirror.
+
+### 9.8 Open items tracker
+
+Living checklist at `docs/runbooks/open-issues.md`. Cross items off as they ship. Review at every Phase 7 milestone.
+
+### 9.9 Customer support setup
+
+Set up the inbound aliases in your domain MX (or Google Workspace / Zoho Mail):
+
+| Alias                                    | Forwards to              |
+|------------------------------------------|--------------------------|
+| help@lyfos.signorvale.com                | founder mailbox          |
+| security@lyfos.signorvale.com            | founder mailbox + Slack alert |
+| grievance@lyfos.signorvale.com           | founder mailbox          |
+| press@lyfos.signorvale.com               | founder mailbox          |
+| status@lyfos.signorvale.com              | Mailing-list provider (ConvertKit / Substack) |
+| founder@lyfos.signorvale.com             | founder mailbox          |
+| legal@lyfos.signorvale.com               | founder mailbox          |
+
+SLA published at `docs/compliance/customer-support-sla.md`.
+

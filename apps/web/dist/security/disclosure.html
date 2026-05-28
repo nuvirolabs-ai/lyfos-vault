@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Lyfos · Responsible Disclosure</title>
+<link rel="stylesheet" href="/legal/style.css" />
+</head>
+<body><main>
+<a class="back" href="/security/">← Back to Security</a>
+<h1>Responsible Disclosure Policy</h1>
+<p class="lede">Effective 28 May 2026. The canonical text lives in our repository at
+<code>docs/security/responsible-disclosure.md</code>. This page mirrors it.</p>
+
+<h2>Scope</h2>
+<p><strong>In scope:</strong> lyfos.signorvale.com + subdomains, iOS app (<code>com.lyfos.vault</code>), Android app, Supabase edge functions, our cryptographic protocol, the release engine, the billing pipeline.</p>
+<p><strong>Out of scope:</strong> third-party services unless the bug is in our integration; DoS that requires &gt; 100 req/s; automated scanner reports without proof of impact; social engineering of Lyfos staff or users; physical security; self-XSS or missing headers without an exploit chain.</p>
+
+<h2>How to report</h2>
+<p>Email <strong>security@lyfos.signorvale.com</strong> with: a clear title, repro steps, impact, suggested fix, your preferred credit name. PGP key at <a href="/.well-known/pgp-key.txt">/.well-known/pgp-key.txt</a>.</p>
+
+<h2>Our SLA</h2>
+<table>
+<thead><tr><th>Severity</th><th>First response</th><th>Triage decision</th><th>Fix target</th></tr></thead>
+<tbody>
+<tr><td>Critical (P0)</td><td>4 hours</td><td>24 hours</td><td>7 days</td></tr>
+<tr><td>High (P1)</td><td>1 business day</td><td>3 business days</td><td>30 days</td></tr>
+<tr><td>Medium (P2)</td><td>3 business days</td><td>7 business days</td><td>90 days</td></tr>
+<tr><td>Low (P3)</td><td>5 business days</td><td>14 business days</td><td>Best effort</td></tr>
+</tbody></table>
+
+<h2>Safe harbour</h2>
+<p>If you make a good-faith effort to comply with this policy we will not pursue legal action under the IT Act 2000 §43/§66, the DPDPA, the CFAA, or equivalent laws. We expect you to avoid privacy violations and data destruction, use only test accounts you create, give us reasonable time to fix before public disclosure, and not extort.</p>
+
+<h2>Disclosure timeline</h2>
+<p>Default: 90 days from report, or 7 days after fix ships — whichever is sooner. Longer windows negotiable for protocol-level fixes requiring coordinated mobile + web rollout.</p>
+
+<h2>Hall of Fame</h2>
+<p>Researchers with valid reports are credited at <a href="/security/hall-of-fame">/security/hall-of-fame</a> unless they opt out.</p>
+</main></body></html>

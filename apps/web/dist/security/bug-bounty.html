@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Lyfos · Bug Bounty</title><link rel="stylesheet" href="/legal/style.css" /></head>
+<body><main>
+<a class="back" href="/security/">← Back to Security</a>
+<h1>Bug Bounty</h1>
+<p class="lede">Self-funded, paid in INR (or USD/EUR/GBP equivalent). Effective 28 May 2026.</p>
+
+<h2>Severity bands</h2>
+<table>
+<thead><tr><th>Severity</th><th>Example</th><th>Payout (INR)</th></tr></thead>
+<tbody>
+<tr><td>Critical</td><td>Decrypt a vault you don't own; forge a release; bypass the 14-day hold; auth bypass to admin; RCE</td><td>₹1,00,000 – ₹3,00,000</td></tr>
+<tr><td>High</td><td>Lock out another user; trigger alerts on someone else's vault; tamper with audit log; bypass free-tier; XSS with session theft</td><td>₹25,000 – ₹75,000</td></tr>
+<tr><td>Medium</td><td>CSRF on state-changing endpoint; high-precision account enumeration; IDOR on non-secret resources</td><td>₹5,000 – ₹20,000</td></tr>
+<tr><td>Low</td><td>Open redirect; reflected XSS on logged-out pages; security-header weakness with demo</td><td>₹1,000 – ₹5,000</td></tr>
+</tbody></table>
+
+<h2>Multipliers</h2>
+<ul>
+<li><strong>+50%</strong> with a working fix we accept</li>
+<li><strong>+50%</strong> for protocol-level breaks (crypto, release engine, Shamir)</li>
+<li><strong>+100%</strong> for demonstrated multi-user compromise</li>
+<li><strong>-50%</strong> if the precondition is a documented risk (e.g. sharing the master passphrase)</li>
+<li><strong>-50%</strong> for duplicates within 72 hours</li>
+</ul>
+
+<h2>Payment</h2>
+<p>Within 30 days of fix deployment via UPI / bank transfer (India) or Wise (international). Indian recipients above ₹30,000/year receive a TDS Form 16A per IT Act §194J.</p>
+
+<h2>Out of scope</h2>
+<p>See the <a href="/security/disclosure">disclosure policy</a>.</p>
+</main></body></html>

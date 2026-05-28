@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Lyfos · Status</title>
+<style>
+  :root {
+    --bg: #fbfbfd; --surface: #ffffff; --ink: #1d1d1f; --ink2: #6e6e73;
+    --green: #34c759; --amber: #c88719; --red: #d70015; --divider: rgba(0,0,0,0.08);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font: 16px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    background: var(--bg); color: var(--ink); padding: 48px 24px;
+  }
+  main { max-width: 720px; margin: 0 auto; }
+  .back { color: var(--ink2); text-decoration: none; font-size: 14px; }
+  .back:hover { color: var(--ink); }
+  h1 { font-size: 36px; letter-spacing: -0.02em; margin: 24px 0 8px; }
+  .updated { color: var(--ink2); font-size: 14px; }
+
+  .pill {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--surface); border-radius: 16px; padding: 20px 24px;
+    margin: 32px 0; border: 1px solid var(--divider);
+  }
+  .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .system-green .dot { background: var(--green); }
+  .system-amber .dot { background: var(--amber); }
+  .system-red .dot { background: var(--red); }
+  .system-green strong { color: var(--green); }
+  .system-amber strong { color: var(--amber); }
+  .system-red strong { color: var(--red); }
+
+  .components {
+    background: var(--surface); border: 1px solid var(--divider); border-radius: 16px;
+    padding: 8px 24px; margin: 24px 0;
+  }
+  .components > div {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 0; border-bottom: 1px solid var(--divider); font-size: 15px;
+  }
+  .components > div:last-child { border-bottom: 0; }
+  .ok { color: var(--green); font-weight: 500; font-size: 13px; }
+  .degraded { color: var(--amber); font-weight: 500; font-size: 13px; }
+  .down { color: var(--red); font-weight: 500; font-size: 13px; }
+
+  h2 { font-size: 20px; margin: 48px 0 16px; letter-spacing: -0.01em; }
+  article { padding: 16px 0; border-bottom: 1px solid var(--divider); }
+  article:last-child { border: 0; }
+  article h3 { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
+  article p { margin: 0; color: var(--ink2); font-size: 14px; }
+
+  footer { color: var(--ink2); font-size: 13px; margin-top: 64px; }
+  footer a { color: var(--ink2); }
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="/">← Back to Lyfos</a>
+  <h1>Status</h1>
+  <p class="updated">Last updated 2026-05-28 12:00 IST. Refresh for the latest.</p>
+
+  <div class="pill system-green">
+    <span class="dot"></span>
+    <span><strong>All systems normal.</strong> Vault sync, release engine, and billing are operating as expected.</span>
+  </div>
+
+  <div class="components">
+    <div><span>Web app · lyfos.signorvale.com</span><span class="ok">Operational</span></div>
+    <div><span>iOS + Android apps</span><span class="ok">Operational</span></div>
+    <div><span>Authentication</span><span class="ok">Operational</span></div>
+    <div><span>Vault sync (Supabase Postgres)</span><span class="ok">Operational</span></div>
+    <div><span>Release engine</span><span class="ok">Operational</span></div>
+    <div><span>Email alerts (Resend)</span><span class="ok">Operational</span></div>
+    <div><span>SMS alerts (MSG91)</span><span class="ok">Operational</span></div>
+    <div><span>WhatsApp alerts (Meta)</span><span class="ok">Operational</span></div>
+    <div><span>Push notifications (Expo)</span><span class="ok">Operational</span></div>
+    <div><span>Billing (Razorpay)</span><span class="ok">Operational</span></div>
+  </div>
+
+  <h2>Recent incidents</h2>
+  <article>
+    <h3>No incidents in the last 90 days.</h3>
+    <p>This is our first launch quarter. We will log every incident here transparently — including small ones — with timestamps, root cause, and the fix.</p>
+  </article>
+
+  <h2>Scheduled maintenance</h2>
+  <article>
+    <h3>None scheduled.</h3>
+    <p>We give 7 days' notice for any planned downtime. Mobile app deploys do not require downtime.</p>
+  </article>
+
+  <h2>SLO targets</h2>
+  <article>
+    <h3>99.5% monthly availability for read flows (vault unlock + sync)</h3>
+    <p>Measured against successful synthetic vault-unlock probes every 5 minutes.</p>
+  </article>
+  <article>
+    <h3>99.9% monthly availability for the release engine state transitions</h3>
+    <p>Release engine outages directly delay families. We hold this to a higher bar than read flows.</p>
+  </article>
+
+  <footer>
+    Subscribe to status changes by following <a href="https://twitter.com/lyfos">@lyfos</a> or emailing
+    <a href="mailto:status@lyfos.signorvale.com?subject=Subscribe">status@lyfos.signorvale.com</a>.
+  </footer>
+</main>
+</body>
+</html>
