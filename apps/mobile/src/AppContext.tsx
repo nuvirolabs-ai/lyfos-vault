@@ -44,6 +44,8 @@ interface AppContextValue {
   session: Session | null;
   sessionLoaded: boolean;
   signOut: () => Promise<void>;
+  // Vault key accessor (for the release-plan finalize flow)
+  getRawVaultKey: () => Uint8Array | null;
 
   // Vault state
   storedRecord: VaultRecord | null;
@@ -279,8 +281,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const entitlements = useMemo(() => entitlementsFor(subscription), [subscription]);
 
+  const getRawVaultKey = useCallback(() => vaultKeyRef.current, []);
+
   const value = useMemo<AppContextValue>(() => ({
-    session, sessionLoaded, signOut,
+    session, sessionLoaded, signOut, getRawVaultKey,
     storedRecord, vault, unlocked: Boolean(vault),
     autoLockMs, setAutoLockMs,
     biometricEnabled, setBiometricEnabled,
