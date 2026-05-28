@@ -53,6 +53,8 @@ import { buildSnapshotsCsv, suggestedCsvFilename } from "./lib/csvExport.js";
 import { formatCurrency, formatCompact, DEFAULT_CURRENCY } from "./lib/currency.js";
 import { listMyKeyHolders, createKeyHolderInvite, revokeKeyHolder, sendInviteEmail, finalizeReleasePlan } from "./lib/releasePlan.js";
 import { loadMyReleaseSettings, upsertMyReleaseSettings, rotateMyClaimToken, fetchActiveReleaseAgainstMe, ownerAbortRelease } from "./lib/releaseClaim.js";
+import { fetchMySubscription, fetchMyBillingEvents, fetchMyBillingProfile, upsertMyBillingProfile, fetchInvoiceUrl, startUpgrade, cancelSubscriptionAtPeriodEnd, resumeSubscription } from "./lib/billing.js";
+import { PLANS, planFor, isPaid, entitlementsFor, daysLeftFor } from "./lib/plans.js";
 import { isSupabaseConfigured } from "./lib/supabaseClient.js";
 import { getSession, onAuthStateChange, signOut, appendServerAuditEvent, ensureDeviceToken, getDeviceToken, deleteAccount } from "./lib/auth.js";
 import {
@@ -739,6 +741,8 @@ function App() {
   const [sessionLoaded, setSessionLoaded] = useState(!isSupabaseConfigured());
   const [authBypass, setAuthBypass] = useState(false);     // user chose "continue without account"
   const [authPanelOpen, setAuthPanelOpen] = useState(false); // user clicked "Sign in" from Settings while having a local vault
+  const [subscription, setSubscription] = useState(null);
+  const entitlements = useMemo(() => entitlementsFor(subscription), [subscription]);
   const backupSizeWarning = useMemo(() => getBackupSizeWarning({
     encryptedPayloadBytes: storedRecord ? new TextEncoder().encode(JSON.stringify(storedRecord, null, 2)).byteLength : 0,
     encryptedAttachmentBytes: 0
@@ -770,6 +774,18 @@ function App() {
     });
     return () => { mounted = false; unsubscribe(); };
   }, []);
+
+  // When a session arrives, also fetch the subscription state. Used to
+  // gate features (vault item count, release plan) and render the
+  // billing UI in Settings.
+  useEffect(() => {
+    if (!session) { setSubscription(null); return; }
+    let cancelled = false;
+    fetchMySubscription()
+      .then((s) => { if (!cancelled) setSubscription(s); })
+      .catch(() => { if (!cancelled) setSubscription(null); });
+    return () => { cancelled = true; };
+  }, [session?.user?.id]);
 
   // When a session arrives (sign-in or hydrated existing session):
   //   1. Register/touch this device
@@ -1036,6 +1052,9 @@ function App() {
       vaultKey={vaultKey}
       notice={notice}
       autoLockMs={autoLockMs}
+      subscription={subscription}
+      entitlements={entitlements}
+      onSubscriptionChange={setSubscription}
       onAutoLockChange={(timeoutMs) => {
         const next = saveAutoLockPolicy(localStorage, timeoutMs);
         setAutoLockMs(next);
@@ -1325,7 +1344,7 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
   );
 }
 
-function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange, onSave, onLock, backupHealth, backupSizeWarning, onExport, onReplaceRecoveryKey, onReset, session, onShowAuthScreen, onSignOut }) {
+function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange, onSave, onLock, backupHealth, backupSizeWarning, onExport, onReplaceRecoveryKey, onReset, session, onShowAuthScreen, onSignOut, subscription, entitlements, onSubscriptionChange }) {
   const [screen, setScreen] = useState("home");
   const [settingsOpen, setSettingsOpen] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -1368,9 +1387,9 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
         {screen === "home"    && <HomeScreen    vault={vault} onSave={onSave} onNavigate={setScreen} backupHealth={backupHealth} onExport={onExport} />}
         {screen === "setup"   && <SetupScreen   vault={vault} onSave={onSave} onNavigate={setScreen} />}
         {screen === "update"  && <UpdateScreen  vault={vault} onSave={onSave} onNavigate={setScreen} />}
-        {screen === "life"    && <VaultSubNav screen={screen} setScreen={setScreen}><LifeMapScreen vault={vault} autoLockMs={autoLockMs} onAutoLockChange={onAutoLockChange} onReplaceRecoveryKey={onReplaceRecoveryKey} onSave={onSave} onNavigate={setScreen} /></VaultSubNav>}
+        {screen === "life"    && <VaultSubNav screen={screen} setScreen={setScreen}><LifeMapScreen vault={vault} autoLockMs={autoLockMs} onAutoLockChange={onAutoLockChange} onReplaceRecoveryKey={onReplaceRecoveryKey} onSave={onSave} onNavigate={setScreen} entitlements={entitlements} onOpenSettings={() => setSettingsOpen(true)} /></VaultSubNav>}
         {screen === "capture" && <VaultSubNav screen={screen} setScreen={setScreen}><CaptureScreen vault={vault} onSave={onSave} onNavigate={setScreen} /></VaultSubNav>}
-        {screen === "release" && <VaultSubNav screen={screen} setScreen={setScreen}><ReleaseScreen vault={vault} onSave={onSave} session={session} vaultKey={vaultKey} /></VaultSubNav>}
+        {screen === "release" && <VaultSubNav screen={screen} setScreen={setScreen}><ReleaseScreen vault={vault} onSave={onSave} session={session} vaultKey={vaultKey} entitlements={entitlements} /></VaultSubNav>}
 
         <footer className="mt-12 flex flex-wrap items-center justify-between gap-4 border-t border-black/8 py-6 text-[11px] font-medium text-[#a1a1a6]">
           <span>Lyfos · Beta · Locally encrypted on this device.</span>
@@ -1392,6 +1411,9 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
             onSignOut={async () => { await onSignOut?.(); setSettingsOpen(false); }}
             vault={vault}
             onSaveVault={onSave}
+            subscription={subscription}
+            entitlements={entitlements}
+            onSubscriptionChange={onSubscriptionChange}
           />
         )}
       </div>
@@ -1507,7 +1529,7 @@ function bannerCopy(request, daysRemaining) {
   }
 }
 
-function SettingsDrawer({ onClose, onLoadDemo, onExport, onReset, session, onShowAuthScreen, onSignOut, vault, onSaveVault }) {
+function SettingsDrawer({ onClose, onLoadDemo, onExport, onReset, session, onShowAuthScreen, onSignOut, vault, onSaveVault, subscription, entitlements, onSubscriptionChange }) {
   const supabaseOn = isSupabaseConfigured();
   const [editingGoal, setEditingGoal] = useState(false);
 
@@ -1565,6 +1587,7 @@ function SettingsDrawer({ onClose, onLoadDemo, onExport, onReset, session, onSho
           </div>
         )}
 
+        {supabaseOn && session && <BillingSection subscription={subscription} entitlements={entitlements} onSubscriptionChange={onSubscriptionChange} />}
         {supabaseOn && session && <DeviceListSection />}
 
         <div className="mt-8 space-y-1">
@@ -1707,6 +1730,182 @@ function DeleteAccountButton({ onDone }) {
         >
           {busy ? "Deleting…" : "Delete account"}
         </button>
+      </div>
+    </div>
+  );
+}
+
+function BillingSection({ subscription, entitlements, onSubscriptionChange }) {
+  const [events, setEvents] = useState([]);
+  const [loadingEvents, setLoadingEvents] = useState(true);
+  const [showPlans, setShowPlans] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function loadEvents() {
+    setLoadingEvents(true);
+    try { setEvents(await fetchMyBillingEvents()); }
+    catch (err) { if (typeof console !== "undefined") console.warn("[lyfos] events:", err?.message); }
+    finally { setLoadingEvents(false); }
+  }
+
+  useEffect(() => { loadEvents(); }, []);
+
+  async function upgrade(plan) {
+    setError("");
+    setBusy(true);
+    try {
+      const result = await startUpgrade({ plan, provider: "razorpay" });
+      // The Edge Function returns { provider, checkoutUrl } OR a Razorpay
+      // subscription_id we hand to the Razorpay Checkout JS widget. For
+      // now we redirect to checkoutUrl (Razorpay's hosted page) — the
+      // widget version lands when we test with real keys.
+      if (result?.checkoutUrl) {
+        window.location.assign(result.checkoutUrl);
+        return;
+      }
+      setError("Upgrade started but no checkout URL returned. Try again or contact support.");
+    } catch (err) {
+      setError(err?.message || "Couldn't start upgrade.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancel() {
+    if (!window.confirm("Cancel at the end of your current billing period? You'll keep access until then.")) return;
+    setBusy(true);
+    setError("");
+    try {
+      await cancelSubscriptionAtPeriodEnd();
+      const fresh = await fetchMySubscription();
+      onSubscriptionChange?.(fresh);
+    } catch (err) {
+      setError(err?.message || "Couldn't cancel.");
+    } finally { setBusy(false); }
+  }
+
+  async function resume() {
+    setBusy(true);
+    setError("");
+    try {
+      await resumeSubscription();
+      const fresh = await fetchMySubscription();
+      onSubscriptionChange?.(fresh);
+    } catch (err) {
+      setError(err?.message || "Couldn't resume.");
+    } finally { setBusy(false); }
+  }
+
+  async function openInvoice(path) {
+    try {
+      const url = await fetchInvoiceUrl(path);
+      if (url) window.open(url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      setError(err?.message || "Couldn't open invoice.");
+    }
+  }
+
+  const plan    = entitlements ?? planFor("free");
+  const renewal = daysLeftFor(subscription);
+
+  return (
+    <div className="mt-8">
+      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Billing</p>
+
+      <div className="mt-3 rounded-2xl border border-black/8 bg-white p-4">
+        <div className="flex items-baseline justify-between gap-3">
+          <div>
+            <p className="text-[14px] font-semibold text-[#1d1d1f]">Lyfos {plan.label}</p>
+            <p className="mt-0.5 text-[12px] text-[#86868b]">
+              {subscription?.plan === "free" || !subscription
+                ? "Free tier · upgrade to enable the release service"
+                : subscription.status === "active"  ? `Active${renewal !== null ? ` · renews in ${renewal} day${renewal === 1 ? "" : "s"}` : ""}`
+                : subscription.status === "past_due" ? `Past due · grace period ends in ${renewal ?? "?"} days`
+                : subscription.status === "trialing" ? `Trialing${renewal !== null ? ` · ${renewal} day${renewal === 1 ? "" : "s"} left` : ""}`
+                : subscription.status === "cancelled" ? `Cancelled · access until ${renewal} day${renewal === 1 ? "" : "s"}`
+                : `Status: ${subscription.status}`}
+            </p>
+            {subscription?.cancel_at_period_end && (
+              <p className="mt-1 text-[11px] font-medium text-[#b42318]">Will not renew. <button onClick={resume} className="underline" disabled={busy}>Resume</button></p>
+            )}
+          </div>
+          {subscription?.plan === "free" || !subscription ? (
+            <button
+              onClick={() => setShowPlans((v) => !v)}
+              className="rounded-full bg-[#1d1d1f] px-4 py-1.5 text-[11px] font-semibold text-white"
+              disabled={busy}
+            >
+              Upgrade
+            </button>
+          ) : (
+            <button
+              onClick={cancel}
+              disabled={busy || subscription.cancel_at_period_end}
+              className="rounded-full border border-black/8 bg-white px-4 py-1.5 text-[11px] font-semibold text-[#1d1d1f] disabled:opacity-40"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+
+        {error && <div className="mt-3 rounded-md bg-[#ff453a]/8 px-3 py-2 text-[12px] font-medium text-[#b42318]">{error}</div>}
+
+        {showPlans && (
+          <div className="mt-4 space-y-3 border-t border-black/6 pt-4">
+            {["vault", "family"].map((pid) => {
+              const p = planFor(pid);
+              return (
+                <div key={pid} className="rounded-xl border border-black/8 bg-[#fbfbfd] p-4">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <div>
+                      <p className="text-[14px] font-semibold">Lyfos {p.label}</p>
+                      <p className="mt-0.5 text-[11px] text-[#86868b]">{p.summary}</p>
+                    </div>
+                    <p className="text-[15px] font-semibold tabular-nums">{formatCurrency(p.amountInr / 100, "INR")}<span className="text-[10px] font-normal text-[#86868b]"> / year</span></p>
+                  </div>
+                  <ul className="mt-3 list-disc space-y-1 pl-4 text-[12px] leading-5 text-[#6e6e73]">
+                    {p.bullets.map((b) => <li key={b}>{b}</li>)}
+                  </ul>
+                  <button
+                    onClick={() => upgrade(pid)}
+                    disabled={busy}
+                    className="mt-3 w-full rounded-full bg-[#1d1d1f] px-4 py-2 text-[12px] font-semibold text-white disabled:opacity-40"
+                  >
+                    {busy ? "Opening checkout…" : `Choose ${p.label}`}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Invoices */}
+      <div className="mt-3">
+        <p className="px-3 text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Invoices</p>
+        {loadingEvents && <p className="mt-2 px-3 text-[11px] text-[#a1a1a6]">Loading…</p>}
+        {!loadingEvents && events.length === 0 && (
+          <p className="mt-2 px-3 text-[11px] text-[#a1a1a6]">No invoices yet.</p>
+        )}
+        <div className="mt-2 space-y-1.5">
+          {events.filter((e) => e.invoice_pdf_path || e.event_type.startsWith("payment.")).map((e) => (
+            <button
+              key={e.id}
+              onClick={() => e.invoice_pdf_path && openInvoice(e.invoice_pdf_path)}
+              disabled={!e.invoice_pdf_path}
+              className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[12px] transition hover:bg-white disabled:cursor-default"
+            >
+              <span>
+                <span className="font-medium">{e.invoice_number ?? e.event_type}</span>
+                <span className="ml-2 text-[#86868b]">{new Date(e.created_at).toLocaleDateString()}</span>
+              </span>
+              <span className="tabular-nums text-[#1d1d1f]">
+                {e.amount_paise != null ? formatCurrency(e.amount_paise / 100, e.currency || "INR") : "—"}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -3064,7 +3263,7 @@ function BackupSizeNotice({ warning }) {
   );
 }
 
-function LifeMapScreen({ vault, autoLockMs, onAutoLockChange, onReplaceRecoveryKey, onSave, onNavigate }) {
+function LifeMapScreen({ vault, autoLockMs, onAutoLockChange, onReplaceRecoveryKey, onSave, onNavigate, entitlements, onOpenSettings }) {
   const model = useMemo(() => getLifeModel(vault), [vault]);
   const [selectedAreaId, setSelectedAreaId] = useState(null);
   const [securityOpen, setSecurityOpen] = useState(false);
@@ -3113,6 +3312,8 @@ function LifeMapScreen({ vault, autoLockMs, onAutoLockChange, onReplaceRecoveryK
             onSave={onSave}
             onCapture={() => onNavigate("capture")}
             onClose={() => setSelectedAreaId(null)}
+            entitlements={entitlements}
+            onOpenSettings={onOpenSettings}
           />
         </div>
       )}
@@ -3164,7 +3365,7 @@ function LifeMapCategoryCard({ area, index, selected, onClick }) {
   );
 }
 
-function CategoryWorkspace({ vault, area, onSave, onCapture, onClose }) {
+function CategoryWorkspace({ vault, area, onSave, onCapture, onClose, entitlements, onOpenSettings }) {
   const [mode, setMode] = useState("overview");
   const [selectedId, setSelectedId] = useState(null);
   const [editingRecord, setEditingRecord] = useState(null);
@@ -3204,6 +3405,16 @@ function CategoryWorkspace({ vault, area, onSave, onCapture, onClose }) {
   async function saveRecord(record, auditEvent, changeReason = "record_change") {
     const now = new Date().toISOString();
     const exists = vault.items.some((item) => item.id === record.id);
+
+    // Free-tier gate: enforce the vault item cap on CREATE only. Edits
+    // to existing items always succeed so a downgraded user isn't
+    // trapped above the cap.
+    if (!exists && entitlements && Number.isFinite(entitlements.vaultItemLimit)
+        && vault.items.length >= entitlements.vaultItemLimit) {
+      setMessage(`You're on the ${entitlements.label} plan (${entitlements.vaultItemLimit}-item limit). Upgrade to keep adding records.`);
+      return;
+    }
+
     const nextRecord = {
       ...record,
       id: record.id || crypto.randomUUID(),
@@ -4038,7 +4249,7 @@ function ReleaseScreen({ vault, onSave, session, vaultKey }) {
 
   return (
     <section className="mx-auto max-w-2xl">
-      {cloudEnabled && <CloudKeyHolders vaultKey={vaultKey} />}
+      {cloudEnabled && <CloudKeyHolders vaultKey={vaultKey} entitlements={entitlements} />}
 
       {!cloudEnabled && (
       <div className="mb-10 rounded-2xl border border-[#c88719]/30 bg-[#fff8eb] px-5 py-4">
@@ -4184,7 +4395,7 @@ function ReleaseScreen({ vault, onSave, session, vaultKey }) {
   );
 }
 
-function CloudKeyHolders({ vaultKey }) {
+function CloudKeyHolders({ vaultKey, entitlements }) {
   const [holders, setHolders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -4200,7 +4411,8 @@ function CloudKeyHolders({ vaultKey }) {
   const accepted = acceptedHolders.length + verifiedHolders.length;
   const verified = verifiedHolders.length;
   const planActive = verified >= 5;
-  const canFinalize = !planActive && holders.length === 5 && accepted === 5;
+  const canPay = entitlements ? entitlements.releaseEnabled : false;
+  const canFinalize = !planActive && holders.length === 5 && accepted === 5 && canPay;
 
   async function refresh() {
     setLoading(true);
@@ -4339,6 +4551,9 @@ function CloudKeyHolders({ vaultKey }) {
             </p>
           </>
         )}
+        {!planActive && holders.length === 5 && accepted === 5 && !canPay && (
+          <FreeReleaseUpgradePrompt />
+        )}
         {planActive && (
           <p className="text-[12px] text-[#0b6b3a]">Your circle is active. If something happens to you, 3 of 5 plus a 14-day hold are required to release.</p>
         )}
@@ -4361,6 +4576,21 @@ function CloudKeyHolders({ vaultKey }) {
           onConfirm={finalize}
         />
       )}
+    </div>
+  );
+}
+
+function FreeReleaseUpgradePrompt() {
+  return (
+    <div className="w-full max-w-md rounded-2xl border border-[#c88719]/30 bg-[#fff8eb] p-5">
+      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#7a4b00]">Upgrade to finalize</p>
+      <h3 className="mt-1 text-[16px] font-semibold tracking-tight text-[#7a4b00]">Your five are ready.</h3>
+      <p className="mt-2 text-[13px] leading-5 text-[#7a4b00]">
+        Finalizing splits your vault key into 5 cryptographic shares and turns on the live release service. It's the central paid feature.
+      </p>
+      <p className="mt-3 text-[13px] leading-5 text-[#7a4b00]">
+        Open <strong>Settings → Billing</strong> to upgrade to Lyfos Vault (₹999/yr) or Family (₹2,499/yr).
+      </p>
     </div>
   );
 }

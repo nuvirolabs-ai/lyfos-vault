@@ -29,6 +29,8 @@ Lyfos uses Supabase for auth, Postgres, and (later) edge functions + storage. Th
 9. Apply `0008_release_claim_flow.sql`. Run. (Creates storage buckets `death_certificates` + `release_downloads`.)
 10. `0009_release_alert_cron.sql` — do NOT run yet. Run after deploying the release-alert-dispatcher Edge Function (see step "Multi-channel release alerts" below).
 11. Apply `0010_nominee_combine.sql`. Run.
+12. Apply `0011_subscriptions.sql`. Run.
+13. Apply `0012_invoices_setup.sql`. Run. (Creates the `invoices` storage bucket + the `allocate_invoice_number` RPC.)
 12. Verify in **Table editor**: you should see `vault_blobs`, `devices`, `recovery_envelopes`, `audit_log`, `key_holders`, `key_shares`, `release_requests`, `release_share_releases`, `release_alerts`, `release_settings`. All should have the green "RLS enabled" badge. In **Database → Functions** you should see `append_audit_event`, `delete_account`, `admin_approve_release`, `admin_reject_release`, `owner_abort_release`, `holder_release_share`, `maybe_start_hold`, `maybe_complete_hold`, `peek_invite`, `accept_invite`, `mark_holder_verified`, `peek_claim`, `create_release_request`, `admin_list_pending_releases`, `admin_get_certificate_url`, `nominee_get_vault_blob`, `nominee_mark_completed`.
 
 #### Founder admin role
@@ -182,7 +184,64 @@ Before opening the release feature to paying users, run the full simulation docu
 
 ---
 
-## 4. Plausible Analytics (Phase 0 telemetry)
+## 4. Payments (Phase 4 — Razorpay + GST invoices)
+
+### Razorpay setup
+
+1. Sign up at <https://razorpay.com> and complete KYC. Your sending domain needs to be added.
+2. **Subscriptions → Plans → + New plan:**
+   - Plan 1: `Lyfos Vault — yearly`, billing cycle 1 year, amount **99900 paise (₹999)**.
+   - Plan 2: `Lyfos Family — yearly`, billing cycle 1 year, amount **249900 paise (₹2,499)**.
+   Note the `plan_xxx` IDs.
+3. **Settings → Webhooks → + Add new webhook:**
+   - URL: `https://<your-ref>.supabase.co/functions/v1/razorpay-webhook`
+   - Active events: `subscription.activated`, `subscription.charged`, `subscription.halted`, `subscription.cancelled`, `subscription.completed`, `payment.failed`
+   - Secret: generate a strong value, you'll set it as `RAZORPAY_WEBHOOK_SECRET`.
+4. **Settings → API Keys → Generate Live Key.** Save Key ID + Secret.
+
+### Deploy the payment Edge Functions
+
+```bash
+cd supabase
+supabase functions deploy create-checkout-session
+supabase functions deploy razorpay-webhook
+supabase functions deploy cancel-subscription
+supabase functions deploy resume-subscription
+supabase functions deploy generate-invoice
+
+supabase secrets set \
+  RAZORPAY_KEY_ID=rzp_live_xxx \
+  RAZORPAY_KEY_SECRET=xxx \
+  RAZORPAY_PLAN_VAULT=plan_xxx \
+  RAZORPAY_PLAN_FAMILY=plan_xxx \
+  RAZORPAY_WEBHOOK_SECRET=xxx \
+  LYFOS_GSTIN=27AABCU1234D1Z5 \
+  LYFOS_LEGAL_NAME="Your Company Pvt Ltd" \
+  LYFOS_ADDRESS="Your registered address" \
+  LYFOS_STATE_CODE=27 \
+  LYFOS_PAN=AABCU1234D
+```
+
+### Stripe (optional, off by default)
+
+Set `STRIPE_SECRET_KEY`, `STRIPE_PRICE_VAULT`, `STRIPE_PRICE_FAMILY` only when you're ready to start charging in USD. Leaving them unset keeps Stripe inert; Razorpay remains the active path.
+
+### Smoke test
+
+In the app, sign in as a test user, open Settings → Billing → Upgrade. Choose Vault. The button should redirect to Razorpay's hosted checkout (`short_url`). Use Razorpay's test cards (`4111 1111 1111 1111` etc.) in test mode. After payment, the webhook fires `subscription.activated`, the `subscriptions` row flips to `active`, the invoice generator creates an HTML invoice at `invoices/<user_id>/LYF-YYYY-NNNNNN.html`. The Billing → Invoices list shows the new row.
+
+If anything errors:
+- Check the webhook delivery log in Razorpay dashboard.
+- Check the Edge Function logs in Supabase dashboard → Functions.
+- Use `select * from billing_events where user_id = '<id>' order by created_at desc;` to see what landed.
+
+### GST registration
+
+You need a GSTIN once your annual revenue exceeds ₹20L (₹10L for special-category states). Until then, the invoice can be issued without a GSTIN — but you cannot collect GST. We default to applying 18% GST in `generate-invoice` because once you're paid that's correct; if you're below the threshold, edit the function to drop the tax math and label invoices "GST not applicable (below threshold)" until registration.
+
+---
+
+## 5. Plausible Analytics (Phase 0 telemetry)
 
 Free for personal projects with public dashboards; paid tier ($9/mo) for private dashboards. For a vault product, **use the paid tier** so usage analytics aren't publicly indexable.
 
@@ -196,7 +255,7 @@ Free for personal projects with public dashboards; paid tier ($9/mo) for private
 
 ---
 
-## 5. Sentry (error monitoring — wire up after Phase 1)
+## 6. Sentry (error monitoring — wire up after Phase 1)
 
 Skip for now. The code path is ready in `apps/web/src/lib/telemetry.js`. When you decide to enable:
 
@@ -209,7 +268,7 @@ Skip for now. The code path is ready in `apps/web/src/lib/telemetry.js`. When yo
 
 ---
 
-## 6. Hosting security headers (Phase 0 closeout)
+## 7. Hosting security headers (Phase 0 closeout)
 
 Wherever you deploy (Cloudflare Pages recommended for free India edge), add response headers:
 
@@ -226,7 +285,7 @@ On Cloudflare Pages: project → Settings → Headers → add a `_headers` file 
 
 ---
 
-## 7. Domain ownership
+## 8. Domain ownership
 
 The repo references `lyfos.signorvale.com`. When you migrate to a primary domain (e.g. `lyfos.com` or `lyfos.app`):
 
