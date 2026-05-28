@@ -1,0 +1,69 @@
+{
+  "expo": {
+    "name": "Lyfos",
+    "slug": "lyfos",
+    "scheme": "lyfos",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#fbfbfd"
+    },
+    "ios": {
+      "bundleIdentifier": "com.signorvale.lyfos",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Unlock your Lyfos vault with Face ID.",
+        "NSCameraUsageDescription": "Capture documents and screenshots into your vault.",
+        "NSPhotoLibraryUsageDescription": "Attach photos of documents to your vault records.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "associatedDomains": ["applinks:lyfos.signorvale.com"]
+    },
+    "android": {
+      "package": "com.signorvale.lyfos",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#fbfbfd"
+      },
+      "permissions": [
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "CAMERA"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            { "scheme": "https", "host": "lyfos.signorvale.com" },
+            { "scheme": "lyfos" }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"],
+          "autoVerify": true
+        }
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-local-authentication",
+      "expo-secure-store",
+      "expo-notifications",
+      [
+        "expo-image-picker",
+        { "photosPermission": "Attach photos of documents to your vault records." }
+      ]
+    ],
+    "extra": {
+      "eas": { "projectId": "fill-after-eas-init" },
+      "SUPABASE_URL": "",
+      "SUPABASE_ANON_KEY": ""
+    },
+    "runtimeVersion": { "policy": "appVersion" },
+    "updates": {
+      "url": "https://u.expo.dev/fill-after-eas-init"
+    }
+  }
+}

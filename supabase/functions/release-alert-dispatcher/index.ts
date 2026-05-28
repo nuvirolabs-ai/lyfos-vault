@@ -82,11 +82,12 @@ serve(async (_req) => {
   for (const h of holds ?? []) {
     try {
       const owner = await getOwnerContact(h.owner_id);
+      const ownerTokens = await getPushTokens(h.owner_id);
       const channels = [
         { id: "email",    can: Boolean(RESEND_KEY) && Boolean(owner.email),     send: () => sendEmail(owner.email, h) },
         { id: "sms",      can: Boolean(MSG91_KEY)  && Boolean(owner.phone),     send: () => sendSms(owner.phone, h) },
         { id: "whatsapp", can: Boolean(WHATSAPP_TOKEN) && Boolean(owner.phone), send: () => sendWhatsApp(owner.phone, h) },
-        // push: future — needs a stored web-push subscription per device
+        { id: "push",     can: ownerTokens.length > 0,                          send: () => sendPush(ownerTokens, h) }
       ];
 
       for (const c of channels) {
@@ -264,4 +265,37 @@ function escape(s: string): string {
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+}
+
+async function getPushTokens(userId: string): Promise<string[]> {
+  const { data } = await admin
+    .from("push_tokens")
+    .select("expo_token")
+    .eq("user_id", userId);
+  return (data ?? []).map((r: any) => r.expo_token).filter(Boolean);
+}
+
+async function sendPush(tokens: string[], request: any): Promise<string | null> {
+  // Expo Push API — accepts up to 100 messages per call. Returns
+  // tickets we'd normally chase for delivery confirmation; we log
+  // tickets back via the existing release_alerts row's
+  // provider_message_id (first ticket id, comma-separated extras).
+  const daysLeft = Math.max(0, Math.ceil((new Date(request.ready_at).getTime() - Date.now()) / 86_400_000));
+  const messages = tokens.map((to) => ({
+    to,
+    sound: "default",
+    priority: "high",
+    title: `Lyfos: vault release pending`,
+    body: `${daysLeft} day${daysLeft === 1 ? "" : "s"} left in your owner-protection hold. Tap to abort.`,
+    data: { route: "/release/abort", request_id: request.id }
+  }));
+  const res = await fetch("https://exp.host/--/api/v2/push/send", {
+    method: "POST",
+    headers: { "content-type": "application/json", "accept": "application/json" },
+    body: JSON.stringify(messages)
+  });
+  if (!res.ok) throw new Error(`Expo Push ${res.status}`);
+  const body = await res.json().catch(() => ({}));
+  const tickets: any[] = body?.data ?? [];
+  return tickets.map((t) => t?.id).filter(Boolean).join(",") || null;
 }
