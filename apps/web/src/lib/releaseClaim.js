@@ -117,6 +117,48 @@ export async function fetchMyReleaseRequests() {
   return data ?? [];
 }
 
+const INFLIGHT_STATES = ["pending_review", "approved", "awaiting_shares", "holding", "ready_to_release"];
+
+export async function fetchActiveReleaseAgainstMe() {
+  // For an owner: the single in-flight release request against her vault,
+  // if any. RLS limits the table view to her own owner_id rows.
+  if (!isSupabaseConfigured()) return null;
+  const sb = getSupabase();
+  const { data: userData } = await sb.auth.getUser();
+  if (!userData?.user?.id) return null;
+  const { data, error } = await sb
+    .from("release_requests")
+    .select("*")
+    .eq("owner_id", userData.user.id)
+    .in("state", INFLIGHT_STATES)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  return data?.[0] ?? null;
+}
+
+export async function fetchSharesReleasedFor(requestId) {
+  if (!isSupabaseConfigured()) return [];
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("release_share_releases")
+    .select("id, key_holder_id, share_index, released_at, ciphertext, ephemeral_pub")
+    .eq("release_request_id", requestId)
+    .order("released_at", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function ownerAbortRelease(requestId, reason) {
+  if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
+  const sb = getSupabase();
+  const { error } = await sb.rpc("owner_abort_release", {
+    p_request_id: requestId,
+    p_reason: reason ?? "owner_abort"
+  });
+  if (error) throw error;
+}
+
 // ============================================================
 // Admin side
 // ============================================================

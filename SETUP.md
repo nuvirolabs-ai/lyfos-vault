@@ -25,7 +25,11 @@ Lyfos uses Supabase for auth, Postgres, and (later) edge functions + storage. Th
 5. **0004_monthly_reminder_cron.sql** — do NOT run yet. Run after deploying the Edge Function (see step "Monthly reminder email" below).
 6. Apply `0005_release_engine.sql`. Run.
 7. Apply `0006_release_engine_rls.sql`. Run.
-8. Verify in **Table editor**: you should see `vault_blobs`, `devices`, `recovery_envelopes`, `audit_log`, `key_holders`, `key_shares`, `release_requests`, `release_share_releases`, `release_alerts`. All should have the green "RLS enabled" badge. In **Database → Functions** you should see `append_audit_event`, `delete_account`, `admin_approve_release`, `admin_reject_release`, `owner_abort_release`, `holder_release_share`, `maybe_start_hold`, `maybe_complete_hold`.
+8. Apply `0007_invite_helpers.sql`. Run.
+9. Apply `0008_release_claim_flow.sql`. Run. (Creates storage buckets `death_certificates` + `release_downloads`.)
+10. `0009_release_alert_cron.sql` — do NOT run yet. Run after deploying the release-alert-dispatcher Edge Function (see step "Multi-channel release alerts" below).
+11. Apply `0010_nominee_combine.sql`. Run.
+12. Verify in **Table editor**: you should see `vault_blobs`, `devices`, `recovery_envelopes`, `audit_log`, `key_holders`, `key_shares`, `release_requests`, `release_share_releases`, `release_alerts`, `release_settings`. All should have the green "RLS enabled" badge. In **Database → Functions** you should see `append_audit_event`, `delete_account`, `admin_approve_release`, `admin_reject_release`, `owner_abort_release`, `holder_release_share`, `maybe_start_hold`, `maybe_complete_hold`, `peek_invite`, `accept_invite`, `mark_holder_verified`, `peek_claim`, `create_release_request`, `admin_list_pending_releases`, `admin_get_certificate_url`, `nominee_get_vault_blob`, `nominee_mark_completed`.
 
 #### Founder admin role
 
@@ -119,7 +123,66 @@ You should get back `{"ok": true, "sent": N, "failed": 0, "monthLabel": "..."}`.
 
 ---
 
-## 3. Plausible Analytics (Phase 0 telemetry)
+## 3. Release engine Edge Functions (Phase 3)
+
+Three Edge Functions ship the release engine. Deploy them after applying the SQL migrations.
+
+```bash
+cd supabase
+supabase functions deploy send-key-holder-invite
+supabase functions deploy release-alert-dispatcher
+```
+
+The `send-key-holder-invite` function reuses your Resend secrets from the monthly reminder.
+
+### Multi-channel release alerts
+
+The `release-alert-dispatcher` fires hourly during the 14-day owner-protection hold and sends one alert per channel per UTC day. To enable each channel:
+
+**Email — always on if Resend is configured.** No extra setup beyond the monthly-reminder Resend keys.
+
+**SMS via MSG91** (India). Sign up at <https://msg91.com>, get an auth key, and create a DLT-approved template that takes 2 placeholders: `{{var1}}` (days remaining) and `{{var2}}` (abort URL).
+
+```bash
+supabase secrets set \
+  MSG91_AUTH_KEY=… \
+  MSG91_TEMPLATE_ID=… \
+  MSG91_SENDER_ID=LYFOSV
+```
+
+If `MSG91_AUTH_KEY` is unset, SMS gracefully skips.
+
+**WhatsApp via Meta Cloud API**. Apply for WhatsApp Business via Meta Business Suite (allow 2–3 weeks). Create an approved template called `lyfos_release_hold` that accepts one body parameter (days remaining).
+
+```bash
+supabase secrets set \
+  WHATSAPP_TOKEN=EAA… \
+  WHATSAPP_PHONE_NUMBER_ID=… \
+  WHATSAPP_TEMPLATE_NAME=lyfos_release_hold
+```
+
+If `WHATSAPP_TOKEN` is unset, WhatsApp gracefully skips.
+
+### Schedule the dispatcher
+
+Once `release-alert-dispatcher` is deployed:
+
+1. Make sure `app.settings.supabase_url` + `app.settings.cron_bearer` are set (you did this for the monthly reminder).
+2. Run `supabase/migrations/0009_release_alert_cron.sql` in the SQL editor. This schedules the dispatcher hourly at minute 7.
+3. Manual test:
+   ```bash
+   curl -X POST "https://<your-ref>.supabase.co/functions/v1/release-alert-dispatcher" \
+     -H "Authorization: Bearer <service-role-key>"
+   ```
+   Expected: `{"ok":true, "holding":0, "channels":0, "expired":0, "errors":[]}` on a quiet system.
+
+### End-to-end death-simulation runbook
+
+Before opening the release feature to paying users, run the full simulation documented in `docs/death-simulation-runbook.md`. 7 throwaway emails, ~20 minutes of work, proves the entire chain works. Run it again quarterly.
+
+---
+
+## 4. Plausible Analytics (Phase 0 telemetry)
 
 Free for personal projects with public dashboards; paid tier ($9/mo) for private dashboards. For a vault product, **use the paid tier** so usage analytics aren't publicly indexable.
 
@@ -133,7 +196,7 @@ Free for personal projects with public dashboards; paid tier ($9/mo) for private
 
 ---
 
-## 4. Sentry (error monitoring — wire up after Phase 1)
+## 5. Sentry (error monitoring — wire up after Phase 1)
 
 Skip for now. The code path is ready in `apps/web/src/lib/telemetry.js`. When you decide to enable:
 
@@ -146,7 +209,7 @@ Skip for now. The code path is ready in `apps/web/src/lib/telemetry.js`. When yo
 
 ---
 
-## 5. Hosting security headers (Phase 0 closeout)
+## 6. Hosting security headers (Phase 0 closeout)
 
 Wherever you deploy (Cloudflare Pages recommended for free India edge), add response headers:
 
@@ -163,7 +226,7 @@ On Cloudflare Pages: project → Settings → Headers → add a `_headers` file 
 
 ---
 
-## 6. Domain ownership
+## 7. Domain ownership
 
 The repo references `lyfos.signorvale.com`. When you migrate to a primary domain (e.g. `lyfos.com` or `lyfos.app`):
 

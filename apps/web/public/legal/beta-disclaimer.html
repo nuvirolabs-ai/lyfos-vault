@@ -32,21 +32,24 @@
   <h2>What does not work yet</h2>
   <ul>
     <li>
-      <strong>The Release plan does not contact anyone.</strong>
-      The Release plan tab lets you write down who your nominee is and who your trusted key holders are. It is a planning tool. It does <strong>not</strong> notify anyone, run a 14-day countdown, or release any data automatically. Until the release service launches, you must share these details with your nominee yourself.
-    </li>
-    <li>
-      <strong>There is no cloud sync, no account, and no cross-device access.</strong>
-      Your vault lives in this browser only. Opening Lyfos on another device or another browser will not show your data — it will look like a fresh install. The encrypted backup file is currently the only way to move your vault.
-    </li>
-    <li>
-      <strong>If you clear browser data, you will lose your vault.</strong>
-      This includes "Clear browsing data", "Reset Safari", browser profile deletion, and uninstall flows. The encrypted backup file is your only safety net during the Beta.
+      <strong>If you do NOT create a Lyfos account, the Release plan is still a planning tool only.</strong>
+      Without an account, your plan stays local on this device and Lyfos cannot contact anyone for you. Sign in and finalize a 5-of-5 plan to activate the real release service.
     </li>
     <li>
       <strong>The product has not yet had an independent security audit.</strong>
       An audit is planned before commercial launch (see <a href="https://github.com/signorvaleai-hash/lyfos-vault/blob/main/ROADMAP.md" target="_blank" rel="noopener">ROADMAP</a>). Until then, you should treat Lyfos as a private experiment rather than as bank-grade infrastructure.
     </li>
+    <li>
+      <strong>WhatsApp + SMS alerts may not be live yet.</strong>
+      During the beta we may be running on email-only alerts while WhatsApp Business approval and SMS provider setup completes. Email is sent for every alert; SMS + WhatsApp degrade gracefully when their credentials aren't provisioned.
+    </li>
+  </ul>
+
+  <h2>What now works (signed-in users)</h2>
+  <ul>
+    <li><strong>Cloud-encrypted vault sync</strong> across devices. Your vault is encrypted on your device with a key only you control; only ciphertext goes to our servers.</li>
+    <li><strong>Real release engine.</strong> Invite 5 key holders by email; they accept and upload a release public key. You finalize the plan; your vault key is split into 5 Shamir shares, each encrypted to a holder. A nominee can file a release claim; founders manually review; 3 of 5 holders approve; a 14-day owner-protection hold begins with daily multi-channel alerts; you can one-tap abort from any alert; if the hold completes, the nominee combines the shares client-side and downloads your emergency-eligible records.</li>
+    <li><strong>Server zero-knowledge</strong> throughout. The Lyfos server holds ciphertext only — at no stage in the release flow does the server see your vault key, your passphrase, or your record contents.</li>
   </ul>
 
   <h2>What we recommend during the Beta</h2>
@@ -63,8 +66,8 @@
     The <a href="https://github.com/signorvaleai-hash/lyfos-vault/blob/main/ROADMAP.md" target="_blank" rel="noopener">public roadmap</a> tracks the planned arrival of:
   </p>
   <ul>
-    <li>Accounts and zero-knowledge cloud sync (Phase 1)</li>
-    <li>The real release service that contacts nominees and key holders (Phase 3)</li>
+    <li>Accounts and zero-knowledge cloud sync (Phase 1) — <strong>shipped</strong></li>
+    <li>The real release service that contacts nominees and key holders (Phase 3) — <strong>shipped</strong></li>
     <li>Mobile apps for iOS and Android (Phase 5)</li>
     <li>Independent security audit and insurance (Phase 6)</li>
   </ul>

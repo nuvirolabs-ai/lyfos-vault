@@ -52,7 +52,7 @@ import { initTelemetry, registerServiceWorker } from "./lib/telemetry.js";
 import { buildSnapshotsCsv, suggestedCsvFilename } from "./lib/csvExport.js";
 import { formatCurrency, formatCompact, DEFAULT_CURRENCY } from "./lib/currency.js";
 import { listMyKeyHolders, createKeyHolderInvite, revokeKeyHolder, sendInviteEmail, finalizeReleasePlan } from "./lib/releasePlan.js";
-import { loadMyReleaseSettings, upsertMyReleaseSettings, rotateMyClaimToken } from "./lib/releaseClaim.js";
+import { loadMyReleaseSettings, upsertMyReleaseSettings, rotateMyClaimToken, fetchActiveReleaseAgainstMe, ownerAbortRelease } from "./lib/releaseClaim.js";
 import { isSupabaseConfigured } from "./lib/supabaseClient.js";
 import { getSession, onAuthStateChange, signOut, appendServerAuditEvent, ensureDeviceToken, getDeviceToken, deleteAccount } from "./lib/auth.js";
 import {
@@ -69,6 +69,9 @@ import { AuthScreen } from "./AuthScreen.jsx";
 import { InviteAcceptScreen } from "./InviteAcceptScreen.jsx";
 import { ClaimScreen } from "./ClaimScreen.jsx";
 import { AdminScreen } from "./AdminScreen.jsx";
+import { AbortScreen } from "./AbortScreen.jsx";
+import { HolderReleaseScreen } from "./HolderReleaseScreen.jsx";
+import { NomineeDownloadScreen } from "./NomineeDownloadScreen.jsx";
 import {
   canConfirmDestructiveRestore,
   createRestoreDryRun,
@@ -920,6 +923,15 @@ function App() {
   if (typeof window !== "undefined" && window.location.pathname.startsWith("/admin")) {
     return <AdminScreen onReturnHome={() => { window.location.assign("/"); }} />;
   }
+  if (typeof window !== "undefined" && window.location.pathname.startsWith("/release/abort")) {
+    return <AbortScreen onReturnHome={() => { window.location.assign("/"); }} />;
+  }
+  if (typeof window !== "undefined" && window.location.pathname.startsWith("/hold-release")) {
+    return <HolderReleaseScreen onReturnHome={() => { window.location.assign("/"); }} />;
+  }
+  if (typeof window !== "undefined" && window.location.pathname.startsWith("/download")) {
+    return <NomineeDownloadScreen onReturnHome={() => { window.location.assign("/"); }} />;
+  }
 
   // Hold the screen while we hydrate the Supabase session — flicker-free
   // so we don't briefly show AuthScreen and then yank it away.
@@ -1351,6 +1363,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
 
         {notice && <div className="mb-5 rounded-3xl border border-[#34c759]/20 bg-[#34c759]/10 px-5 py-4 text-sm font-semibold text-[#0b6b3a]">{notice}</div>}
         {backupSizeWarning?.level !== "none" && <BackupSizeNotice warning={backupSizeWarning} />}
+        {session && <ActiveReleaseBanner onNavigateRelease={() => setScreen("release")} />}
 
         {screen === "home"    && <HomeScreen    vault={vault} onSave={onSave} onNavigate={setScreen} backupHealth={backupHealth} onExport={onExport} />}
         {screen === "setup"   && <SetupScreen   vault={vault} onSave={onSave} onNavigate={setScreen} />}
@@ -1384,6 +1397,114 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
       </div>
     </main>
   );
+}
+
+function ActiveReleaseBanner({ onNavigateRelease }) {
+  const [request, setRequest] = useState(null);
+  const [aborting, setAborting] = useState(false);
+  const [error, setError] = useState("");
+
+  async function refresh() {
+    try {
+      setRequest(await fetchActiveReleaseAgainstMe());
+    } catch (err) {
+      if (typeof console !== "undefined") console.warn("[lyfos] active release fetch:", err?.message);
+    }
+  }
+
+  useEffect(() => {
+    refresh();
+    // Poll every 60 seconds while one is active. Cheap enough.
+    const id = setInterval(refresh, 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (!request) return null;
+
+  async function abort() {
+    if (!window.confirm("Abort this release request? Your nominee will be notified and your vault stays sealed.")) return;
+    setAborting(true);
+    setError("");
+    try {
+      await ownerAbortRelease(request.id, "owner_abort_from_banner");
+      await refresh();
+    } catch (err) {
+      setError(err?.message || "Couldn't abort.");
+    } finally {
+      setAborting(false);
+    }
+  }
+
+  const tone = stateTone(request.state);
+  const daysRemaining = request.ready_at
+    ? Math.max(0, Math.ceil((new Date(request.ready_at).getTime() - Date.now()) / (24 * 60 * 60 * 1000)))
+    : null;
+
+  return (
+    <div className={cx("mb-5 rounded-3xl border px-5 py-4", tone.bg, tone.border)}>
+      <div className="flex items-start gap-3">
+        <span className={cx("mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] font-bold text-white", tone.dot)}>!</span>
+        <div className="flex-1">
+          <p className={cx("text-[12px] font-semibold uppercase tracking-[0.14em]", tone.text)}>
+            Active release request · {stateLabel(request.state)}
+          </p>
+          <p className={cx("mt-1.5 text-[13px] leading-5", tone.text)}>
+            {bannerCopy(request, daysRemaining)}
+          </p>
+          {error && <p className="mt-2 text-[12px] text-[#b42318]">{error}</p>}
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button
+              onClick={abort}
+              disabled={aborting || request.state === "ready_to_release" || request.state === "completed" || request.state === "cancelled"}
+              className="rounded-full bg-[#b42318] px-4 py-1.5 text-[11px] font-semibold text-white shadow-[0_4px_12px_rgba(180,35,24,0.25)] transition hover:bg-[#8e1612] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {aborting ? "Aborting…" : "Abort — I'm fine"}
+            </button>
+            <button onClick={onNavigateRelease} className={cx("text-[12px] font-medium underline-offset-2 hover:underline", tone.text)}>
+              View release tab
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function stateTone(state) {
+  if (state === "holding" || state === "ready_to_release") {
+    return { bg: "bg-[#ff453a]/8", border: "border-[#b42318]/40", text: "text-[#7a1d12]", dot: "bg-[#b42318]" };
+  }
+  return { bg: "bg-[#fff8eb]", border: "border-[#c88719]/30", text: "text-[#7a4b00]", dot: "bg-[#c88719]" };
+}
+
+function stateLabel(state) {
+  return {
+    pending_review:    "Pending Lyfos review",
+    approved:          "Approved · waiting for your key holders",
+    awaiting_shares:   "Key holders releasing",
+    holding:           "Owner-protection hold",
+    ready_to_release:  "Hold expired",
+    completed:         "Released",
+    cancelled:         "Aborted",
+    rejected:          "Rejected"
+  }[state] ?? state;
+}
+
+function bannerCopy(request, daysRemaining) {
+  switch (request.state) {
+    case "pending_review":
+      return `Someone (${request.nominee_email_at_request}) filed a release claim. Lyfos is reviewing the certificate. If this isn't expected — abort now.`;
+    case "approved":
+      return `Lyfos approved the claim. Your 5 key holders are being asked to release their shares. If this isn't expected — abort now.`;
+    case "awaiting_shares":
+      return `Your key holders are releasing shares. Once 3 of 5 release, a 14-day hold begins during which you'll be alerted daily. If this isn't expected — abort now.`;
+    case "holding":
+      return `The 14-day owner-protection hold is active. ${daysRemaining ?? "?"} day${daysRemaining === 1 ? "" : "s"} remaining. If you're alive and reading this — abort now and your vault stays sealed.`;
+    case "ready_to_release":
+      return `The 14-day hold has expired. Your nominee can now download the emergency-eligible records. Abort is no longer possible.`;
+    default:
+      return `Release request in state: ${request.state}.`;
+  }
 }
 
 function SettingsDrawer({ onClose, onLoadDemo, onExport, onReset, session, onShowAuthScreen, onSignOut, vault, onSaveVault }) {
@@ -1713,6 +1834,9 @@ function SettingsRow({ label, hint, actionLabel, onClick, tone }) {
 }
 
 function VaultSubNav({ screen, setScreen, children }) {
+  // Show the amber "Draft" badge only when Supabase isn't configured —
+  // i.e. local-only deploys where the release page is still planning-only.
+  const showDraftBadge = !isSupabaseConfigured();
   return (
     <div>
       <div className="mb-6 flex justify-center">
@@ -1720,11 +1844,11 @@ function VaultSubNav({ screen, setScreen, children }) {
           {[
             ["life", "Life Map"],
             ["capture", "Capture"],
-            ["release", "Release plan"]
+            ["release", showDraftBadge ? "Release plan" : "Release"]
           ].map(([id, label]) => (
             <button key={id} onClick={() => setScreen(id)} className={cx("rounded-full px-4 py-1.5 text-xs font-semibold transition", screen === id ? "bg-[#1d1d1f] text-white" : "text-[#6e6e73] hover:text-[#1d1d1f]")}>
               {label}
-              {id === "release" && <span className={cx("ml-1.5 rounded-full px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider", screen === id ? "bg-white/20 text-white" : "bg-[#fff8eb] text-[#7a4b00]")}>Draft</span>}
+              {id === "release" && showDraftBadge && <span className={cx("ml-1.5 rounded-full px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider", screen === id ? "bg-white/20 text-white" : "bg-[#fff8eb] text-[#7a4b00]")}>Draft</span>}
             </button>
           ))}
         </div>
@@ -3921,14 +4045,11 @@ function ReleaseScreen({ vault, onSave, session, vaultKey }) {
         <div className="flex items-start gap-3">
           <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[#c88719] text-[11px] font-bold text-white">!</span>
           <div>
-            <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[#7a4b00]">Draft — not an active service</p>
+            <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[#7a4b00]">Planning mode only</p>
             <p className="mt-1.5 text-[13px] leading-5 text-[#7a4b00]">
               {supabaseOn
-                ? <>Sign in to set up real key holders. Without an account, this page only stores your plan locally — Lyfos cannot contact anyone for you.</>
-                : <>Lyfos does <strong>not</strong> yet contact your nominees or key holders. This page stores your release plan locally on this device so you can think through it. Until the release service launches, you must share these instructions with your nominee yourself (e.g. printed and kept in a safe).</>}
-            </p>
-            <p className="mt-2 text-[11px] text-[#7a4b00]/80">
-              Live release service is on the roadmap. See <a href="https://github.com/signorvaleai-hash/lyfos-vault/blob/main/ROADMAP.md" target="_blank" rel="noopener" className="underline">when it ships</a>.
+                ? <>Sign in to activate the real release service. Without an account, this page only stores your plan locally — Lyfos cannot contact anyone for you.</>
+                : <>This deployment is local-only. Sign in is not available. Your release plan stays on this device; you must share these instructions with your nominee yourself.</>}
             </p>
           </div>
         </div>

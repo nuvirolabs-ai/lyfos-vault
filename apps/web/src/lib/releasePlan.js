@@ -9,7 +9,9 @@ import { getSupabase, isSupabaseConfigured } from "./supabaseClient.js";
 import {
   splitVaultKey,
   sealShareToPubkey,
-  shareStringToBytes
+  openSealedShare,
+  shareStringToBytes,
+  deriveHolderKeypairFromPassphrase
 } from "./shareCrypto.js";
 
 // ============================================================
@@ -184,4 +186,117 @@ function makeInviteToken() {
   let s = "";
   for (const b of bytes) s += String.fromCharCode(b);
   return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// ============================================================
+// Key holder side — find pending releases, release a share
+// ============================================================
+
+/**
+ * Find release_requests for which the signed-in user is a verified
+ * key holder, joined with the request state and the (encrypted) share
+ * she owns. Filters to states where holder action is meaningful.
+ */
+export async function listReleasesAwaitingMyAction() {
+  if (!isSupabaseConfigured()) return [];
+  const sb = getSupabase();
+  const { data: userData } = await sb.auth.getUser();
+  if (!userData?.user?.id) return [];
+
+  // First find my key_holders rows
+  const { data: myHolders } = await sb
+    .from("key_holders")
+    .select("id, owner_id, label, status")
+    .eq("holder_user_id", userData.user.id)
+    .eq("status", "verified");
+
+  if (!myHolders || myHolders.length === 0) return [];
+  const ownerIds = myHolders.map((h) => h.owner_id);
+
+  // Then find active release requests against those owners
+  const { data: requests } = await sb
+    .from("release_requests")
+    .select("*")
+    .in("owner_id", ownerIds)
+    .in("state", ["approved", "awaiting_shares", "holding"]);
+
+  if (!requests) return [];
+
+  // Find which ones I've already released a share for
+  const requestIds = requests.map((r) => r.id);
+  const { data: alreadyReleased } = await sb
+    .from("release_share_releases")
+    .select("release_request_id, key_holder_id")
+    .in("release_request_id", requestIds);
+
+  const releasedSet = new Set((alreadyReleased ?? []).map((r) => `${r.release_request_id}:${r.key_holder_id}`));
+
+  // Stitch holder info onto each request
+  return requests.map((req) => {
+    const holder = myHolders.find((h) => h.owner_id === req.owner_id);
+    return {
+      ...req,
+      myHolderId: holder?.id,
+      myLabel: holder?.label,
+      iAlreadyReleased: holder ? releasedSet.has(`${req.id}:${holder.id}`) : false
+    };
+  });
+}
+
+/**
+ * Holder unlocks her share, re-encrypts it to the nominee's release
+ * process public key, and uploads via holder_release_share RPC.
+ *
+ * @param {object} params
+ * @param {string} params.requestId
+ * @param {string} params.holderId             her own key_holders.id
+ * @param {string} params.ownerId              the request's owner_id
+ * @param {string} params.releaseProcessPubkey from release_requests row
+ * @param {string} params.passphrase           her vault passphrase
+ * @param {string} params.holderUserId         auth.uid() — for keypair derivation
+ */
+export async function releaseMyShare({ requestId, holderId, ownerId, releaseProcessPubkey, passphrase, holderUserId }) {
+  if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
+  if (!passphrase || passphrase.length < 12) throw new Error("Passphrase required (min 12 chars)");
+  const sb = getSupabase();
+
+  // 1. Fetch my encrypted share (RLS only lets me see my own).
+  const { data: shareRow, error: shareErr } = await sb
+    .from("key_shares")
+    .select("share_index, ciphertext, ephemeral_pub")
+    .eq("owner_id", ownerId)
+    .eq("key_holder_id", holderId)
+    .maybeSingle();
+  if (shareErr) throw shareErr;
+  if (!shareRow) throw new Error("Couldn't find your share for this owner");
+
+  // 2. Re-derive my release keypair from passphrase + my user_id
+  const myKp = await deriveHolderKeypairFromPassphrase(passphrase, holderUserId);
+
+  // 3. Decrypt the share with my secret key
+  let shareBytes;
+  try {
+    shareBytes = await openSealedShare(
+      { ciphertext: shareRow.ciphertext, ephemeralPub: shareRow.ephemeral_pub },
+      myKp.secretKey
+    );
+  } catch {
+    throw new Error("Couldn't decrypt your share. Did you type the same passphrase you used when accepting the invite?");
+  }
+
+  // 4. Re-encrypt the share to the nominee's release_process_pubkey
+  const sealed = await sealShareToPubkey(shareBytes, releaseProcessPubkey);
+  // Zero the decrypted plaintext best-effort
+  for (let i = 0; i < shareBytes.length; i++) shareBytes[i] = 0;
+
+  // 5. Upload via RPC (atomic: insert + maybe advance state)
+  const { error: rpcErr } = await sb.rpc("holder_release_share", {
+    p_request_id: requestId,
+    p_share_index: shareRow.share_index,
+    p_ciphertext: sealed.ciphertext,
+    p_ephemeral_pub: sealed.ephemeralPub
+  });
+  if (rpcErr) throw rpcErr;
+
+  return { shareIndex: shareRow.share_index };
 }

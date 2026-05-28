@@ -17,14 +17,14 @@ test("entry copy does not imply real nominee execution or owner-alert service in
 });
 
 test("release copy states the current service boundary honestly", () => {
-  // The Phase 0 honest framing replaced the old prototype-boundary copy
-  // with a permanent banner inside ReleaseScreen. Either form satisfies
-  // the contract: be unambiguous that the live release service is off.
-  const newFraming = [
-    "Lyfos does",
-    "not",
-    "yet contact your nominees"
-  ].every((fragment) => mainSource.includes(fragment));
+  // Three accepted framings — earliest was the Phase 0 prototype copy;
+  // Phase 1 replaced it with "yet contact your nominees"; Phase 3 once
+  // the real engine ships labels the local-only deploy as "Planning
+  // mode only" with the cloud path explained. Any one of these in
+  // main.jsx means the user is told plainly when the live release
+  // service is and isn't running.
   const oldFraming = mainSource.includes("does not yet send emails, verify nominees, run a 14-day timer, or open records for another person");
-  assert.equal(newFraming || oldFraming, true, "main.jsx should explicitly tell users the release service is not active");
+  const midFraming = ["Lyfos does", "not", "yet contact your nominees"].every((fragment) => mainSource.includes(fragment));
+  const newFraming = mainSource.includes("Planning mode only");
+  assert.equal(oldFraming || midFraming || newFraming, true, "main.jsx should explicitly tell users when the release service is and isn't active");
 });
