@@ -52,6 +52,7 @@ import { initTelemetry, registerServiceWorker } from "./lib/telemetry.js";
 import { buildSnapshotsCsv, suggestedCsvFilename } from "./lib/csvExport.js";
 import { formatCurrency, formatCompact, DEFAULT_CURRENCY } from "./lib/currency.js";
 import { listMyKeyHolders, createKeyHolderInvite, revokeKeyHolder, sendInviteEmail, finalizeReleasePlan } from "./lib/releasePlan.js";
+import { loadMyReleaseSettings, upsertMyReleaseSettings, rotateMyClaimToken } from "./lib/releaseClaim.js";
 import { isSupabaseConfigured } from "./lib/supabaseClient.js";
 import { getSession, onAuthStateChange, signOut, appendServerAuditEvent, ensureDeviceToken, getDeviceToken, deleteAccount } from "./lib/auth.js";
 import {
@@ -66,6 +67,8 @@ import {
 } from "./lib/vaultSync.js";
 import { AuthScreen } from "./AuthScreen.jsx";
 import { InviteAcceptScreen } from "./InviteAcceptScreen.jsx";
+import { ClaimScreen } from "./ClaimScreen.jsx";
+import { AdminScreen } from "./AdminScreen.jsx";
 import {
   canConfirmDestructiveRestore,
   createRestoreDryRun,
@@ -905,11 +908,17 @@ function App() {
   }
 
   // URL routing. Single SPA, no router lib — we just look at pathname
-  // for the handful of public routes we need (invite acceptance for now;
-  // claim + abort tokens will join in later days).
+  // for the handful of public routes we need.
   const inviteToken = matchPathToken("/invite/");
   if (inviteToken) {
     return <InviteAcceptScreen token={inviteToken} onReturnHome={() => { window.location.assign("/"); }} />;
+  }
+  const claimToken = matchPathToken("/claim/");
+  if (claimToken) {
+    return <ClaimScreen token={claimToken} onReturnHome={() => { window.location.assign("/"); }} />;
+  }
+  if (typeof window !== "undefined" && window.location.pathname.startsWith("/admin")) {
+    return <AdminScreen onReturnHome={() => { window.location.assign("/"); }} />;
   }
 
   // Hold the screen while we hydrate the Supabase session — flicker-free
@@ -4220,6 +4229,8 @@ function CloudKeyHolders({ vaultKey }) {
         </div>
       )}
 
+      {planActive && <ClaimUrlPanel />}
+
       {finalizeOpen && (
         <FinalizeModal
           acceptedHolders={acceptedHolders}
@@ -4228,6 +4239,163 @@ function CloudKeyHolders({ vaultKey }) {
           onCancel={() => setFinalizeOpen(false)}
           onConfirm={finalize}
         />
+      )}
+    </div>
+  );
+}
+
+function ClaimUrlPanel() {
+  const [settings, setSettings] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [nomineeEmail, setNomineeEmail] = useState("");
+  const [nomineeLabel, setNomineeLabel] = useState("");
+  const [claimText, setClaimText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [showUrl, setShowUrl] = useState(false);
+
+  async function refresh() {
+    setLoading(true);
+    try {
+      const s = await loadMyReleaseSettings();
+      setSettings(s);
+      setNomineeEmail(s?.nominee_email ?? "");
+      setNomineeLabel(s?.nominee_label ?? "");
+      setClaimText(s?.claim_text ?? "");
+    } catch (err) {
+      setError(err?.message || "Couldn't load claim settings.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { refresh(); }, []);
+
+  async function save() {
+    setBusy(true);
+    setError("");
+    try {
+      const next = await upsertMyReleaseSettings({
+        nomineeEmail: nomineeEmail.trim() || null,
+        nomineeLabel: nomineeLabel.trim() || null,
+        claimText: claimText.trim() || null
+      });
+      setSettings(next);
+      setEditing(false);
+    } catch (err) {
+      setError(err?.message || "Couldn't save.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function rotate() {
+    if (!window.confirm("Rotate the claim link? The old URL will stop working. You'll need to share the new one with your nominee.")) return;
+    setBusy(true);
+    try {
+      const next = await rotateMyClaimToken();
+      setSettings(next);
+    } catch (err) {
+      setError(err?.message || "Couldn't rotate.");
+    } finally { setBusy(false); }
+  }
+
+  if (loading) return null;
+
+  const url = settings?.claim_token ? `${window.location.origin}/claim/${settings.claim_token}` : null;
+
+  async function copyUrl() {
+    if (!url) return;
+    try { await navigator.clipboard.writeText(url); } catch {}
+  }
+
+  return (
+    <div className="mt-10 rounded-2xl border border-black/8 bg-white p-5">
+      <div className="flex items-baseline justify-between">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Claim link for your nominee</p>
+        {!editing && settings && (
+          <button onClick={() => setEditing(true)} className="text-[11px] font-medium text-[#86868b] hover:text-[#1d1d1f]">Edit</button>
+        )}
+      </div>
+
+      {!settings && !editing && (
+        <div className="mt-3">
+          <p className="text-[13px] leading-5 text-[#6e6e73]">
+            Generate a stable URL you share once with your nominee. They keep it (printed copy, password manager, sealed envelope). If you ever need to release the vault — this is the link.
+          </p>
+          <button
+            onClick={() => setEditing(true)}
+            className="mt-4 rounded-full bg-[#1d1d1f] px-5 py-2 text-[12px] font-semibold text-white"
+          >
+            Set up claim link
+          </button>
+        </div>
+      )}
+
+      {settings && !editing && (
+        <div className="mt-3">
+          <p className="text-[13px] text-[#1d1d1f]">
+            Nominee: <strong>{settings.nominee_label || "—"}</strong>
+            {settings.nominee_email && <span className="text-[#86868b]"> · {settings.nominee_email}</span>}
+          </p>
+          {settings.claim_text && (
+            <p className="mt-2 text-[12px] leading-5 text-[#6e6e73]">"{settings.claim_text}"</p>
+          )}
+          <button onClick={() => setShowUrl((v) => !v)} className="mt-3 text-[11px] font-medium text-[#86868b] underline-offset-2 hover:text-[#1d1d1f] hover:underline">
+            {showUrl ? "Hide URL" : "Show claim URL"}
+          </button>
+          {showUrl && url && (
+            <div className="mt-2">
+              <div className="break-all rounded-md bg-[#fbfbfd] px-3 py-2 font-mono text-[11px]">{url}</div>
+              <div className="mt-2 flex items-center gap-3">
+                <button onClick={copyUrl} className="text-[11px] font-medium text-[#1d1d1f] underline-offset-2 hover:underline">Copy</button>
+                <button onClick={rotate} className="text-[11px] font-medium text-[#b42318] underline-offset-2 hover:underline" disabled={busy}>Rotate</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {editing && (
+        <div className="mt-3 space-y-2">
+          <label className="block">
+            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Nominee label</span>
+            <input
+              value={nomineeLabel}
+              onChange={(e) => setNomineeLabel(e.target.value)}
+              placeholder="Priya Sharma (spouse)"
+              className="mt-1 w-full rounded-md border border-black/10 bg-white px-3 py-2 text-[13px] outline-none focus:border-[#1d1d1f]"
+            />
+          </label>
+          <label className="block">
+            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Nominee email · optional, helps them know the link is for them</span>
+            <input
+              type="email"
+              value={nomineeEmail}
+              onChange={(e) => setNomineeEmail(e.target.value)}
+              placeholder="priya@example.com"
+              className="mt-1 w-full rounded-md border border-black/10 bg-white px-3 py-2 text-[13px] outline-none focus:border-[#1d1d1f]"
+            />
+          </label>
+          <label className="block">
+            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Note for them · optional, shown on the claim page</span>
+            <textarea
+              value={claimText}
+              onChange={(e) => setClaimText(e.target.value)}
+              rows={3}
+              placeholder="If you're reading this, something has happened to me. Bank passwords + property papers are inside. Call my CA Nikhil first."
+              className="mt-1 w-full rounded-md border border-black/10 bg-white px-3 py-2 text-[13px] leading-5 outline-none focus:border-[#1d1d1f]"
+            />
+          </label>
+          {error && <div className="rounded-md bg-[#ff453a]/8 px-3 py-2 text-[12px] text-[#b42318]">{error}</div>}
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <button onClick={() => { setEditing(false); refresh(); }} className="text-[11px] text-[#86868b] hover:text-[#1d1d1f]" disabled={busy}>Cancel</button>
+            <button onClick={save} disabled={busy} className="rounded-full bg-[#1d1d1f] px-4 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50">
+              {busy ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
