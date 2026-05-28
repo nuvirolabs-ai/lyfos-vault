@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Zero-knowledge on mobile, without compromising. · Lyfos</title>
+<link rel="stylesheet" href="/style.css" /><link rel="icon" type="image/svg+xml" href="/icon.svg" /></head>
+<body>
+<nav class="top"><div class="inner"><a class="brand" href="/">Lyfos</a><ul><li><a href="/security/">Security</a></li><li><a href="/pricing/">Pricing</a></li><li><a href="/press/">Press</a></li><li><a href="/blog/">Blog</a></li></ul><a class="cta" href="https://lyfos.signorvale.com">Open the app →</a></div></nav>
+
+<main><article class="post">
+<header>
+  <div class="eyebrow">Engineering · 20 May 2026</div>
+  <h1>Zero-knowledge on mobile, without compromising.</h1>
+  <p class="meta">By the founder, Lyfos · ~7 min read</p>
+</header>
+
+<p>Lyfos is wire-compatible between web and mobile. A key holder who accepts
+their invite on a Mac in Chrome can release their share six months later
+from their iPhone in the airport lounge, and the cryptography just works.
+Getting that right meant making a few unusual engineering choices.</p>
+
+<h2>The constraint</h2>
+
+<p>The release engine relies on three primitives: Argon2id for key
+derivation, Curve25519 NaCl box for sealing each share to a holder, and
+Shamir's Secret Sharing for splitting the vault key into five. All three
+must produce <em>byte-identical</em> output across web (browser, libsodium /
+hash-wasm) and mobile (React Native, no native modules).</p>
+
+<h2>The web stack</h2>
+
+<p>On web we use <code>hash-wasm</code> for Argon2id, <code>libsodium-wrappers</code>
+for crypto_box, and <code>secrets.js-grempe</code> for Shamir's. Each lazy-loaded
+via dynamic <code>import()</code> so they don't bloat the critical path —
+shaving about 150 KB gzip off our initial bundle.</p>
+
+<h2>The mobile stack</h2>
+
+<p>On mobile we deliberately avoided native modules. Native crypto modules
+on Expo require config plugins, prebuild rebuilds, and a worse OTA story.
+So we picked the pure-JS sibling of each web library:</p>
+
+<ul>
+  <li><strong>@noble/hashes</strong> for SHA, HMAC, and the underlying Argon2id helpers.</li>
+  <li><strong>tweetnacl</strong> for Curve25519 NaCl box — the canonical JS port of djb's NaCl.</li>
+  <li><strong>secrets.js-grempe</strong> for Shamir's (same library as web).</li>
+</ul>
+
+<p>Pure JS means our app is OTA-updateable via EAS Update without binary
+rebuilds, and the same crypto code paths run on every platform.</p>
+
+<h2>The trap we almost fell into</h2>
+
+<p>Argon2id has parameters: memory cost, iterations, parallelism. If web
+runs at 64 MiB / 3 / 1 and mobile runs at 64 MiB / 3 / 4, the derived keys
+will differ. We pinned the parallelism to 1 everywhere and store the
+parameter set inside the envelope so future upgrades stay backward
+compatible.</p>
+
+<h2>The vault key on mobile</h2>
+
+<p>On web, the derived key lives in a non-extractable WebCrypto handle —
+the raw bytes never enter JavaScript. On mobile, React Native doesn't
+expose WebCrypto, so the key is a <code>Uint8Array</code>. To prevent it
+leaking into React state (and therefore into the Redux DevTools, the
+crash reporter, etc.), we hold it in a <code>useRef</code> on a context
+object, and expose it only via an accessor function used at the precise
+moment of finalize.</p>
+
+<h2>iOS Keychain quirks</h2>
+
+<p>SecureStore on iOS has a per-key 2 KB limit. Our encrypted vault is
+much larger than that. The fix: shard the blob across 1800-byte chunks,
+store a chunk-count under the main key, and read/write a small ceremony
+around it. On Android, AsyncStorage with encryption-at-rest covers it.</p>
+
+<h2>What we won't compromise on</h2>
+
+<p>We could have shipped a faster mobile launch with a native crypto
+module and called it good. We didn't, because the day Expo deprecates a
+native API or Apple changes a crypto framework, we'd be stuck shipping
+binary updates to thousands of users to fix it. Pure-JS crypto means we
+can update via OTA the same day a finding lands. For a vault product,
+that agility is worth the small performance cost.</p>
+
+<p style="margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--divider);">
+<a class="btn primary" href="https://lyfos.signorvale.com">Create your vault →</a>
+&nbsp;&nbsp;<a class="btn ghost" href="/security/">Read the security model</a>
+</p>
+
+</article></main>
+
+<footer><div class="inner"><div><div class="brand">Lyfos</div><p class="copy">© 2026 Signor Vale AI Pvt Ltd.</p></div><div><h4>Product</h4><ul><li><a href="https://lyfos.signorvale.com">Open the app</a></li></ul></div><div><h4>Company</h4><ul><li><a href="/security/">Security</a></li><li><a href="/press/">Press</a></li></ul></div><div><h4>Legal</h4><ul><li><a href="https://lyfos.signorvale.com/legal/privacy.html">Privacy</a></li><li><a href="https://lyfos.signorvale.com/legal/terms.html">Terms</a></li></ul></div></div></footer>
+</body></html>

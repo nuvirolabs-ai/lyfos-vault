@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Security · Lyfos</title>
+<meta name="description" content="Lyfos's security model: end-to-end encryption with Argon2id, a 3-of-5 Shamir release engine, a 14-day owner-protection hold, and zero-knowledge architecture." />
+<link rel="stylesheet" href="/style.css" />
+<link rel="icon" type="image/svg+xml" href="/icon.svg" />
+</head>
+<body>
+
+<nav class="top">
+  <div class="inner">
+    <a class="brand" href="/">Lyfos</a>
+    <ul>
+      <li><a href="/security/">Security</a></li>
+      <li><a href="/pricing/">Pricing</a></li>
+      <li><a href="/press/">Press</a></li>
+      <li><a href="/blog/">Blog</a></li>
+    </ul>
+    <a class="cta" href="https://lyfos.signorvale.com">Open the app →</a>
+  </div>
+</nav>
+
+<main>
+
+<section class="hero" style="text-align: left; padding-bottom: 40px;">
+  <div class="eyebrow">Security</div>
+  <h1 style="text-align: left;">We protect your vault the way it should have been done from the start.</h1>
+  <p class="lede" style="text-align: left; margin: 0;">
+    No master keys we hold in reserve. No secret way to decrypt your data.
+    The architecture itself is the promise.
+  </p>
+</section>
+
+<section class="row">
+  <h2>How it works.</h2>
+  <p class="lede">In one paragraph: your passphrase goes through Argon2id to derive a key that encrypts your vault with AES-256-GCM, on your device. The ciphertext is what we store. The key never leaves you. To recover for your family, we split that key into five sealed pieces — three of them, plus a 14-day hold, are needed to put it back together.</p>
+
+  <table>
+    <thead><tr><th>Layer</th><th>Choice</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>Key derivation</td><td>Argon2id (RFC 9106), 64 MiB, 3 iterations</td><td>Best-in-class against GPU brute-force; OWASP recommended</td></tr>
+      <tr><td>Symmetric cipher</td><td>AES-256-GCM</td><td>Authenticated; standard; constant-time on modern hardware</td></tr>
+      <tr><td>Key splitting</td><td>Shamir's Secret Sharing (3-of-5)</td><td>Each holder learns nothing alone; any three reconstruct</td></tr>
+      <tr><td>Holder envelope</td><td>Curve25519 NaCl box (X25519 + XSalsa20-Poly1305)</td><td>Each share is sealed to a holder's individual key</td></tr>
+      <tr><td>Recovery phrase</td><td>BIP39 24-word</td><td>Industry-standard; word lists are public; can be written on paper</td></tr>
+      <tr><td>Transport</td><td>TLS 1.3 only</td><td>No legacy ciphers, no opt-out</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="row">
+  <h2>The release engine, in detail.</h2>
+  <ol style="font-size: 17px; line-height: 1.65; color: var(--ink); max-width: 720px;">
+    <li><strong>You pick five trusted humans</strong> when you set up. They each install Lyfos and verify their key holder identity.</li>
+    <li><strong>Your vault key is split</strong> into five pieces. Each piece is sealed to one holder's individual public key. No piece alone reveals anything about the key.</li>
+    <li><strong>If you die</strong>, your nominee opens a claim with a death certificate. Our team reviews it manually. Once approved, three of your holders are asked to release their share.</li>
+    <li><strong>The moment three shares arrive</strong>, a 14-day owner-protection hold begins. You receive alerts every day, on email, SMS, WhatsApp, and push notification. One tap aborts everything.</li>
+    <li><strong>If the hold expires without abort</strong>, your nominee can finally combine the three shares on their device and decrypt the emergency bundle. The vault stays sealed if anything breaks the chain.</li>
+  </ol>
+</section>
+
+<section class="row">
+  <h2>What we cannot do.</h2>
+  <ul style="font-size: 17px; line-height: 1.65; color: var(--ink); max-width: 720px;">
+    <li><strong>We cannot read your vault.</strong> Not on a subpoena, not for a customer support ticket, not for our own founder.</li>
+    <li><strong>We cannot recover your vault if you lose both your passphrase and your recovery phrase.</strong> By design.</li>
+    <li><strong>We cannot bypass the 14-day hold.</strong> Even for a verified nominee with a real death certificate. The hold is the owner-protection guarantee.</li>
+    <li><strong>We cannot defend against a compromised device.</strong> If your phone is rooted or your laptop is keylogged, an attacker who has your passphrase wins. Use a password manager. Use Face ID.</li>
+  </ul>
+</section>
+
+<section class="row">
+  <h2>Audits &amp; trust artefacts.</h2>
+  <table>
+    <thead><tr><th>Artefact</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Independent security audit</td><td>Pre-launch. Report + remediation will be published.</td></tr>
+      <tr><td>Cryptographic protocol review (academic)</td><td>Engaged.</td></tr>
+      <tr><td>Threat model</td><td><a href="https://github.com/signorvaleai-hash/lyfos-vault/blob/main/docs/security/threat-model.md">Public</a></td></tr>
+      <tr><td>Responsible disclosure policy</td><td><a href="https://lyfos.signorvale.com/security/disclosure">Published</a></td></tr>
+      <tr><td>Bug bounty</td><td><a href="https://lyfos.signorvale.com/security/bug-bounty">Up to ₹3,00,000 per finding</a></td></tr>
+      <tr><td>Cyber liability insurance</td><td>In procurement. Aggregate target ₹5-7 crore.</td></tr>
+      <tr><td>DPDPA grievance officer</td><td><a href="mailto:grievance@lyfos.signorvale.com">grievance@lyfos.signorvale.com</a></td></tr>
+      <tr><td>Sub-processor list</td><td><a href="https://lyfos.signorvale.com/legal/sub-processors.html">Public</a></td></tr>
+      <tr><td>Status page</td><td><a href="https://lyfos.signorvale.com/status/">lyfos.signorvale.com/status</a></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="row" style="text-align: center;">
+  <h2>Report a vulnerability.</h2>
+  <p class="lede" style="margin: 0 auto 32px;">
+    Email <a href="mailto:security@lyfos.signorvale.com"><strong>security@lyfos.signorvale.com</strong></a> with details.
+    PGP key at <a href="https://lyfos.signorvale.com/.well-known/pgp-key.txt">/.well-known/pgp-key.txt</a>.
+    First response within 4 hours for critical findings.
+  </p>
+</section>
+
+</main>
+
+<footer>
+  <div class="inner">
+    <div><div class="brand">Lyfos</div><p class="copy">© 2026 Signor Vale AI Pvt Ltd.</p></div>
+    <div><h4>Product</h4><ul><li><a href="https://lyfos.signorvale.com">Open the app</a></li><li><a href="/pricing/">Pricing</a></li></ul></div>
+    <div><h4>Company</h4><ul><li><a href="/press/">Press</a></li><li><a href="/blog/">Blog</a></li></ul></div>
+    <div><h4>Legal</h4><ul><li><a href="https://lyfos.signorvale.com/legal/privacy.html">Privacy</a></li><li><a href="https://lyfos.signorvale.com/legal/terms.html">Terms</a></li></ul></div>
+  </div>
+</footer>
+</body>
+</html>

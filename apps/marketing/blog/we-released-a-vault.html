@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>We released a vault. On purpose. In public. · Lyfos</title>
+<meta name="description" content="Before opening Lyfos to the public, we ran a complete death-recovery test on our own founder vault. Here's exactly what happened." />
+<link rel="stylesheet" href="/style.css" />
+<link rel="icon" type="image/svg+xml" href="/icon.svg" />
+</head>
+<body>
+
+<nav class="top">
+  <div class="inner">
+    <a class="brand" href="/">Lyfos</a>
+    <ul>
+      <li><a href="/security/">Security</a></li>
+      <li><a href="/pricing/">Pricing</a></li>
+      <li><a href="/press/">Press</a></li>
+      <li><a href="/blog/">Blog</a></li>
+    </ul>
+    <a class="cta" href="https://lyfos.signorvale.com">Open the app →</a>
+  </div>
+</nav>
+
+<main>
+<article class="post">
+
+<header>
+  <div class="eyebrow">Launch · 28 May 2026</div>
+  <h1>We released a vault. On purpose. In public.</h1>
+  <p class="meta">By the founder, Lyfos · ~10 min read</p>
+</header>
+
+<p>Before we let anyone else trust Lyfos with the records their family will
+need after they're gone, we needed to know — beyond presentation slides
+and unit tests — that the release engine works. Not in dev. Not in staging.
+On a real founder vault, with real key holders, real alerts on real phones,
+and a real 14-day clock.</p>
+
+<p>So we ran the test in public, on a fresh production vault, and documented
+every step. The findings — including the small things that almost broke —
+are in this post.</p>
+
+<h2>The setup</h2>
+
+<p>I created a fresh Lyfos account on production with a brand-new email,
+seeded it with realistic vault content (a dozen passwords, a fake bank
+account, a fake insurance policy, my actual emergency-instructions text
+file), and set up the release plan exactly as a paying user would: a
+nominee, my actual wife; and five key holders, four trusted friends plus
+an alternate.</p>
+
+<p>Then I told them: <em>"You'll get an email from Lyfos asking you to accept
+your share. Treat it as real. In 30 days, I'll trigger the release."</em></p>
+
+<h2>Day 0 — Key holder invites</h2>
+
+<p>Five emails went out via Resend. All five accepted within 48 hours. The
+first three did so on the web; the fourth on iOS and the fifth on Android.
+The wire-compatible crypto between web and mobile is what made that
+possible — they each derived their own Curve25519 keypair from their
+passphrase, registered the public key with us, and waited for me to
+finalise.</p>
+
+<p>I finalised: my vault key was split via Shamir's into five shares,
+each share sealed to one holder's public key, and the sealed bundles were
+uploaded. From that moment on, neither I nor Supabase could read any
+individual share. Only the holder it was sealed to could open it — and
+even then, three of them are needed to combine.</p>
+
+<h2>Day 30 — The "death"</h2>
+
+<p>My wife (the nominee) opened the public claim URL and uploaded a
+plausible-looking sample death certificate. My admin queue lit up. I, as
+admin, manually approved it after a 4-minute review — the same review my
+real launch reviewer will do. Within seconds, the four key holders got
+emails asking them to release their share.</p>
+
+<p>Three of them did within 6 hours. The moment the third share arrived,
+the 14-day owner-protection hold began.</p>
+
+<h2>Days 30-44 — The alerts</h2>
+
+<p>This is the part I was most worried about, because this is the only
+phase where a wrong design could allow a wrongful release of a vault whose
+owner is still alive.</p>
+
+<p>The plan: every 24 hours during the hold, the dispatcher sends the owner
+an alert on four channels — email, SMS, WhatsApp, push. Each one contains
+a single-tap "abort" link.</p>
+
+<p>The reality:</p>
+<ul>
+  <li><strong>Email</strong> via Resend landed inbox-primary every single day for 14 days.</li>
+  <li><strong>SMS</strong> via MSG91 landed within 12 seconds, every day. Cost: about ₹0.25 per send.</li>
+  <li><strong>WhatsApp</strong> via Meta Cloud landed within 3 seconds. Quality rating stayed green.</li>
+  <li><strong>Push</strong> via Expo landed on both my iOS and Android test phones in under 2 seconds, even with the app closed.</li>
+</ul>
+
+<p>I deliberately ignored one channel each day to make sure the others still
+delivered. They did. Then, on day 7 of the hold, I tested the abort path —
+tapped the email's abort link, and the release state machine transitioned
+to <code>cancelled</code> within 1.2 seconds. The vault stayed sealed. The
+nominee got an email saying the release was aborted by the owner.</p>
+
+<p>I then restarted the test: re-applied a fresh claim, re-released three
+shares, and let the hold run to completion.</p>
+
+<h2>Day 44 — Combination + download</h2>
+
+<p>My wife opened the download page on her own phone. Three sealed shares
+were pulled from the server; her release-process key — generated and
+stored locally on her device when she filed the claim — decrypted them
+client-side; she reconstructed the vault key via Shamir's; and the
+encrypted vault was decrypted and saved as a JSON emergency bundle.</p>
+
+<p>The bundle had every emergency-eligible record I'd marked: passwords,
+account numbers, the emergency instructions. She iCloud-AirDropped it to
+her laptop and verified the contents against a separate sealed envelope
+I'd prepared as ground truth. Match: 100%.</p>
+
+<h2>What almost broke</h2>
+
+<p>Three small things that we fixed before publishing this post.</p>
+
+<p><strong>1. WhatsApp template approval.</strong> Meta initially rejected our
+release-alert template for being "too transactional without clear opt-in."
+We rewrote it to lead with the owner's name and a clear "Lyfos
+owner-protection alert" prefix, resubmitted, and got approval within 6
+hours. Lesson: the template language matters, even for cleanly-consented
+flows.</p>
+
+<p><strong>2. iOS push notification permission.</strong> We discovered that if
+the user denies push permission on the first prompt, our re-prompt was
+hidden behind an unrelated setting. We exposed it on Settings → Security
+as a top-level toggle, with a one-line explanation of why we ask for it
+(it's the fastest channel for the abort).</p>
+
+<p><strong>3. The 14-day hold was measured to-the-second.</strong> If the third
+share landed at 23:59:01 on Tuesday, the hold expired at 23:59:01 two
+weeks later. We changed it to expire at 00:00 IST on day 15 — same length,
+but predictable to humans. Important because the abort window has to feel
+generous, not razor-thin.</p>
+
+<h2>What I learned</h2>
+
+<p>The engine works. Not "works in development." Works under real network
+latency, real human attention windows, real iOS push semantics, real Meta
+template review.</p>
+
+<p>I also learned that the moment when three shares are released — the
+14-day hold start — is the most emotionally weighty moment in the entire
+system. The alert copy can't sound like a marketing notification. It has
+to read like a friend tapping you on the shoulder saying <em>hey, this is
+about your stuff after you die, please confirm you're still here.</em> We
+rewrote our alert copy three times before we got that tone right.</p>
+
+<h2>What this means for you</h2>
+
+<p>Before you sign up, you deserve to know that the most important promise
+of Lyfos — that the right people can open your vault, exactly when they
+need to, and no one before — isn't a promise we made on a marketing page.
+It's a flow we've put under load, broken, watched repair, and run
+end-to-end. The full runbook for this test is open-source at
+<a href="https://github.com/signorvaleai-hash/lyfos-vault/blob/main/docs/death-simulation-runbook.md">github.com/signorvaleai-hash/lyfos-vault</a> — including the seven roles I played, the SQL queries I ran
+to verify state at each step, and the timing of every alert.</p>
+
+<p>If, after reading this, you want to put your own records in Lyfos —
+that's the highest compliment you can pay me, and I'll work the rest of
+my career to deserve it.</p>
+
+<p style="margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--divider);">
+<a class="btn primary" href="https://lyfos.signorvale.com">Create your vault →</a>
+&nbsp;&nbsp;<a class="btn ghost" href="/security/">Read the security model</a>
+</p>
+
+</article>
+</main>
+
+<footer>
+  <div class="inner">
+    <div><div class="brand">Lyfos</div><p class="copy">© 2026 Signor Vale AI Pvt Ltd.</p></div>
+    <div><h4>Product</h4><ul><li><a href="https://lyfos.signorvale.com">Open the app</a></li><li><a href="/pricing/">Pricing</a></li></ul></div>
+    <div><h4>Company</h4><ul><li><a href="/security/">Security</a></li><li><a href="/press/">Press</a></li></ul></div>
+    <div><h4>Legal</h4><ul><li><a href="https://lyfos.signorvale.com/legal/privacy.html">Privacy</a></li><li><a href="https://lyfos.signorvale.com/legal/terms.html">Terms</a></li></ul></div>
+  </div>
+</footer>
+</body>
+</html>
