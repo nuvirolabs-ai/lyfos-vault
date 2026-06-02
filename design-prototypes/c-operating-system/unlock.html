@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Lyfos · Unlock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --sans: "Inter Tight", -apple-system, BlinkMacSystemFont, sans-serif;
+    --radius: 12px; --green: #1a9d5a; --green-soft: rgba(26,157,90,0.12);
+  }
+  html[data-theme="light"] {
+    --bg: #f4f4f6; --surface: #ffffff; --surface-2: #f6f6f8; --surface-3: #eeeef1;
+    --border: rgba(0,0,0,0.07); --border-2: rgba(0,0,0,0.12);
+    --ink: #1b1b1f; --ink-2: #5b5b63; --ink-3: #8a8a93; --ink-4: #b4b4bb;
+    --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 12px 40px rgba(0,0,0,0.06);
+  }
+  html[data-theme="dark"] {
+    --bg: #0d0d0f; --surface: #161618; --surface-2: #1c1c1f; --surface-3: #232327;
+    --border: rgba(255,255,255,0.07); --border-2: rgba(255,255,255,0.12);
+    --ink: #f4f4f5; --ink-2: #a9a9b2; --ink-3: #76767e; --ink-4: #4d4d54;
+    --green: #46d98a; --green-soft: rgba(70,217,138,0.12);
+    --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 12px 40px rgba(0,0,0,0.4);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; min-height: 100vh; transition: background 200ms ease, color 200ms ease; }
+  a { color: inherit; text-decoration: none; }
+  svg { display: block; }
+
+  .topbar { height: 56px; display: flex; align-items: center; padding: 0 22px; gap: 14px; }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 16px; letter-spacing: -0.01em; }
+  .brand .mark { width: 24px; height: 24px; border-radius: 7px; background: var(--green); display: grid; place-items: center; }
+  .brand .mark svg { width: 14px; height: 14px; color: #fff; }
+  .icon-btn { margin-left: auto; width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); display: grid; place-items: center; cursor: pointer; transition: all 120ms ease; }
+  .icon-btn:hover { background: var(--surface-2); color: var(--ink); border-color: var(--border-2); }
+  .icon-btn svg { width: 18px; height: 18px; }
+
+  .stage { min-height: calc(100vh - 56px); display: grid; place-items: center; padding: 24px 22px 56px; }
+  .card { width: 100%; max-width: 400px; }
+
+  .lock-mark { width: 64px; height: 64px; border-radius: 18px; background: var(--green-soft); display: grid; place-items: center; margin: 0 auto 22px; }
+  .lock-mark svg { width: 30px; height: 30px; color: var(--green); }
+
+  .head { text-align: center; margin-bottom: 28px; }
+  .head h1 { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; }
+  .head p { font-size: 14px; color: var(--ink-2); margin-top: 6px; }
+
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 24px; box-shadow: var(--shadow); }
+
+  label.field { display: block; }
+  .field .lab { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .field .lab .t { font-size: 13px; font-weight: 500; color: var(--ink-2); }
+  .field .lab a { font-size: 12.5px; color: var(--green); font-weight: 500; }
+  .input { display: flex; align-items: center; gap: 10px; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: 12px; padding: 0 14px; height: 50px; transition: border-color 120ms ease, box-shadow 120ms ease; }
+  .input:focus-within { border-color: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+  .input svg.lead { width: 17px; height: 17px; color: var(--ink-3); flex-shrink: 0; }
+  .input input { flex: 1; background: transparent; border: 0; outline: 0; color: var(--ink); font-family: var(--sans); font-size: 15px; letter-spacing: 0.04em; }
+  .input input::placeholder { color: var(--ink-4); letter-spacing: normal; }
+  .input .eye { background: none; border: 0; color: var(--ink-3); cursor: pointer; padding: 4px; display: grid; place-items: center; }
+  .input .eye:hover { color: var(--ink); }
+  .input .eye svg { width: 18px; height: 18px; }
+
+  .btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 50px; border-radius: 12px; font-family: var(--sans); font-size: 15px; font-weight: 600; cursor: pointer; border: 1px solid transparent; transition: all 120ms ease; }
+  .btn-primary { background: var(--green); color: #fff; margin-top: 18px; }
+  .btn-primary:hover { filter: brightness(1.05); }
+
+  .divider { display: flex; align-items: center; gap: 12px; margin: 18px 0; color: var(--ink-4); font-size: 12px; }
+  .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+
+  .btn-face { background: var(--surface-2); color: var(--ink); border-color: var(--border-2); }
+  .btn-face:hover { background: var(--surface-3); }
+  .btn-face svg { width: 19px; height: 19px; color: var(--green); }
+
+  .alt { text-align: center; font-size: 13px; color: var(--ink-3); margin-top: 22px; }
+  .alt a { color: var(--green); font-weight: 500; }
+
+  .reassure { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 26px; font-size: 12.5px; color: var(--ink-3); }
+  .reassure svg { width: 14px; height: 14px; color: var(--green); }
+
+  @media (max-width: 440px) { .head h1 { font-size: 22px; } }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11 V8 a4 4 0 0 1 8 0 v3"/></svg></span>
+    Lyfos
+  </div>
+  <button class="icon-btn" id="themeToggle" title="Switch theme" aria-label="Switch theme"></button>
+</header>
+
+<main class="stage">
+  <div class="card">
+    <div class="lock-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11 V8 a4 4 0 0 1 8 0 v3"/><circle cx="12" cy="15.5" r="1.3" fill="currentColor" stroke="none"/></svg>
+    </div>
+
+    <div class="head">
+      <h1>Welcome back, Tanu</h1>
+      <p>Enter your passphrase to open your vault.</p>
+    </div>
+
+    <div class="panel">
+      <label class="field">
+        <div class="lab"><span class="t">Passphrase</span><a href="recovery.html">Use recovery phrase</a></div>
+        <div class="input">
+          <svg class="lead" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11 V8 a4 4 0 0 1 8 0 v3"/></svg>
+          <input id="pass" type="password" placeholder="Your passphrase" value="••••••••••••" />
+          <button class="eye" id="eye" type="button" aria-label="Show passphrase">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12 C 4 7 8 4.5 12 4.5 C 16 4.5 20 7 22 12 C 20 17 16 19.5 12 19.5 C 8 19.5 4 17 2 12 Z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </label>
+
+      <a class="btn btn-primary" href="index.html">Unlock vault</a>
+
+      <div class="divider">or</div>
+
+      <button class="btn btn-face" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8 V6 a2 2 0 0 1 2-2 h2 M16 4 h2 a2 2 0 0 1 2 2 v2 M20 16 v2 a2 2 0 0 1-2 2 h-2 M8 20 H6 a2 2 0 0 1-2-2 v-2"/><path d="M9 10 v1 M15 10 v1 M12 10 v3 l-1 1 M9 15 c 1.5 1.2 4.5 1.2 6 0"/></svg>
+        Unlock with Face ID
+      </button>
+    </div>
+
+    <p class="alt">Not your vault? <a href="welcome.html">Start a new one</a></p>
+
+    <div class="reassure">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 L20 6 V12 C 20 17 16 20 12 21 C 8 20 4 17 4 12 V6 Z"/></svg>
+      Your passphrase never leaves this device.
+    </div>
+  </div>
+</main>
+
+<script>
+  const root = document.documentElement, toggle = document.getElementById('themeToggle');
+  const saved = localStorage.getItem('lyfos-theme'); if (saved) root.setAttribute('data-theme', saved);
+  const sun = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2 V4 M12 20 V22 M4 12 H2 M22 12 H20 M5 5 l1.5 1.5 M17.5 17.5 L19 19 M19 5 l-1.5 1.5 M6.5 17.5 L5 19"/></svg>';
+  const moon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8 A9 9 0 1 1 11.2 3 a7 7 0 0 0 9.8 9.8 Z"/></svg>';
+  function sync() { toggle.innerHTML = root.getAttribute('data-theme') === 'dark' ? sun : moon; } sync();
+  toggle.addEventListener('click', () => { const n = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'; root.setAttribute('data-theme', n); localStorage.setItem('lyfos-theme', n); sync(); });
+
+  const pass = document.getElementById('pass'), eye = document.getElementById('eye');
+  eye.addEventListener('click', () => {
+    const show = pass.type === 'password';
+    pass.type = show ? 'text' : 'password';
+    if (show && pass.value === '••••••••••••') pass.value = 'correct horse battery staple';
+  });
+</script>
+</body>
+</html>

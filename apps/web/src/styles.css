@@ -8,17 +8,86 @@
   color-scheme: light;
 }
 
+/* ============================================================
+   Design tokens — light (default) and dark themes.
+   Components reference these via Tailwind arbitrary values,
+   e.g. text-[var(--ink)] / bg-[var(--surface)]. Light values
+   match the original palette so light mode is unchanged.
+   ============================================================ */
+body[data-theme="light"], :root {
+  --bg: #f5f5f7;
+  --surface: #ffffff;
+  --surface-2: #fbfbfd;
+  --surface-3: #f2f2f5;
+  --ink: #1d1d1f;
+  --ink-2: #6e6e73;
+  --ink-3: #86868b;
+  --ink-4: #a1a1a6;
+  --ink-5: #c7c7cc;
+  --line: rgba(0, 0, 0, 0.08);
+  --line-2: rgba(0, 0, 0, 0.12);
+  --solid: #1d1d1f;          /* primary (dark) button bg */
+  --on-solid: #ffffff;       /* text on primary button */
+  --green: #34c759;
+  --green-ink: #0b6b3a;
+  --green-soft: #eafaf0;
+  --red: #d70015;
+  --red-2: #b42318;
+  --red-ink: #7a1d12;
+  --red-soft: #fdeceb;
+  --amber: #c88719;
+  --amber-ink: #7a4b00;
+  --amber-soft: #fff8eb;
+  --blue: #0071e3;
+  --blue-soft: #eaf2fd;
+  --accent: #1a9d5a;        /* prototype green primary button */
+  --accent-hover: #178049;
+}
+
+body[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0d0d0f;
+  --surface: #161618;
+  --surface-2: #1c1c1f;
+  --surface-3: #232327;
+  --ink: #f4f4f5;
+  --ink-2: #a9a9b2;
+  --ink-3: #82828b;
+  --ink-4: #6b6b73;
+  --ink-5: #3a3a3c;
+  --line: rgba(255, 255, 255, 0.10);
+  --line-2: rgba(255, 255, 255, 0.16);
+  --solid: #f4f4f5;          /* inverted: light button on dark */
+  --on-solid: #0d0d0f;
+  --green: #46d98a;
+  --green-ink: #8fe6b3;
+  --green-soft: rgba(70, 217, 138, 0.14);
+  --red: #ff6b66;
+  --red-2: #ff7a72;
+  --red-ink: #ffb4ae;
+  --red-soft: rgba(255, 107, 102, 0.14);
+  --amber: #f2a23c;
+  --amber-ink: #ffce8a;
+  --amber-soft: rgba(242, 162, 60, 0.14);
+  --blue: #6fa8ff;
+  --blue-soft: rgba(111, 168, 255, 0.14);
+  --accent: #2faa63;
+  --accent-hover: #38b86e;
+}
+
 html {
-  background: #f5f5f7;
+  background: var(--bg);
 }
 
 body {
   margin: 0;
   min-width: 320px;
-  background: #f5f5f7;
+  background: var(--bg);
+  color: var(--ink);
   font-family: -apple-system, BlinkMacSystemFont, Inter, ui-sans-serif, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: geometricPrecision;
+  transition: background 200ms ease, color 200ms ease;
 }
 
 button,
@@ -65,23 +134,23 @@ button:disabled {
 
   .editor-input-dark {
     width: 100%;
-    border-radius: 1rem;
-    border: 1px solid rgba(255, 255, 255, 0.09);
-    background: rgba(0, 0, 0, 0.2);
+    border-radius: 0.75rem;
+    border: 1px solid var(--line-2);
+    background: var(--surface-2);
     padding: 0.75rem 1rem;
-    color: #ffffff;
+    color: var(--ink);
     outline: none;
     transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
   }
 
   .editor-input-dark::placeholder {
-    color: rgba(255, 255, 255, 0.34);
+    color: var(--ink-4);
   }
 
   .editor-input-dark:focus {
-    border-color: rgba(143, 213, 166, 0.45);
-    background: rgba(255, 255, 255, 0.07);
-    box-shadow: 0 0 0 4px rgba(143, 213, 166, 0.1);
+    border-color: var(--accent);
+    background: var(--surface);
+    box-shadow: 0 0 0 3px var(--green-soft);
   }
 }
 

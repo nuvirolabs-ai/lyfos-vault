@@ -123,7 +123,7 @@ const AREAS = [
   },
   {
     id: "property",
-    label: "Property",
+    label: "Documents",
     types: ["important_document"],
     promise: "Assets, papers, locations",
     description: "The documents and instructions behind physical assets, lockers, and ownership.",
@@ -131,7 +131,7 @@ const AREAS = [
   },
   {
     id: "instructions",
-    label: "Instructions",
+    label: "Emergency",
     types: ["emergency_instruction"],
     promise: "What your family must do first",
     description: "The human sequence: who to call, what not to touch, and the first decisions to avoid.",
@@ -473,6 +473,210 @@ function getAreaForType(type) {
   return AREAS.find((area) => area.types.includes(type)) ?? AREAS[4];
 }
 
+// ---------------------------------------------------------------------
+// "Needs a look" — a time-aware attention engine derived from the real
+// vault. Surfaces upcoming dates found in record text, stale access
+// records, unfinished records, empty critical areas, and a missing
+// nominee. Pure function, no side effects — safe and testable.
+// ---------------------------------------------------------------------
+const MONTHS = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
+
+function findUpcomingDate(text) {
+  if (!text) return null;
+  const now = new Date();
+  const candidates = [];
+  // "12 Nov 2026" / "Nov 2026" / "December 2027"
+  const re1 = /\b(?:(\d{1,2})\s+)?(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{4})\b/gi;
+  let m;
+  while ((m = re1.exec(text))) {
+    const d = new Date(Number(m[3]), MONTHS[m[2].slice(0, 3).toLowerCase()], m[1] ? Number(m[1]) : 28);
+    candidates.push(d);
+  }
+  // "exp 12/26" / "expiry 03/2027" / "valid till 12/26"
+  const re2 = /\b(?:exp|expiry|expires|valid\s*(?:till|until|thru)|renew(?:s|al)?|matur\w*)\D{0,8}(\d{1,2})\/(\d{2,4})\b/gi;
+  while ((m = re2.exec(text))) {
+    const month = Math.min(12, Math.max(1, Number(m[1]))) - 1;
+    const yr = m[2].length === 2 ? 2000 + Number(m[2]) : Number(m[2]);
+    candidates.push(new Date(yr, month, 28));
+  }
+  const future = candidates
+    .filter((d) => !isNaN(d) && d.getTime() >= now.getTime() - 86400000)
+    .sort((a, b) => a - b);
+  if (!future.length) return null;
+  const d = future[0];
+  const days = Math.round((d.getTime() - now.getTime()) / 86400000);
+  if (days > 400) return null;
+  return { date: d, days };
+}
+
+function relativeWhen(days) {
+  if (days <= 0) return "now";
+  if (days < 14) return `in ${days} days`;
+  if (days < 60) return `in ${Math.round(days / 7)} weeks`;
+  return `in ${Math.round(days / 30)} months`;
+}
+
+function deriveAttention(vault) {
+  const items = vault?.items ?? [];
+  const now = Date.now();
+  const out = [];
+
+  items.forEach((it) => {
+    const blob = [it.notes, it.bankDetails, it.cardDetails, it.title].filter(Boolean).join(" · ");
+    const hit = findUpcomingDate(blob);
+    if (hit) {
+      out.push({
+        key: `exp-${it.id}`,
+        tone: hit.days <= 14 ? "urgent" : hit.days <= 45 ? "soon" : "info",
+        area: getAreaForType(it.type).id,
+        title: `${it.title || typeLabel(it.type)} — renews soon`,
+        sub: "A date in this record is coming up. Check it's still current.",
+        when: relativeWhen(hit.days),
+        sort: hit.days
+      });
+    }
+  });
+
+  items.forEach((it) => {
+    if (!["password", "pin", "email_account"].includes(it.type) || !it.updatedAt) return;
+    const days = (now - new Date(it.updatedAt).getTime()) / 86400000;
+    if (days > 180) {
+      out.push({
+        key: `stale-${it.id}`,
+        tone: "soon",
+        area: "access",
+        title: `${it.title || "A password"} is getting old`,
+        sub: `Last updated ${Math.round(days / 30)} months ago · consider refreshing it`,
+        when: `${Math.round(days / 30)} mo`,
+        sort: 500 - days
+      });
+    }
+  });
+
+  items.forEach((it) => {
+    const hasContent = it.secret || it.bankDetails || it.cardDetails || it.email || (it.notes && it.notes.length > 12) || (it.attachments?.length);
+    if (it.title && !hasContent) {
+      out.push({
+        key: `incomplete-${it.id}`,
+        tone: "info",
+        area: getAreaForType(it.type).id,
+        title: `Finish "${it.title}"`,
+        sub: "This record was started but never filled in.",
+        when: "Unfinished",
+        sort: -5
+      });
+    }
+  });
+
+  const model = getLifeModel(vault);
+  model.areas.filter((a) => a.state === "exposed").forEach((a) => {
+    out.push({
+      key: `empty-${a.id}`,
+      tone: a.id === "instructions" ? "soon" : "info",
+      area: a.id,
+      title: `${a.label} is still empty`,
+      sub: a.promise,
+      when: "Add",
+      sort: a.id === "instructions" ? -8 : -3
+    });
+  });
+
+  if (!vault?.releaseSettings?.mainNominee?.trim()) {
+    out.push({
+      key: "nominee",
+      tone: "urgent",
+      area: "release",
+      title: "Choose who your vault is for",
+      sub: "Name a nominee so your family can recover everything.",
+      when: "Set up",
+      sort: -10
+    });
+  }
+
+  const toneRank = { urgent: 0, soon: 1, info: 2, ok: 3 };
+  return out.sort((a, b) => (toneRank[a.tone] - toneRank[b.tone]) || (a.sort - b.sort)).slice(0, 6);
+}
+
+function timeAgo(iso) {
+  if (!iso) return "";
+  const days = (Date.now() - new Date(iso).getTime()) / 86400000;
+  if (days < 0.04) return "just now";
+  if (days < 1) return "today";
+  if (days < 2) return "yesterday";
+  if (days < 30) return `${Math.round(days)} days ago`;
+  if (days < 365) return `${Math.round(days / 30)} mo ago`;
+  return `${Math.round(days / 365)} yr ago`;
+}
+
+// Notifications derived from real vault state — actionable alerts first
+// (attention, backup, release gaps), then recent audit history.
+function deriveNotifications(vault, backupHealth) {
+  const out = [];
+  const attention = deriveAttention(vault);
+  if (attention.length) {
+    out.push({ key: "att", tone: "amber", unread: true, text: `${attention.length} record${attention.length > 1 ? "s" : ""} need a look`, time: "now", action: "life", actionLabel: "Review" });
+  }
+  const reminder = getBackupReminderCopy(backupHealth ?? {});
+  if (reminder.level && reminder.level !== "none") {
+    out.push({ key: "backup", tone: reminder.level === "failed" ? "red" : "amber", unread: true, text: "Back up your encrypted vault", time: "now", action: "settings", actionLabel: "Back up" });
+  }
+  const holders = (vault.releaseSettings?.keyHolders ?? []).filter((h) => h.trim()).length;
+  if (!vault.releaseSettings?.mainNominee?.trim() || holders < RELEASE_POLICY.requiredKeys) {
+    out.push({ key: "release", tone: "blue", unread: true, text: "Finish your release plan", time: "now", action: "release", actionLabel: "Open" });
+  }
+  (vault.audit ?? []).slice(0, 6).forEach((a, i) => {
+    out.push({ key: `audit-${a.id ?? i}`, tone: "neutral", unread: false, text: a.event, time: timeAgo(a.at) });
+  });
+  return out;
+}
+
+function NotificationBell({ vault, backupHealth, onNavigate, onOpenSettings }) {
+  const [open, setOpen] = useState(false);
+  const notifs = useMemo(() => deriveNotifications(vault, backupHealth), [vault, backupHealth]);
+  const unread = notifs.filter((n) => n.unread).length;
+  const toneDot = { red: "bg-[var(--red)]", amber: "bg-[var(--amber)]", blue: "bg-[var(--blue)]", neutral: "bg-[var(--ink-5)]" };
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-label="Notifications"
+        className="relative grid h-9 w-9 place-items-center rounded-full border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)] transition hover:text-[var(--ink)]"
+      >
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8 a6 6 0 0 0 -12 0 c0 7 -3 9 -3 9 h18 s-3 -2 -3 -9" /><path d="M10.5 21 a2 2 0 0 0 3 0" /></svg>
+        {unread > 0 && <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-[var(--red)] px-1 text-[10px] font-bold text-white">{unread}</span>}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-11 z-50 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)] shadow-[0_20px_54px_rgba(0,0,0,0.22)]">
+            <div className="border-b border-[var(--line)] px-4 py-3 text-[14px] font-semibold text-[var(--ink)]">Notifications</div>
+            <div className="max-h-[60vh] overflow-y-auto">
+              {notifs.length === 0 && <div className="px-4 py-8 text-center text-[13px] text-[var(--ink-3)]">You're all caught up.</div>}
+              {notifs.map((n) => (
+                <div key={n.key} className={cx("flex items-center gap-3 border-b border-[var(--line)] px-4 py-3", n.unread && "bg-[var(--green-soft)]")}>
+                  <span className={cx("mt-1 h-2 w-2 shrink-0 rounded-full", toneDot[n.tone])} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] leading-snug text-[var(--ink)]">{n.text}</div>
+                    <div className="mt-0.5 text-[11.5px] text-[var(--ink-4)]">{n.time}</div>
+                  </div>
+                  {n.action && (
+                    <button
+                      onClick={() => { setOpen(false); n.action === "settings" ? onOpenSettings?.() : onNavigate?.(n.action); }}
+                      className="shrink-0 rounded-lg border border-[var(--line-2)] bg-[var(--surface)] px-2.5 py-1.5 text-[12px] font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-2)]"
+                    >
+                      {n.actionLabel}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function typeLabel(type) {
   return TYPE_OPTIONS.find(([id]) => id === type)?.[1] ?? "Record";
 }
@@ -485,9 +689,9 @@ function releaseLabel(item) {
 }
 
 function releaseTone(status) {
-  if (status === "Emergency-enabled") return "bg-[#34c759]/10 text-[#0b6b3a] border-[#34c759]/20";
+  if (status === "Emergency-enabled") return "bg-[#34c759]/10 text-[var(--green-ink)] border-[#34c759]/20";
   if (status === "Needs review") return "bg-[#c88719]/10 text-[#8a6400] border-[#c88719]/20";
-  return "bg-[#1d1d1f]/6 text-[#6e6e73] border-black/10";
+  return "bg-[#1d1d1f]/6 text-[var(--ink-2)] border-[var(--line-2)]";
 }
 
 function releaseToneDark(status) {
@@ -508,11 +712,11 @@ function TrustNote({ label, children, dark = false, tone = "neutral" }) {
     : "border-white/[0.09] bg-white/[0.06] text-white/62";
   const lightTone = tone === "warning"
     ? "border-[#c88719]/20 bg-[#c88719]/8 text-[#6a4a00]"
-    : "border-black/10 bg-[#f5f5f7] text-[#6e6e73]";
+    : "border-[var(--line-2)] bg-[var(--bg)] text-[var(--ink-2)]";
   return (
     <div className={cx("rounded-[1.35rem] border p-4", dark ? darkTone : lightTone)}>
-      <p className={cx("text-xs font-semibold uppercase tracking-[0.12em]", dark ? "text-white/44" : "text-[#86868b]")}>{label}</p>
-      <p className={cx("mt-2 text-sm leading-6", dark ? "text-white/64" : "text-[#6e6e73]")}>{children}</p>
+      <p className={cx("text-xs font-semibold uppercase tracking-[0.12em]", dark ? "text-white/44" : "text-[var(--ink-3)]")}>{label}</p>
+      <p className={cx("mt-2 text-sm leading-6", dark ? "text-white/64" : "text-[var(--ink-2)]")}>{children}</p>
     </div>
   );
 }
@@ -754,7 +958,8 @@ function App() {
   const lastActivityRef = useRef(Date.now());
 
   useEffect(() => {
-    document.body.dataset.theme = "light";
+    const saved = (typeof localStorage !== "undefined" && localStorage.getItem("lyfos-theme")) || "light";
+    document.body.dataset.theme = saved === "dark" ? "dark" : "light";
     setStoredRecord(loadStage1Record(localStorage));
   }, []);
 
@@ -952,7 +1157,7 @@ function App() {
   // Hold the screen while we hydrate the Supabase session — flicker-free
   // so we don't briefly show AuthScreen and then yank it away.
   if (!sessionLoaded) {
-    return <main className="min-h-screen bg-[#fbfbfd]" aria-hidden="true" />;
+    return <main className="min-h-screen bg-[var(--surface-2)]" aria-hidden="true" />;
   }
 
   // Account gate. Render AuthScreen when:
@@ -1123,6 +1328,7 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
   const [recoveryConfirm, setRecoveryConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [showPass, setShowPass] = useState(false);
   const hasVault = Boolean(record);
   const hasRecoveryEnvelope = Boolean(record?.keyEnvelopes?.recovery);
 
@@ -1181,146 +1387,130 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
     ? "Your vault phrase unwraps the encrypted vault on this device. Signing into your account alone cannot decrypt records."
     : "Your vault phrase is the master key for everything you put in Lyfos. We never see it and we cannot recover it for you. Write down the 24-word recovery phrase too — it's the only way back if you forget the vault phrase.";
 
+  const recoveryMode = hasVault && unlockMode === "recovery";
+
   return (
-    <main className="min-h-screen bg-[#fbfbfd] text-[#1d1d1f]">
-      <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 py-12">
-        <header className="text-center">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#86868b]">Lyfos</p>
-          <h1 className="mx-auto mt-5 max-w-sm text-[36px] font-semibold leading-[1.05] tracking-[-0.02em] text-[#1d1d1f] md:text-[44px]">
-            {hasVault ? "Welcome back." : "Create your vault."}
-          </h1>
-          <p className="mx-auto mt-4 max-w-sm text-[15px] leading-[1.55] text-[#6e6e73]">
-            {hasVault
-              ? "Enter your vault phrase to unlock. Lyfos never sees it."
-              : "Pick a phrase you'll remember. It encrypts everything on this device. We never see it."}
+    <main className="min-h-screen bg-[var(--bg)] text-[var(--ink)]">
+      <header className="flex h-14 items-center px-6">
+        <div className="flex items-center gap-2.5 font-semibold">
+          <span className="grid h-6 w-6 place-items-center rounded-md bg-[var(--accent)]">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11 V8 a4 4 0 0 1 8 0 v3" /></svg>
+          </span>
+          Lyfos
+        </div>
+      </header>
+
+      <div className="mx-auto flex min-h-[calc(100vh-3.5rem)] max-w-md flex-col items-center px-5 pb-16 pt-6">
+        <div className="grid h-16 w-16 place-items-center rounded-[18px] bg-[var(--green-soft)]">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11 V8 a4 4 0 0 1 8 0 v3" /><circle cx="12" cy="15.5" r="1.3" fill="var(--accent)" stroke="none" /></svg>
+        </div>
+
+        <div className="mt-5 text-center">
+          <h1 className="text-[26px] font-semibold tracking-tight text-[var(--ink)]">{hasVault ? "Welcome back" : "Create your vault"}</h1>
+          <p className="mt-2 text-[14px] leading-relaxed text-[var(--ink-2)]">
+            {hasVault ? "Enter your passphrase to open your vault." : "Pick a phrase you'll remember. It encrypts everything on this device — we never see it."}
           </p>
-        </header>
+        </div>
 
-        <form id="vault-entry" onSubmit={submit} className="mt-10">
-          {hasVault && hasRecoveryEnvelope && (
-            <div className="mb-6 flex justify-center">
-              <div className="inline-flex items-center gap-1 rounded-full border border-black/8 bg-white p-1 shadow-[0_2px_10px_rgba(0,0,0,0.03)]">
-                {[
-                  ["passphrase", "Vault phrase"],
-                  ["recovery", "Recovery phrase"]
-                ].map(([id, label]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => setUnlockMode(id)}
-                    aria-pressed={unlockMode === id}
-                    className={cx(
-                      "rounded-full px-4 py-1.5 text-[12px] font-semibold transition",
-                      unlockMode === id ? "bg-[#1d1d1f] text-white" : "text-[#6e6e73] hover:text-[#1d1d1f]"
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <label className="block">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86868b]">
-              {hasVault && unlockMode === "recovery" ? "24-word recovery phrase" : "Vault phrase"}
-            </span>
-            <input
-              className="mt-2 w-full rounded-xl border border-black/8 bg-white px-4 py-3 text-[15px] text-[#1d1d1f] outline-none transition placeholder:text-[#a1a1a6] focus:border-[#1d1d1f]"
-              type={hasVault && unlockMode === "recovery" ? "text" : "password"}
-              value={passphrase}
-              onChange={(event) => setPassphrase(event.target.value)}
-              autoComplete={hasVault ? "current-password" : "new-password"}
-              autoFocus={hasVault}
-              placeholder={hasVault ? "Your vault phrase" : "At least 12 characters"}
-            />
-          </label>
-
-          {!hasVault && (
-            <label className="mt-3 block">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86868b]">Confirm phrase</span>
-              <input
-                className="mt-2 w-full rounded-xl border border-black/8 bg-white px-4 py-3 text-[15px] text-[#1d1d1f] outline-none transition focus:border-[#1d1d1f]"
-                type="password"
-                value={confirm}
-                onChange={(event) => setConfirm(event.target.value)}
-                autoComplete="new-password"
-              />
-            </label>
-          )}
-
-          {!hasVault && (
-            <div className="mt-4">
-              <RecoveryKeyPanel
-                recoveryKey={recoveryKey}
-                recoveryConfirm={recoveryConfirm}
-                onGenerate={() => {
-                  const key = generateRecoveryKey();
-                  setRecoveryKey(key);
-                  setRecoveryConfirm("");
-                }}
-                onConfirmChange={setRecoveryConfirm}
-              />
-            </div>
-          )}
-
-          {(lockNotice || notice || error) && (
-            <div
-              aria-live="polite"
-              className={cx(
-                "mt-4 rounded-xl px-4 py-3 text-[13px] font-medium",
-                error
-                  ? "bg-[#ff453a]/8 text-[#b42318]"
-                  : lockNotice
-                    ? "bg-[#c88719]/10 text-[#7a4b00]"
-                    : "bg-[#34c759]/10 text-[#0b6b3a]"
+        <form id="vault-entry" onSubmit={submit} className="mt-7 w-full">
+          <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-[var(--shadow,0_12px_40px_rgba(0,0,0,0.06))]">
+            <div className="mb-2 flex items-baseline justify-between">
+              <span className="text-[13px] font-medium text-[var(--ink-2)]">{recoveryMode ? "24-word recovery phrase" : "Passphrase"}</span>
+              {hasVault && hasRecoveryEnvelope && (
+                <button type="button" onClick={() => setUnlockMode(recoveryMode ? "passphrase" : "recovery")} className="text-[12.5px] font-semibold text-[var(--accent)]">
+                  {recoveryMode ? "Use passphrase" : "Use recovery phrase"}
+                </button>
               )}
-            >
-              {error || lockNotice || notice}
             </div>
-          )}
 
-          <button
-            className="mt-5 w-full rounded-full bg-[#1d1d1f] px-5 py-3 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition hover:bg-black disabled:cursor-wait disabled:opacity-40"
-            disabled={busy}
-          >
-            {busy ? (hasVault ? "Unlocking…" : "Creating…") : hasVault ? "Unlock vault" : "Create vault"}
-          </button>
+            <div className="flex h-[50px] items-center gap-2.5 rounded-xl border border-[var(--line-2)] bg-[var(--surface-2)] px-3.5 transition focus-within:border-[var(--accent)]">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--ink-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11 V8 a4 4 0 0 1 8 0 v3" /></svg>
+              <input
+                className="flex-1 bg-transparent text-[15px] text-[var(--ink)] outline-none placeholder:text-[var(--ink-4)]"
+                type={recoveryMode || showPass ? "text" : "password"}
+                value={passphrase}
+                onChange={(event) => setPassphrase(event.target.value)}
+                autoComplete={hasVault ? "current-password" : "new-password"}
+                autoFocus={hasVault}
+                placeholder={hasVault ? "Your passphrase" : "At least 12 characters"}
+              />
+              {!recoveryMode && (
+                <button type="button" onClick={() => setShowPass((s) => !s)} aria-label="Show passphrase" className="grid place-items-center p-1 text-[var(--ink-3)] transition hover:text-[var(--ink)]">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12 C 4 7 8 4.5 12 4.5 C 16 4.5 20 7 22 12 C 20 17 16 19.5 12 19.5 C 8 19.5 4 17 2 12 Z" /><circle cx="12" cy="12" r="3" /></svg>
+                </button>
+              )}
+            </div>
 
-          {!hasVault && (
-            <button
-              type="button"
-              onClick={createSampleVault}
-              disabled={busy}
-              className="mt-3 w-full rounded-full border border-black/8 bg-white px-5 py-3 text-sm font-semibold text-[#1d1d1f] transition hover:bg-black/[0.02] disabled:cursor-wait disabled:opacity-40"
-            >
-              Try with sample records
+            {!hasVault && (
+              <>
+                <input
+                  className="mt-2.5 h-[50px] w-full rounded-xl border border-[var(--line-2)] bg-[var(--surface-2)] px-3.5 text-[15px] text-[var(--ink)] outline-none transition placeholder:text-[var(--ink-4)] focus:border-[var(--accent)]"
+                  type="password"
+                  value={confirm}
+                  onChange={(event) => setConfirm(event.target.value)}
+                  autoComplete="new-password"
+                  placeholder="Confirm passphrase"
+                />
+                <div className="mt-4">
+                  <RecoveryKeyPanel
+                    recoveryKey={recoveryKey}
+                    recoveryConfirm={recoveryConfirm}
+                    onGenerate={() => { const key = generateRecoveryKey(); setRecoveryKey(key); setRecoveryConfirm(""); }}
+                    onConfirmChange={setRecoveryConfirm}
+                  />
+                </div>
+              </>
+            )}
+
+            {(lockNotice || notice || error) && (
+              <div aria-live="polite" className={cx("mt-4 rounded-xl px-4 py-3 text-[13px] font-medium", error ? "bg-[var(--red-soft)] text-[var(--red-2)]" : lockNotice ? "bg-[var(--amber-soft)] text-[var(--amber-ink)]" : "bg-[var(--green-soft)] text-[var(--green-ink)]")}>
+                {error || lockNotice || notice}
+              </div>
+            )}
+
+            <button className="mt-4 h-[50px] w-full rounded-xl bg-[var(--accent)] text-[15px] font-semibold text-white transition hover:bg-[var(--accent-hover)] disabled:cursor-wait disabled:opacity-50" disabled={busy}>
+              {busy ? (hasVault ? "Unlocking…" : "Creating…") : hasVault ? "Unlock vault" : "Create vault"}
             </button>
-          )}
 
-          <div className="my-7 grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#a1a1a6]">
-            <div className="h-px bg-black/8" />
-            <span>or</span>
-            <div className="h-px bg-black/8" />
-          </div>
-
-          <ImportBackup currentRecord={record} onImported={onImported} onRestoreConfirmed={onRestoreConfirmed} />
-
-          <div className="mt-4 flex items-center justify-between gap-4">
-            <BackupVerificationPanel currentRecord={record} backupHealth={backupHealth} onBackupHealthChange={onBackupHealthChange} />
-            {hasVault && (
-              <button type="button" onClick={onReset} className="shrink-0 text-[11px] font-medium text-[#b42318] transition hover:text-[#7a1812]">
-                Delete local vault
+            {!hasVault && (
+              <button type="button" onClick={createSampleVault} disabled={busy} className="mt-2.5 h-[50px] w-full rounded-xl border border-[var(--line-2)] bg-[var(--surface)] text-[15px] font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-2)] disabled:cursor-wait disabled:opacity-50">
+                Try with sample records
               </button>
             )}
           </div>
 
-          <div className="mt-8 border-t border-black/8 pt-6">
-            <p className="text-[12px] leading-[1.6] text-[#86868b]">{entryTrustCopy}</p>
+          {hasVault && (
+            <p className="mt-5 text-center text-[13px] text-[var(--ink-3)]">
+              Not your vault?{" "}
+              <button type="button" onClick={onReset} className="font-semibold text-[var(--accent)]">Start a new one</button>
+            </p>
+          )}
+
+          <div className="mt-6 flex items-center justify-center gap-2 text-[12.5px] text-[var(--ink-3)]">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3 L20 6 V12 C 20 17 16 20 12 21 C 8 20 4 17 4 12 V6 Z" /></svg>
+            Your passphrase never leaves this device.
           </div>
+
+          {!hasVault && (
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              {["Zero-knowledge", "End-to-end encrypted", "You hold the keys"].map((t) => (
+                <span key={t} className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-[12px] text-[var(--ink-2)]">{t}</span>
+              ))}
+            </div>
+          )}
+
+          <details className="group mt-8">
+            <summary className="cursor-pointer list-none text-center text-[12.5px] font-medium text-[var(--ink-3)] transition hover:text-[var(--ink)]">Restore or verify a backup</summary>
+            <div className="mt-4">
+              <ImportBackup currentRecord={record} onImported={onImported} onRestoreConfirmed={onRestoreConfirmed} />
+              <div className="mt-4">
+                <BackupVerificationPanel currentRecord={record} backupHealth={backupHealth} onBackupHealthChange={onBackupHealthChange} />
+              </div>
+            </div>
+          </details>
         </form>
 
-        <footer className="mt-auto pt-10 text-center text-[11px] text-[#a1a1a6]">
+        <footer className="mt-auto pt-12 text-center text-[11px] text-[var(--ink-4)]">
           <p>
             By continuing you agree to the{" "}
             <a href="/legal/terms.html" className="underline">Terms</a>,{" "}
@@ -1334,13 +1524,285 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
   );
 }
 
+function recordHasContent(it) {
+  return Boolean(it.secret || it.bankDetails || it.cardDetails || it.email || (it.notes && it.notes.length > 12) || (it.attachments && it.attachments.length));
+}
+
+const AREA_ICON = {
+  identity: "M12 12 a4 4 0 1 0 0-8 a4 4 0 0 0 0 8 Z M4 20 c0-4 4-6 8-6 s8 2 8 6",
+  money: "M3 6 h18 v13 H3 Z M3 10 H21",
+  access: "M5 11 h14 v9 H5 Z M8 11 V8 a4 4 0 0 1 8 0 v3",
+  insurance: "M12 3 L20 6 V12 C 20 17 16 20 12 21 C 8 20 4 17 4 12 V6 Z",
+  property: "M4 11 L12 4 L20 11 V20 H4 Z",
+  instructions: "M6 3 H14 L19 8 V21 H6 Z M14 3 V8 H19"
+};
+const AREA_TONE = {
+  identity: "var(--amber)", money: "var(--green)", access: "var(--blue)",
+  insurance: "var(--rose,#c0335e)", property: "var(--ink-3)", instructions: "var(--rose,#c0335e)"
+};
+
+function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+}
+
+function HomeDashboard({ vault, onNavigate, onOpenArea, backupHealth }) {
+  const items = vault.items ?? [];
+  const total = items.length;
+  const now = Date.now();
+  const fresh = items.filter((it) => it.updatedAt && (now - new Date(it.updatedAt).getTime()) / 86400000 <= 45).length;
+  const unfinished = items.filter((it) => it.title && !recordHasContent(it)).length;
+  const older = Math.max(0, total - fresh - unfinished);
+  const attention = useMemo(() => deriveAttention(vault), [vault]);
+  const recent = useMemo(() => [...items].sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)).slice(0, 5), [items]);
+  const pct = (n) => (total ? Math.round((n / total) * 100) : 0);
+
+  return (
+    <div>
+      <div className="mb-7">
+        <h1 className="text-[28px] font-semibold tracking-tight text-[var(--ink)]">{greeting()}</h1>
+        <p className="mt-1 text-[14px] text-[var(--ink-2)]">{attention.length ? "A few things could use a moment. Everything else is taken care of." : "Everything is in order. Here's where things stand today."}</p>
+      </div>
+
+      {/* Records overview */}
+      <div className="mb-7 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+        <div className="grid grid-cols-3 gap-5">
+          {[["Records kept safe", total, "var(--ink-4)"], ["Updated recently", fresh, "var(--green)"], ["Started, unfinished", unfinished, "var(--rose,#c0335e)"]].map(([label, n, c]) => (
+            <div key={label} className="border-l-[3px] pl-3.5" style={{ borderColor: c }}>
+              <div className="text-[30px] font-bold leading-none text-[var(--ink)]">{n}</div>
+              <div className="mt-1.5 text-[12px] text-[var(--ink-3)]">{label}</div>
+            </div>
+          ))}
+        </div>
+        {total > 0 && (
+          <>
+            <div className="mt-5 flex h-3 gap-0.5 overflow-hidden rounded-full bg-[var(--surface-3)]">
+              <span className="bg-[var(--green)]" style={{ width: `${pct(fresh)}%` }} />
+              <span className="bg-[var(--ink-4)]" style={{ width: `${pct(older)}%` }} />
+              <span className="bg-[var(--rose,#c0335e)]" style={{ width: `${pct(unfinished)}%` }} />
+            </div>
+            <div className="mt-3 flex flex-wrap gap-4 text-[12.5px] text-[var(--ink-3)]">
+              <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-sm bg-[var(--green)]" />Updated recently · {fresh}</span>
+              <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-sm bg-[var(--ink-4)]" />Older but complete · {older}</span>
+              <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-sm bg-[var(--rose,#c0335e)]" />Unfinished · {unfinished}</span>
+            </div>
+          </>
+        )}
+      </div>
+
+      <NeedsALook items={attention} onNavigate={onNavigate} />
+
+      <div className="mt-10">
+        <div className="mb-3 flex items-baseline justify-between">
+          <h2 className="text-base font-semibold text-[var(--ink)]">Recently added</h2>
+          <button onClick={() => onNavigate("records")} className="text-[13px] font-medium text-[var(--accent)]">View all {total} →</button>
+        </div>
+        {recent.length ? (
+          <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)]">
+            {recent.map((it, i) => {
+              const area = getAreaForType(it.type);
+              return (
+                <button key={i} onClick={() => onOpenArea(area.id)} className={cx("flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition hover:bg-[var(--surface-2)]", i > 0 && "border-t border-[var(--line)]")}>
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px]" style={{ background: "color-mix(in srgb, " + (AREA_TONE[area.id] || "var(--ink-4)") + " 14%, transparent)" }}>
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={AREA_TONE[area.id] || "var(--ink-3)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={AREA_ICON[area.id]} /></svg>
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[14px] font-medium text-[var(--ink)]">{it.title || typeLabel(it.type)}</span>
+                    <span className="block truncate text-[12.5px] text-[var(--ink-3)]">{area.label}</span>
+                  </span>
+                  <span className="shrink-0 text-[12px] text-[var(--ink-4)]">{timeAgo(it.updatedAt)}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-[var(--line-2)] p-8 text-center text-[13.5px] text-[var(--ink-3)]">Records you add will appear here.</div>
+        )}
+      </div>
+
+      <div className="mt-10">
+        <h2 className="mb-3 text-base font-semibold text-[var(--ink)]">Recent activity</h2>
+        <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)]">
+          {(vault.audit ?? []).slice(0, 6).map((a, i) => (
+            <div key={a.id ?? i} className={cx("flex items-center gap-3.5 px-4 py-3", i > 0 && "border-t border-[var(--line)]")}>
+              <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--green)]" />
+              <span className="flex-1 text-[13.5px] text-[var(--ink-2)]">{a.event}</span>
+              <span className="text-[12px] text-[var(--ink-4)]">{timeAgo(a.at)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AllRecords({ vault, onOpenArea }) {
+  const [filter, setFilter] = useState("all");
+  const items = vault.items ?? [];
+  const chips = [["all", "All", items.length], ...AREAS.map((a) => [a.id, a.label, items.filter((it) => a.types.includes(it.type)).length])];
+  const rows = filter === "all" ? items : items.filter((it) => getAreaForType(it.type).id === filter);
+
+  return (
+    <div>
+      <div className="mb-6">
+        <h1 className="text-[28px] font-semibold tracking-tight text-[var(--ink)]">All records</h1>
+        <p className="mt-1 text-[14px] text-[var(--ink-2)]">Everything you've kept safe — {items.length} record{items.length === 1 ? "" : "s"} across {AREAS.length} areas.</p>
+      </div>
+      <div className="mb-5 flex flex-wrap gap-2">
+        {chips.map(([id, label, count]) => (
+          <button key={id} onClick={() => setFilter(id)} className={cx("rounded-full border px-3.5 py-1.5 text-[13px] font-medium transition", filter === id ? "border-[var(--ink)] bg-[var(--ink)] text-[var(--bg)]" : "border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)] hover:border-[var(--line-2)]")}>
+            {label} <span className="opacity-60">{count}</span>
+          </button>
+        ))}
+      </div>
+      {rows.length ? (
+        <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)]">
+          {rows.map((it, i) => {
+            const area = getAreaForType(it.type);
+            return (
+              <button key={i} onClick={() => onOpenArea(area.id)} className={cx("flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition hover:bg-[var(--surface-2)]", i > 0 && "border-t border-[var(--line)]")}>
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px]" style={{ background: "color-mix(in srgb, " + (AREA_TONE[area.id] || "var(--ink-4)") + " 14%, transparent)" }}>
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={AREA_TONE[area.id] || "var(--ink-3)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={AREA_ICON[area.id]} /></svg>
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14px] font-medium text-[var(--ink)]">{it.title || typeLabel(it.type)}</span>
+                  <span className="block truncate text-[12.5px] text-[var(--ink-3)]">{area.label} · {releaseLabel(it)}</span>
+                </span>
+                <span className="shrink-0 text-[12px] text-[var(--ink-4)]">{timeAgo(it.updatedAt)}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-dashed border-[var(--line-2)] p-10 text-center text-[13.5px] text-[var(--ink-3)]">Nothing in this area yet.</div>
+      )}
+    </div>
+  );
+}
+
+function RailItem({ active, onClick, icon, label, count, dot }) {
+  return (
+    <button onClick={onClick} className={cx("flex w-full items-center gap-3 rounded-[10px] px-2.5 py-2 text-[14px] transition", active ? "bg-[var(--green-soft)] font-medium text-[var(--ink)]" : "text-[var(--ink-2)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]")}>
+      {dot ? <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} /> : (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={active ? "var(--accent)" : "var(--ink-3)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d={icon} /></svg>
+      )}
+      <span className="flex-1 truncate text-left">{label}</span>
+      {count != null && <span className={cx("text-[12px] tabular-nums", count === 0 ? "text-[var(--rose,#c0335e)]" : "text-[var(--ink-4)]")}>{count}</span>}
+    </button>
+  );
+}
+
+function AtAGlance({ vault, backupHealth, onOpenArea, onNavigate }) {
+  const model = getLifeModel(vault);
+  const holders = (vault.releaseSettings?.keyHolders ?? []).filter((h) => h.trim()).length;
+  const ready = model.releaseReady;
+  const backedUp = backupHealth?.lastExportAt || backupHealth?.lastVerifiedAt;
+  const emptyArea = model.areas.find((a) => a.state === "exposed");
+
+  return (
+    <div className="sticky top-[5.5rem]">
+      <div className="mb-3.5 text-[12px] font-semibold uppercase tracking-[0.06em] text-[var(--ink-3)]">At a glance</div>
+
+      <div className="mb-4 rounded-2xl border border-[var(--line)] bg-[var(--surface-2)] p-4">
+        <div className="mb-3.5 flex items-center gap-2">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={ready ? "var(--accent)" : "var(--ink-3)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3 L20 6 V12 C 20 17 16 20 12 21 C 8 20 4 17 4 12 V6 Z" /><path d="M9 12 l2 2 l4 -4" /></svg>
+          <h3 className="text-[14px] font-semibold text-[var(--ink)]">You're covered</h3>
+          <span className={cx("ml-auto inline-flex items-center gap-1.5 text-[12px] font-semibold", ready ? "text-[var(--green-ink)]" : "text-[var(--amber-ink)]")}>
+            <span className={cx("h-1.5 w-1.5 rounded-full", ready ? "bg-[var(--accent)]" : "bg-[var(--amber)]")} />{ready ? "Ready" : "Setup"}
+          </span>
+        </div>
+        <div className="mb-2.5 flex gap-1.5">
+          {Array.from({ length: 5 }).map((_, i) => <span key={i} className={cx("h-2 flex-1 rounded", i < holders ? "bg-[var(--accent)]" : "bg-[var(--surface-3)]")} />)}
+        </div>
+        <p className="text-[12px] text-[var(--ink-3)]">{ready ? `All ${holders} trusted people are set. Your family can recover everything.` : `${holders} of 5 trusted people chosen. Finish your release plan.`}</p>
+      </div>
+
+      <div className="mb-4 rounded-2xl border border-[var(--line)] bg-[var(--surface-2)] p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--ink-2)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3 L20 6 V12 C 20 17 16 20 12 21 C 8 20 4 17 4 12 V6 Z" /></svg>
+          <h3 className="text-[14px] font-semibold text-[var(--ink)]">Vault health</h3>
+        </div>
+        {[["Records", String(vault.items.length)], ["Last backed up", backedUp ? timeAgo(backedUp) : "Not yet"], ["Areas protected", `${model.protectedCount} of ${model.areas.length}`], ["Recovery phrase", "Verified"]].map(([k, v]) => (
+          <div key={k} className="flex items-center justify-between py-1.5 text-[13px]">
+            <span className="text-[var(--ink-2)]">{k}</span>
+            <span className={cx("font-medium", k === "Recovery phrase" ? "text-[var(--green-ink)]" : "text-[var(--ink)]")}>{v}</span>
+          </div>
+        ))}
+      </div>
+
+      {emptyArea && (
+        <button onClick={() => onOpenArea(emptyArea.id)} className="w-full rounded-2xl border border-dashed border-[var(--line-2)] p-3.5 text-left text-[12.5px] leading-relaxed text-[var(--ink-3)] transition hover:border-[var(--ink-4)]">
+          <strong className="text-[var(--ink-2)]">{emptyArea.label} is still empty.</strong> {emptyArea.id === "instructions" ? "Add a first-72-hours note so the right person knows what to do." : `Add your ${emptyArea.label.toLowerCase()} so your family isn't left guessing.`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SettingsPage({ vault, onExport, onReset, onLoadDemo, session, onShowAuthScreen, onSignOut, subscription, entitlements, onSubscriptionChange, autoLockMs, onAutoLockChange }) {
+  const supabaseOn = isSupabaseConfigured();
+  const [theme, setTheme] = useState(() => (typeof document !== "undefined" && document.body.dataset.theme === "dark") ? "dark" : "light");
+  function applyTheme(t) { document.body.dataset.theme = t; try { localStorage.setItem("lyfos-theme", t); } catch {} setTheme(t); }
+  function downloadCsv() { const csv = buildSnapshotsCsv(vault?.balanceSheet ?? {}); downloadTextFile(suggestedCsvFilename(), csv, "text/csv"); }
+
+  const Card = ({ children }) => <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)]">{children}</div>;
+  const Label = ({ children, tone }) => <h2 className={cx("mb-3 mt-8 text-base font-semibold", tone === "danger" ? "text-[var(--red-2)]" : "text-[var(--ink)]")}>{children}</h2>;
+  const Row = ({ title, hint, children, last }) => (
+    <div className={cx("flex items-center gap-4 px-5 py-4", !last && "border-b border-[var(--line)]")}>
+      <div className="min-w-0 flex-1"><div className="text-[14px] font-medium text-[var(--ink)]">{title}</div>{hint && <div className="mt-0.5 text-[12.5px] text-[var(--ink-3)]">{hint}</div>}</div>
+      {children}
+    </div>
+  );
+  const Seg = ({ options, value, onChange }) => (
+    <div className="flex gap-1 rounded-[10px] bg-[var(--surface-2)] p-1">
+      {options.map(([v, l]) => <button key={String(v)} onClick={() => onChange(v)} className={cx("rounded-[7px] px-3.5 py-1.5 text-[13px] font-medium transition", value === v ? "bg-[var(--surface)] text-[var(--ink)] shadow-[0_1px_3px_rgba(0,0,0,0.1)]" : "text-[var(--ink-3)] hover:text-[var(--ink)]")}>{l}</button>)}
+    </div>
+  );
+  const Ghost = ({ onClick, children }) => <button onClick={onClick} className="shrink-0 rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-4 py-2 text-[13px] font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-2)]">{children}</button>;
+
+  return (
+    <div>
+      <h1 className="text-[28px] font-semibold tracking-tight text-[var(--ink)]">Settings</h1>
+      <p className="mt-1 text-[14px] text-[var(--ink-2)]">Make Lyfos yours.</p>
+
+      <Label>Appearance</Label>
+      <Card><Row title="Theme" hint="Light is easy on the eyes by day; dark is calmer at night." last><Seg options={[["light", "Light"], ["dark", "Dark"]]} value={theme} onChange={applyTheme} /></Row></Card>
+
+      <Label>Security</Label>
+      <Card>
+        <Row title="Auto-lock" hint="Locks the vault after a few minutes away."><Seg options={LOCK_TIMEOUT_OPTIONS.map((o) => [o.ms, o.label])} value={autoLockMs} onChange={(v) => onAutoLockChange(Number(v))} /></Row>
+        <Row title="Recovery phrase" hint="Stored only by you — never on our servers." last><span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[var(--green-ink)]"><span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />Verified</span></Row>
+      </Card>
+
+      <Label>Account</Label>
+      {supabaseOn ? (session ? (
+        <Card><Row title={session.user?.email ?? "Signed in"} hint="Cloud sync is live — your vault uploads as ciphertext only." last><Ghost onClick={onSignOut}>Sign out</Ghost></Row></Card>
+      ) : (
+        <Card><Row title="Not signed in" hint="Without an account your vault lives on this browser only." last><button onClick={onShowAuthScreen} className="shrink-0 rounded-full bg-[var(--accent)] px-4 py-2 text-[13px] font-semibold text-white">Sign in</button></Row></Card>
+      )) : (
+        <Card><Row title="Local-only vault" hint="This deployment keeps your vault on this device." last><span className="text-[13px] text-[var(--ink-3)]">On this device</span></Row></Card>
+      )}
+      {supabaseOn && session && <div className="mt-3"><BillingSection subscription={subscription} entitlements={entitlements} onSubscriptionChange={onSubscriptionChange} /><DeviceListSection /></div>}
+
+      <Label>Your vault</Label>
+      <Card>
+        <Row title="Backup encrypted vault" hint="Download an encrypted file you can restore from any device."><Ghost onClick={onExport}>Backup</Ghost></Row>
+        <Row title="Export balance sheet as CSV" hint="Plaintext spreadsheet of every month's values. Store it carefully."><Ghost onClick={downloadCsv}>Export CSV</Ghost></Row>
+        <Row title="Load demo data" hint="Replace your vault with realistic sample data for testing." last><Ghost onClick={onLoadDemo}>Load demo</Ghost></Row>
+      </Card>
+
+      <Label tone="danger">Danger zone</Label>
+      <button onClick={onReset} className="w-full rounded-2xl border border-[var(--red-2)] bg-[var(--red-soft)] px-5 py-4 text-left transition hover:opacity-90">
+        <div className="text-[14px] font-semibold text-[var(--red-2)]">Delete this local vault</div>
+        <div className="mt-1 text-[12.5px] text-[var(--ink-3)]">This cannot be undone. Without an export you will lose everything on this device.</div>
+      </button>
+      {supabaseOn && session && <DeleteAccountButton onDone={onReset} />}
+    </div>
+  );
+}
+
 function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange, onSave, onLock, backupHealth, backupSizeWarning, onExport, onReplaceRecoveryKey, onReset, session, onShowAuthScreen, onSignOut, subscription, entitlements, onSubscriptionChange }) {
   const [screen, setScreen] = useState("home");
-  const [settingsOpen, setSettingsOpen] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return new URLSearchParams(window.location.search).get("demo") === "1";
-  });
-
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [screen]);
@@ -1351,61 +1813,103 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
     const demo = await loadDemoVaultModule();
     await onSave(demo);
     setScreen("home");
-    setSettingsOpen(false);
   }
 
-  const inVault = screen === "life" || screen === "capture" || screen === "release";
-  const inHome  = screen === "home" || screen === "setup" || screen === "update";
+  const [areaId, setAreaId] = useState(null);
+  const model = useMemo(() => getLifeModel(vault), [vault]);
+  const stateDot = { protected: "var(--green)", review: "var(--amber)", exposed: "var(--rose,#c0335e)" };
+  function openArea(id) { setAreaId(id); setScreen("area"); }
+  const selectedArea = AREAS.find((a) => a.id === areaId) ?? AREAS[0];
+  const initials = (session?.user?.email?.[0] ?? "L").toUpperCase();
+
+  const railWorkspace = [
+    { id: "home", label: "Home", icon: "M4 11 L12 4 L20 11 M6 9.5 V20 H18 V9.5" },
+    { id: "records", label: "All records", icon: "M4 4 h16 v16 H4 Z M4 9 H20", count: vault.items.length },
+    { id: "money", label: "Balance sheet", icon: "M3 18 L9 11 L13 15 L21 6 M21 6 H16 M21 6 V11" },
+    { id: "release", label: "Circle of trust", icon: "M12 3 L20 6 V12 C 20 17 16 20 12 21 C 8 20 4 17 4 12 V6 Z M9 12 l2 2 l4 -4" }
+  ];
 
   return (
-    <main className="min-h-screen bg-[#fbfbfd] text-[#1d1d1f]">
-      <div className="mx-auto max-w-6xl px-5 py-5 lg:px-8">
-        <header className="sticky top-4 z-20 mb-10 flex flex-wrap items-center gap-3 rounded-full border border-black/8 bg-white/80 px-4 py-2.5 shadow-[0_8px_32px_rgba(0,0,0,0.04)] backdrop-blur-2xl md:flex-nowrap">
-          <BrandMini />
-          <nav className="order-3 flex w-full items-center justify-between gap-1 rounded-full bg-[#f2f2f5] p-1 md:order-none md:ml-auto md:w-auto md:justify-start">
-            <button onClick={() => setScreen("home")}  className={cx("rounded-full px-5 py-2 text-sm font-semibold transition", inHome  ? "bg-[#1d1d1f] text-white shadow-sm" : "text-[#6e6e73] hover:bg-white hover:text-[#1d1d1f]")}>Home</button>
-            <button onClick={() => setScreen("life")}  className={cx("rounded-full px-5 py-2 text-sm font-semibold transition", inVault ? "bg-[#1d1d1f] text-white shadow-sm" : "text-[#6e6e73] hover:bg-white hover:text-[#1d1d1f]")}>Vault</button>
-          </nav>
-          <button onClick={() => setSettingsOpen(true)} aria-label="Settings" className="ml-auto rounded-full border border-black/8 bg-white px-3 py-1.5 text-xs font-semibold text-[#6e6e73] transition hover:text-[#1d1d1f] md:ml-0">Settings</button>
-          <button onClick={() => onLock("Manual lock")} className="rounded-full bg-[#1d1d1f] px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-black">Seal</button>
-        </header>
+    <main className="min-h-screen bg-[var(--bg)] text-[var(--ink)]">
+      {/* Top bar */}
+      <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-[var(--line)] bg-[var(--surface)] px-4">
+        <div className="flex items-center gap-2.5 font-semibold">
+          <span className="grid h-6 w-6 place-items-center rounded-md bg-[var(--accent)]">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11 V8 a4 4 0 0 1 8 0 v3" /></svg>
+          </span>
+          Lyfos
+        </div>
+        <div className="mx-auto hidden w-full max-w-md items-center gap-2 rounded-[10px] border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-[13px] text-[var(--ink-3)] md:flex">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="M21 21 L16 16" /></svg>
+          Search records, money, people…
+        </div>
+        <div className="ml-auto flex items-center gap-2.5">
+          <NotificationBell vault={vault} backupHealth={backupHealth} onNavigate={setScreen} onOpenSettings={() => setScreen("settings")} />
+          <button onClick={() => onLock("Manual lock")} className="rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-3.5 py-1.5 text-[12.5px] font-semibold text-[var(--ink-2)] transition hover:text-[var(--ink)]">Seal</button>
+          <span className="grid h-8 w-8 place-items-center rounded-full bg-[var(--accent)] text-[13px] font-semibold text-white">{initials}</span>
+        </div>
+      </header>
 
-        {notice && <div className="mb-5 rounded-3xl border border-[#34c759]/20 bg-[#34c759]/10 px-5 py-4 text-sm font-semibold text-[#0b6b3a]">{notice}</div>}
-        {backupSizeWarning?.level !== "none" && <BackupSizeNotice warning={backupSizeWarning} />}
-        {session && <ActiveReleaseBanner onNavigateRelease={() => setScreen("release")} />}
-
-        {screen === "home"    && <HomeScreen    vault={vault} onSave={onSave} onNavigate={setScreen} backupHealth={backupHealth} onExport={onExport} />}
-        {screen === "setup"   && <SetupScreen   vault={vault} onSave={onSave} onNavigate={setScreen} />}
-        {screen === "update"  && <UpdateScreen  vault={vault} onSave={onSave} onNavigate={setScreen} />}
-        {screen === "life"    && <VaultSubNav screen={screen} setScreen={setScreen}><LifeMapScreen vault={vault} autoLockMs={autoLockMs} onAutoLockChange={onAutoLockChange} onReplaceRecoveryKey={onReplaceRecoveryKey} onSave={onSave} onNavigate={setScreen} entitlements={entitlements} onOpenSettings={() => setSettingsOpen(true)} /></VaultSubNav>}
-        {screen === "capture" && <VaultSubNav screen={screen} setScreen={setScreen}><CaptureScreen vault={vault} onSave={onSave} onNavigate={setScreen} /></VaultSubNav>}
-        {screen === "release" && <VaultSubNav screen={screen} setScreen={setScreen}><ReleaseScreen vault={vault} onSave={onSave} session={session} vaultKey={vaultKey} entitlements={entitlements} /></VaultSubNav>}
-
-        <footer className="mt-12 flex flex-wrap items-center justify-between gap-4 border-t border-black/8 py-6 text-[11px] font-medium text-[#a1a1a6]">
-          <span>Lyfos · Beta · Locally encrypted on this device.</span>
-          <div className="flex items-center gap-4">
-            <a href="/legal/beta-disclaimer.html" className="hover:text-[#1d1d1f]">Beta disclaimer</a>
-            <a href="/legal/privacy.html" className="hover:text-[#1d1d1f]">Privacy</a>
-            <a href="/legal/terms.html" className="hover:text-[#1d1d1f]">Terms</a>
+      <div className="mx-auto flex max-w-[1340px]">
+        {/* Left rail */}
+        <aside className="hidden w-60 shrink-0 border-r border-[var(--line)] px-3 py-5 lg:block" style={{ minHeight: "calc(100vh - 3.5rem)" }}>
+          <div className="px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">Workspace</div>
+          <div className="mt-1.5 space-y-0.5">
+            {railWorkspace.map((n) => <RailItem key={n.id} active={screen === n.id} onClick={() => setScreen(n.id)} icon={n.icon} label={n.label} count={n.count} />)}
           </div>
-        </footer>
+          <div className="mt-6 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">Life areas</div>
+          <div className="mt-1.5 space-y-0.5">
+            {model.areas.map((a) => <RailItem key={a.id} active={screen === "area" && areaId === a.id} onClick={() => openArea(a.id)} dot={stateDot[a.state]} label={a.label} count={a.count} />)}
+          </div>
+          <div className="mt-6 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">You</div>
+          <div className="mt-1.5 space-y-0.5">
+            <RailItem active={screen === "capture"} onClick={() => setScreen("capture")} icon="M12 5 V19 M5 12 H19" label="Add a record" />
+            <RailItem active={screen === "settings"} onClick={() => setScreen("settings")} icon="M12 9 a3 3 0 1 0 0 6 a3 3 0 0 0 0-6 Z M12 2 v3 M12 19 v3 M5 5 l2 2 M17 17 l2 2 M2 12 h3 M19 12 h3 M5 19 l2-2 M17 7 l2-2" label="Settings" />
+          </div>
+        </aside>
 
-        {settingsOpen && (
-          <SettingsDrawer
-            onClose={() => setSettingsOpen(false)}
-            onLoadDemo={loadDemoData}
-            onExport={onExport}
-            onReset={onReset}
-            session={session}
-            onShowAuthScreen={onShowAuthScreen}
-            onSignOut={async () => { await onSignOut?.(); setSettingsOpen(false); }}
-            vault={vault}
-            onSaveVault={onSave}
-            subscription={subscription}
-            entitlements={entitlements}
-            onSubscriptionChange={onSubscriptionChange}
-          />
-        )}
+        {/* Content */}
+        <section className="min-w-0 flex-1 px-5 py-8 lg:px-10">
+          {/* Mobile nav */}
+          <div className="mb-5 flex gap-2 overflow-x-auto lg:hidden">
+            {railWorkspace.map((n) => (
+              <button key={n.id} onClick={() => setScreen(n.id)} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", screen === n.id ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]")}>{n.label}</button>
+            ))}
+          </div>
+
+          {notice && <div className="mb-5 rounded-2xl border border-[#34c759]/20 bg-[#34c759]/10 px-5 py-4 text-sm font-semibold text-[var(--green-ink)]">{notice}</div>}
+          {backupSizeWarning?.level !== "none" && <BackupSizeNotice warning={backupSizeWarning} />}
+          {session && screen === "release" && <ActiveReleaseBanner onNavigateRelease={() => setScreen("release")} />}
+
+          <div className={cx("mx-auto flex gap-8", screen === "home" ? "max-w-[1140px] items-start" : "max-w-3xl")}>
+            <div className="min-w-0 flex-1">
+              {screen === "home"    && <HomeDashboard vault={vault} onNavigate={setScreen} onOpenArea={openArea} backupHealth={backupHealth} />}
+              {screen === "records" && <AllRecords vault={vault} onOpenArea={openArea} />}
+              {screen === "money"   && <HomeScreen vault={vault} onSave={onSave} onNavigate={setScreen} backupHealth={backupHealth} onExport={onExport} />}
+              {screen === "setup"   && <SetupScreen vault={vault} onSave={onSave} onNavigate={setScreen} />}
+              {screen === "update"  && <UpdateScreen vault={vault} onSave={onSave} onNavigate={setScreen} />}
+              {screen === "capture" && <CaptureScreen vault={vault} onSave={onSave} onNavigate={(s) => setScreen(s === "life" ? "home" : s)} />}
+              {screen === "release" && <ReleaseScreen vault={vault} onSave={onSave} session={session} vaultKey={vaultKey} entitlements={entitlements} />}
+              {screen === "area"    && <CategoryWorkspace vault={vault} area={selectedArea} onSave={onSave} onCapture={() => setScreen("capture")} onClose={() => setScreen("home")} entitlements={entitlements} onOpenSettings={() => setScreen("settings")} />}
+            {screen === "settings" && <SettingsPage vault={vault} onExport={onExport} onReset={onReset} onLoadDemo={loadDemoData} session={session} onShowAuthScreen={onShowAuthScreen} onSignOut={onSignOut} subscription={subscription} entitlements={entitlements} onSubscriptionChange={onSubscriptionChange} autoLockMs={autoLockMs} onAutoLockChange={onAutoLockChange} />}
+
+              <footer className="mt-14 flex flex-wrap items-center justify-between gap-4 border-t border-[var(--line)] py-6 text-[11px] font-medium text-[var(--ink-4)]">
+                <span>Lyfos · Beta · Locally encrypted on this device.</span>
+                <div className="flex items-center gap-4">
+                  <a href="/legal/beta-disclaimer.html" className="hover:text-[var(--ink)]">Beta disclaimer</a>
+                  <a href="/legal/privacy.html" className="hover:text-[var(--ink)]">Privacy</a>
+                  <a href="/legal/terms.html" className="hover:text-[var(--ink)]">Terms</a>
+                </div>
+              </footer>
+            </div>
+
+            {screen === "home" && (
+              <aside className="hidden w-[300px] shrink-0 xl:block">
+                <AtAGlance vault={vault} backupHealth={backupHealth} onOpenArea={openArea} onNavigate={setScreen} />
+              </aside>
+            )}
+          </div>
+        </section>
       </div>
     </main>
   );
@@ -1463,7 +1967,7 @@ function ActiveReleaseBanner({ onNavigateRelease }) {
           <p className={cx("mt-1.5 text-[13px] leading-5", tone.text)}>
             {bannerCopy(request, daysRemaining)}
           </p>
-          {error && <p className="mt-2 text-[12px] text-[#b42318]">{error}</p>}
+          {error && <p className="mt-2 text-[12px] text-[var(--red-2)]">{error}</p>}
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <button
               onClick={abort}
@@ -1484,9 +1988,9 @@ function ActiveReleaseBanner({ onNavigateRelease }) {
 
 function stateTone(state) {
   if (state === "holding" || state === "ready_to_release") {
-    return { bg: "bg-[#ff453a]/8", border: "border-[#b42318]/40", text: "text-[#7a1d12]", dot: "bg-[#b42318]" };
+    return { bg: "bg-[#ff453a]/8", border: "border-[#b42318]/40", text: "text-[var(--red-ink)]", dot: "bg-[#b42318]" };
   }
-  return { bg: "bg-[#fff8eb]", border: "border-[#c88719]/30", text: "text-[#7a4b00]", dot: "bg-[#c88719]" };
+  return { bg: "bg-[var(--amber-soft)]", border: "border-[#c88719]/30", text: "text-[var(--amber-ink)]", dot: "bg-[#c88719]" };
 }
 
 function stateLabel(state) {
@@ -1537,33 +2041,33 @@ function SettingsDrawer({ onClose, onLoadDemo, onExport, onReset, session, onSho
     <div className="fixed inset-0 z-40 flex items-end justify-end bg-black/30 backdrop-blur-sm md:items-stretch" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex h-full w-full max-w-sm flex-col overflow-y-auto bg-[#fbfbfd] p-6 shadow-[-8px_0_40px_rgba(0,0,0,0.08)] md:p-8"
+        className="flex h-full w-full max-w-sm flex-col overflow-y-auto bg-[var(--surface-2)] p-6 shadow-[-8px_0_40px_rgba(0,0,0,0.08)] md:p-8"
       >
         <div className="flex items-center justify-between">
           <h2 className="text-[20px] font-semibold tracking-tight">Settings</h2>
-          <button onClick={onClose} className="text-[12px] text-[#86868b] hover:text-[#1d1d1f]">Close</button>
+          <button onClick={onClose} className="text-[12px] text-[var(--ink-3)] hover:text-[var(--ink)]">Close</button>
         </div>
 
         {supabaseOn && (
           <div className="mt-8">
-            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Account</p>
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Account</p>
             {session ? (
-              <div className="mt-3 rounded-2xl border border-black/8 bg-white p-4">
-                <p className="text-[13px] font-medium text-[#1d1d1f]">{session.user?.email ?? "Signed in"}</p>
-                <p className="mt-1 text-[12px] text-[#86868b]">
+              <div className="mt-3 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4">
+                <p className="text-[13px] font-medium text-[var(--ink)]">{session.user?.email ?? "Signed in"}</p>
+                <p className="mt-1 text-[12px] text-[var(--ink-3)]">
                   Cloud sync is live. Your vault is encrypted locally before upload — Lyfos cannot read it.
                 </p>
                 <button
                   onClick={() => { onSignOut?.(); }}
-                  className="mt-4 rounded-full border border-black/8 bg-white px-4 py-1.5 text-[11px] font-semibold text-[#1d1d1f]"
+                  className="mt-4 rounded-full border border-[var(--line)] bg-[var(--surface)] px-4 py-1.5 text-[11px] font-semibold text-[var(--ink)]"
                 >
                   Sign out
                 </button>
               </div>
             ) : (
-              <div className="mt-3 rounded-2xl border border-[#c88719]/30 bg-[#fff8eb] p-4">
-                <p className="text-[13px] font-medium text-[#7a4b00]">Not signed in</p>
-                <p className="mt-1 text-[12px] text-[#7a4b00]/85">
+              <div className="mt-3 rounded-2xl border border-[#c88719]/30 bg-[var(--amber-soft)] p-4">
+                <p className="text-[13px] font-medium text-[var(--amber-ink)]">Not signed in</p>
+                <p className="mt-1 text-[12px] text-[var(--amber-ink)]/85">
                   Without an account, your vault lives on this browser only. Clearing browser data deletes it.
                 </p>
                 <button
@@ -1581,7 +2085,7 @@ function SettingsDrawer({ onClose, onLoadDemo, onExport, onReset, session, onSho
         {supabaseOn && session && <DeviceListSection />}
 
         <div className="mt-8 space-y-1">
-          <p className="px-3 text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Balance sheet</p>
+          <p className="px-3 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Balance sheet</p>
           {editingGoal ? (
             <GoalEditor
               currentGoal={vault?.balanceSheet?.goal ?? null}
@@ -1602,7 +2106,7 @@ function SettingsDrawer({ onClose, onLoadDemo, onExport, onReset, session, onSho
         </div>
 
         <div className="mt-8 space-y-1">
-          <p className="px-3 text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Vault</p>
+          <p className="px-3 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Vault</p>
           <SettingsRow
             label="Backup encrypted vault"
             hint="Download an encrypted file you can restore from any device."
@@ -1624,14 +2128,14 @@ function SettingsDrawer({ onClose, onLoadDemo, onExport, onReset, session, onSho
           />
         </div>
 
-        <div className="mt-12 border-t border-black/8 pt-6">
-          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Danger zone</p>
+        <div className="mt-12 border-t border-[var(--line)] pt-6">
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Danger zone</p>
           <button
             onClick={() => { onReset(); onClose(); }}
-            className="mt-4 w-full rounded-xl border border-[#b42318]/30 bg-white px-4 py-3 text-left text-[13px] font-medium text-[#b42318] transition hover:bg-[#b42318]/5"
+            className="mt-4 w-full rounded-xl border border-[#b42318]/30 bg-[var(--surface)] px-4 py-3 text-left text-[13px] font-medium text-[var(--red-2)] transition hover:bg-[#b42318]/5"
           >
             Delete this local vault
-            <span className="mt-1 block text-[11px] font-normal text-[#86868b]">This cannot be undone. Without an export you will lose everything on this device.</span>
+            <span className="mt-1 block text-[11px] font-normal text-[var(--ink-3)]">This cannot be undone. Without an export you will lose everything on this device.</span>
           </button>
 
           {supabaseOn && session && (
@@ -1639,7 +2143,7 @@ function SettingsDrawer({ onClose, onLoadDemo, onExport, onReset, session, onSho
           )}
         </div>
 
-        <div className="mt-auto pt-8 text-[11px] text-[#a1a1a6]">
+        <div className="mt-auto pt-8 text-[11px] text-[var(--ink-4)]">
           <p>Lyfos · Beta · v0.1</p>
           <p className="mt-1">
             {supabaseOn && session
@@ -1662,10 +2166,10 @@ function DeleteAccountButton({ onDone }) {
     return (
       <button
         onClick={() => setConfirming(true)}
-        className="mt-3 w-full rounded-xl border border-[#b42318]/30 bg-white px-4 py-3 text-left text-[13px] font-medium text-[#b42318] transition hover:bg-[#b42318]/5"
+        className="mt-3 w-full rounded-xl border border-[#b42318]/30 bg-[var(--surface)] px-4 py-3 text-left text-[13px] font-medium text-[var(--red-2)] transition hover:bg-[#b42318]/5"
       >
         Delete account entirely
-        <span className="mt-1 block text-[11px] font-normal text-[#86868b]">
+        <span className="mt-1 block text-[11px] font-normal text-[var(--ink-3)]">
           Permanently removes your account and the encrypted blob from our servers. Local vault on this device is also wiped. DPDPA / GDPR right to erasure.
         </span>
       </button>
@@ -1693,8 +2197,8 @@ function DeleteAccountButton({ onDone }) {
 
   return (
     <div className="mt-3 rounded-xl border border-[#b42318]/30 bg-[#ff453a]/6 p-4">
-      <p className="text-[13px] font-semibold text-[#7a1d12]">This deletes everything.</p>
-      <p className="mt-1 text-[12px] leading-5 text-[#7a1d12]/85">
+      <p className="text-[13px] font-semibold text-[var(--red-ink)]">This deletes everything.</p>
+      <p className="mt-1 text-[12px] leading-5 text-[var(--red-ink)]/85">
         Your account, the encrypted vault on our servers, every device record, the audit log, and the local vault on this device. We will not be able to recover any of it. Type <strong>delete my account</strong> to confirm.
       </p>
       <input
@@ -1702,13 +2206,13 @@ function DeleteAccountButton({ onDone }) {
         value={typed}
         onChange={(e) => { setTyped(e.target.value); setError(""); }}
         placeholder="delete my account"
-        className="mt-3 w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-[13px] outline-none focus:border-[#b42318]"
+        className="mt-3 w-full rounded-lg border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[13px] outline-none focus:border-[#b42318]"
       />
-      {error && <p className="mt-2 text-[11px] font-medium text-[#b42318]">{error}</p>}
+      {error && <p className="mt-2 text-[11px] font-medium text-[var(--red-2)]">{error}</p>}
       <div className="mt-3 flex items-center justify-between gap-2">
         <button
           onClick={() => { setConfirming(false); setTyped(""); setError(""); }}
-          className="text-[11px] font-medium text-[#86868b] hover:text-[#1d1d1f]"
+          className="text-[11px] font-medium text-[var(--ink-3)] hover:text-[var(--ink)]"
           disabled={busy}
         >
           Cancel
@@ -1801,13 +2305,13 @@ function BillingSection({ subscription, entitlements, onSubscriptionChange }) {
 
   return (
     <div className="mt-8">
-      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Billing</p>
+      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Billing</p>
 
-      <div className="mt-3 rounded-2xl border border-black/8 bg-white p-4">
+      <div className="mt-3 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4">
         <div className="flex items-baseline justify-between gap-3">
           <div>
-            <p className="text-[14px] font-semibold text-[#1d1d1f]">Lyfos {plan.label}</p>
-            <p className="mt-0.5 text-[12px] text-[#86868b]">
+            <p className="text-[14px] font-semibold text-[var(--ink)]">Lyfos {plan.label}</p>
+            <p className="mt-0.5 text-[12px] text-[var(--ink-3)]">
               {subscription?.plan === "free" || !subscription
                 ? "Free tier · upgrade to enable the release service"
                 : subscription.status === "active"  ? `Active${renewal !== null ? ` · renews in ${renewal} day${renewal === 1 ? "" : "s"}` : ""}`
@@ -1817,7 +2321,7 @@ function BillingSection({ subscription, entitlements, onSubscriptionChange }) {
                 : `Status: ${subscription.status}`}
             </p>
             {subscription?.cancel_at_period_end && (
-              <p className="mt-1 text-[11px] font-medium text-[#b42318]">Will not renew. <button onClick={resume} className="underline" disabled={busy}>Resume</button></p>
+              <p className="mt-1 text-[11px] font-medium text-[var(--red-2)]">Will not renew. <button onClick={resume} className="underline" disabled={busy}>Resume</button></p>
             )}
           </div>
           {subscription?.plan === "free" || !subscription ? (
@@ -1832,29 +2336,29 @@ function BillingSection({ subscription, entitlements, onSubscriptionChange }) {
             <button
               onClick={cancel}
               disabled={busy || subscription.cancel_at_period_end}
-              className="rounded-full border border-black/8 bg-white px-4 py-1.5 text-[11px] font-semibold text-[#1d1d1f] disabled:opacity-40"
+              className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-4 py-1.5 text-[11px] font-semibold text-[var(--ink)] disabled:opacity-40"
             >
               Cancel
             </button>
           )}
         </div>
 
-        {error && <div className="mt-3 rounded-md bg-[#ff453a]/8 px-3 py-2 text-[12px] font-medium text-[#b42318]">{error}</div>}
+        {error && <div className="mt-3 rounded-md bg-[#ff453a]/8 px-3 py-2 text-[12px] font-medium text-[var(--red-2)]">{error}</div>}
 
         {showPlans && (
-          <div className="mt-4 space-y-3 border-t border-black/6 pt-4">
+          <div className="mt-4 space-y-3 border-t border-[var(--line)] pt-4">
             {["vault", "family"].map((pid) => {
               const p = planFor(pid);
               return (
-                <div key={pid} className="rounded-xl border border-black/8 bg-[#fbfbfd] p-4">
+                <div key={pid} className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-4">
                   <div className="flex items-baseline justify-between gap-3">
                     <div>
                       <p className="text-[14px] font-semibold">Lyfos {p.label}</p>
-                      <p className="mt-0.5 text-[11px] text-[#86868b]">{p.summary}</p>
+                      <p className="mt-0.5 text-[11px] text-[var(--ink-3)]">{p.summary}</p>
                     </div>
-                    <p className="text-[15px] font-semibold tabular-nums">{formatCurrency(p.amountInr / 100, "INR")}<span className="text-[10px] font-normal text-[#86868b]"> / year</span></p>
+                    <p className="text-[15px] font-semibold tabular-nums">{formatCurrency(p.amountInr / 100, "INR")}<span className="text-[10px] font-normal text-[var(--ink-3)]"> / year</span></p>
                   </div>
-                  <ul className="mt-3 list-disc space-y-1 pl-4 text-[12px] leading-5 text-[#6e6e73]">
+                  <ul className="mt-3 list-disc space-y-1 pl-4 text-[12px] leading-5 text-[var(--ink-2)]">
                     {p.bullets.map((b) => <li key={b}>{b}</li>)}
                   </ul>
                   <button
@@ -1873,10 +2377,10 @@ function BillingSection({ subscription, entitlements, onSubscriptionChange }) {
 
       {/* Invoices */}
       <div className="mt-3">
-        <p className="px-3 text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Invoices</p>
-        {loadingEvents && <p className="mt-2 px-3 text-[11px] text-[#a1a1a6]">Loading…</p>}
+        <p className="px-3 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Invoices</p>
+        {loadingEvents && <p className="mt-2 px-3 text-[11px] text-[var(--ink-4)]">Loading…</p>}
         {!loadingEvents && events.length === 0 && (
-          <p className="mt-2 px-3 text-[11px] text-[#a1a1a6]">No invoices yet.</p>
+          <p className="mt-2 px-3 text-[11px] text-[var(--ink-4)]">No invoices yet.</p>
         )}
         <div className="mt-2 space-y-1.5">
           {events.filter((e) => e.invoice_pdf_path || e.event_type.startsWith("payment.")).map((e) => (
@@ -1884,13 +2388,13 @@ function BillingSection({ subscription, entitlements, onSubscriptionChange }) {
               key={e.id}
               onClick={() => e.invoice_pdf_path && openInvoice(e.invoice_pdf_path)}
               disabled={!e.invoice_pdf_path}
-              className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[12px] transition hover:bg-white disabled:cursor-default"
+              className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[12px] transition hover:bg-[var(--surface)] disabled:cursor-default"
             >
               <span>
                 <span className="font-medium">{e.invoice_number ?? e.event_type}</span>
-                <span className="ml-2 text-[#86868b]">{new Date(e.created_at).toLocaleDateString()}</span>
+                <span className="ml-2 text-[var(--ink-3)]">{new Date(e.created_at).toLocaleDateString()}</span>
               </span>
-              <span className="tabular-nums text-[#1d1d1f]">
+              <span className="tabular-nums text-[var(--ink)]">
                 {e.amount_paise != null ? formatCurrency(e.amount_paise / 100, e.currency || "INR") : "—"}
               </span>
             </button>
@@ -1944,18 +2448,18 @@ function DeviceListSection() {
   return (
     <div className="mt-8">
       <div className="flex items-center justify-between px-3">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Devices</p>
-        {loading && <span className="text-[10px] text-[#a1a1a6]">Loading…</span>}
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Devices</p>
+        {loading && <span className="text-[10px] text-[var(--ink-4)]">Loading…</span>}
       </div>
       <div className="mt-3 space-y-2">
         {devices.length === 0 && !loading && (
-          <p className="px-3 text-[12px] text-[#86868b]">No other devices signed in.</p>
+          <p className="px-3 text-[12px] text-[var(--ink-3)]">No other devices signed in.</p>
         )}
         {devices.map((d) => {
           const isCurrent = d.device_token === currentToken;
           const editing = editingId === d.id;
           return (
-            <div key={d.id} className="rounded-xl border border-black/8 bg-white p-3">
+            <div key={d.id} className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   {editing ? (
@@ -1965,24 +2469,24 @@ function DeviceListSection() {
                       onChange={(e) => setDraftLabel(e.target.value)}
                       onBlur={() => rename(d.id)}
                       onKeyDown={(e) => { if (e.key === "Enter") rename(d.id); if (e.key === "Escape") setEditingId(null); }}
-                      className="w-full rounded-md border border-black/10 px-2 py-1 text-[13px] outline-none focus:border-[#1d1d1f]"
+                      className="w-full rounded-md border border-[var(--line-2)] px-2 py-1 text-[13px] outline-none focus:border-[var(--ink)]"
                     />
                   ) : (
                     <button
                       onClick={() => { setEditingId(d.id); setDraftLabel(d.label ?? ""); }}
-                      className="text-left text-[13px] font-medium text-[#1d1d1f] hover:underline"
+                      className="text-left text-[13px] font-medium text-[var(--ink)] hover:underline"
                     >
                       {d.label || "Untitled device"}
                     </button>
                   )}
-                  <p className="mt-0.5 text-[11px] text-[#86868b]">
+                  <p className="mt-0.5 text-[11px] text-[var(--ink-3)]">
                     Last seen {formatRelativeTime(d.last_seen_at)}{isCurrent ? " · this device" : ""}
                   </p>
                 </div>
                 {!isCurrent && (
                   <button
                     onClick={() => revoke(d.id)}
-                    className="shrink-0 text-[11px] font-medium text-[#b42318] hover:underline"
+                    className="shrink-0 text-[11px] font-medium text-[var(--red-2)] hover:underline"
                   >
                     Sign out
                   </button>
@@ -2011,39 +2515,14 @@ function SettingsRow({ label, hint, actionLabel, onClick, tone }) {
   return (
     <button
       onClick={onClick}
-      className="flex w-full items-start justify-between gap-4 rounded-xl px-3 py-3 text-left transition hover:bg-white"
+      className="flex w-full items-start justify-between gap-4 rounded-xl px-3 py-3 text-left transition hover:bg-[var(--surface)]"
     >
       <div>
-        <div className={cx("text-[14px] font-medium", tone === "muted" ? "text-[#6e6e73]" : "text-[#1d1d1f]")}>{label}</div>
-        <div className="mt-1 text-[12px] text-[#86868b]">{hint}</div>
+        <div className={cx("text-[14px] font-medium", tone === "muted" ? "text-[var(--ink-2)]" : "text-[var(--ink)]")}>{label}</div>
+        <div className="mt-1 text-[12px] text-[var(--ink-3)]">{hint}</div>
       </div>
-      <span className="rounded-full border border-black/8 bg-white px-3 py-1 text-[11px] font-semibold text-[#1d1d1f]">{actionLabel}</span>
+      <span className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ink)]">{actionLabel}</span>
     </button>
-  );
-}
-
-function VaultSubNav({ screen, setScreen, children }) {
-  // Show the amber "Draft" badge only when Supabase isn't configured —
-  // i.e. local-only deploys where the release page is still planning-only.
-  const showDraftBadge = !isSupabaseConfigured();
-  return (
-    <div>
-      <div className="mb-6 flex justify-center">
-        <div className="inline-flex items-center gap-1 rounded-full border border-black/8 bg-white p-1 shadow-[0_2px_10px_rgba(0,0,0,0.03)]">
-          {[
-            ["life", "Life Map"],
-            ["capture", "Capture"],
-            ["release", showDraftBadge ? "Release plan" : "Release"]
-          ].map(([id, label]) => (
-            <button key={id} onClick={() => setScreen(id)} className={cx("rounded-full px-4 py-1.5 text-xs font-semibold transition", screen === id ? "bg-[#1d1d1f] text-white" : "text-[#6e6e73] hover:text-[#1d1d1f]")}>
-              {label}
-              {id === "release" && showDraftBadge && <span className={cx("ml-1.5 rounded-full px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider", screen === id ? "bg-white/20 text-white" : "bg-[#fff8eb] text-[#7a4b00]")}>Draft</span>}
-            </button>
-          ))}
-        </div>
-      </div>
-      {children}
-    </div>
   );
 }
 
@@ -2051,8 +2530,152 @@ function VaultSubNav({ screen, setScreen, children }) {
 // HOME — Net worth / monthly balance sheet
 // =====================================================================
 
+const ATTENTION_TONES = {
+  urgent: { bar: "var(--red-2)", chip: "bg-[var(--red-soft)] text-[var(--red-2)]" },
+  soon:   { bar: "var(--amber)", chip: "bg-[var(--amber-soft)] text-[var(--amber-ink)]" },
+  info:   { bar: "var(--blue)",  chip: "bg-[var(--blue-soft)] text-[var(--blue)]" },
+  ok:     { bar: "var(--green)", chip: "bg-[var(--green-soft)] text-[var(--green-ink)]" }
+};
+
+function NeedsALook({ items, onNavigate }) {
+  if (!items || items.length === 0) return null;
+  return (
+    <section className="mt-14">
+      <div className="mb-3 flex items-baseline justify-between">
+        <h2 className="text-base font-semibold text-[var(--ink)]">Needs a look</h2>
+        <span className="text-[12px] text-[var(--ink-3)]">Lyfos keeps an eye on your records so you don't have to</span>
+      </div>
+      <div className="flex flex-col gap-2.5">
+        {items.map((it) => {
+          const tone = ATTENTION_TONES[it.tone] ?? ATTENTION_TONES.info;
+          return (
+            <button
+              key={it.key}
+              onClick={() => onNavigate(it.area === "release" ? "release" : "life")}
+              className="group flex items-center gap-4 rounded-2xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3.5 text-left shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition hover:border-[var(--line-2)]"
+              style={{ borderLeft: `3px solid ${tone.bar}` }}
+            >
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[14px] font-semibold text-[var(--ink)]">{it.title}</div>
+                <div className="mt-0.5 truncate text-[12.5px] text-[var(--ink-3)]">{it.sub}</div>
+              </div>
+              <span className={cx("shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold", tone.chip)}>{it.when}</span>
+              <span className="shrink-0 text-[var(--ink-4)] transition group-hover:text-[var(--ink-2)]" aria-hidden>→</span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function CheckInModal({ vault, series, attention, monthName, onNavigate, onClose }) {
+  const [step, setStep] = useState(0);
+  const last = series[series.length - 1];
+  const prev = [...series].slice(0, -1).reverse().find((s) => !s.empty);
+  const delta = prev ? last.net - prev.net : 0;
+  const model = getLifeModel(vault);
+  const holders = vault.releaseSettings.keyHolders.filter((h) => h.trim()).length;
+  const nominee = vault.releaseSettings.mainNominee.trim();
+  const bs = vault.balanceSheet ?? createEmptyBalanceSheet();
+
+  const steps = [
+    { title: `Your ${monthName} check-in`, hint: "Takes about two minutes" },
+    { title: "Does your money still look right?", hint: "Step 1 of 3", primary: "Looks right" },
+    { title: "Anything to handle this month?", hint: "Step 2 of 3", primary: "All reviewed" },
+    { title: "Is your circle still right?", hint: "Step 3 of 3", primary: "Still good" },
+    { title: `You're all set for ${monthName}`, hint: "Saved to your vault", primary: "Done" }
+  ];
+  const s = steps[step];
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/30 backdrop-blur-sm p-4 md:items-center" onClick={onClose}>
+      <div className="w-full max-w-md overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)] shadow-[0_24px_70px_rgba(0,0,0,0.3)]" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center border-b border-[var(--line)] px-5 py-4">
+          <h2 className="flex-1 text-[16px] font-semibold text-[var(--ink)]">{monthName} check-in</h2>
+          <button onClick={onClose} aria-label="Close" className="grid h-8 w-8 place-items-center rounded-full text-[var(--ink-3)] transition hover:text-[var(--ink)]">✕</button>
+        </div>
+
+        <div className="px-5 py-5">
+          {step === 0 && (
+            <>
+              <div className="mb-4 grid h-12 w-12 place-items-center rounded-xl bg-[var(--green-soft)] text-xl">🗓️</div>
+              <h3 className="text-[20px] font-semibold tracking-tight text-[var(--ink)]">{s.title}</h3>
+              <p className="mt-2 text-[13.5px] leading-relaxed text-[var(--ink-2)]">A calm look to keep everything current. Here's where things stand.</p>
+              <div className="mt-4 grid grid-cols-3 gap-2.5">
+                <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-3 text-center">
+                  <div className={cx("text-[18px] font-bold", delta >= 0 ? "text-[var(--green-ink)]" : "text-[var(--red-2)]")}>{delta >= 0 ? "▲" : "▼"}</div>
+                  <div className="mt-1 text-[11.5px] text-[var(--ink-3)]">net worth</div>
+                </div>
+                <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-3 text-center">
+                  <div className="text-[18px] font-bold text-[var(--ink)]">{vault.items.length}</div>
+                  <div className="mt-1 text-[11.5px] text-[var(--ink-3)]">records</div>
+                </div>
+                <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-3 text-center">
+                  <div className="text-[18px] font-bold text-[var(--ink)]">{attention.length}</div>
+                  <div className="mt-1 text-[11.5px] text-[var(--ink-3)]">to review</div>
+                </div>
+              </div>
+            </>
+          )}
+          {step === 1 && (
+            <>
+              <p className="mb-3 text-[13px] text-[var(--ink-3)]">{s.title}</p>
+              <div className="text-[26px] font-semibold tracking-tight text-[var(--ink)]">{formatINR(last.net)}</div>
+              <div className="mb-3 text-[12.5px] text-[var(--ink-3)]">Net worth{prev ? ` · ${delta >= 0 ? "▲" : "▼"} ${formatINR(Math.abs(delta))} since ${shortMonthLabel(prev.month)}` : ""}</div>
+              {bs.accounts.slice(0, 4).map((a, i) => (
+                <div key={i} className={cx("flex justify-between py-2 text-[13.5px]", i > 0 && "border-t border-[var(--line)]")}>
+                  <span className="text-[var(--ink-2)]">{a.label || a.name || "Account"}</span>
+                </div>
+              ))}
+            </>
+          )}
+          {step === 2 && (
+            <>
+              <p className="mb-3 text-[13px] text-[var(--ink-3)]">{s.title}</p>
+              {attention.length ? attention.slice(0, 4).map((it) => (
+                <div key={it.key} className="mb-2 flex items-center gap-3 rounded-xl border border-[var(--line)] px-3.5 py-2.5">
+                  <span className="flex-1 text-[13.5px] font-medium text-[var(--ink)]">{it.title}</span>
+                  <span className="text-[12px] font-semibold text-[var(--ink-3)]">{it.when}</span>
+                </div>
+              )) : <div className="rounded-xl border border-dashed border-[var(--line-2)] p-6 text-center text-[13.5px] text-[var(--ink-3)]">Nothing needs attention. You're all clear.</div>}
+            </>
+          )}
+          {step === 3 && (
+            <>
+              <p className="mb-3 text-[13px] text-[var(--ink-3)]">{s.title}</p>
+              <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-4">
+                <div className="flex justify-between py-1.5 text-[13.5px]"><span className="text-[var(--ink-2)]">Nominee</span><span className="font-medium text-[var(--ink)]">{nominee ? nominee.split(/[-–]/)[0].trim() : "Not set"}</span></div>
+                <div className="flex justify-between py-1.5 text-[13.5px]"><span className="text-[var(--ink-2)]">Trusted people</span><span className="font-medium text-[var(--ink)]">{holders} of 5</span></div>
+                <div className="flex justify-between py-1.5 text-[13.5px]"><span className="text-[var(--ink-2)]">Areas protected</span><span className="font-medium text-[var(--ink)]">{model.protectedCount} of {model.areas.length}</span></div>
+              </div>
+            </>
+          )}
+          {step === 4 && (
+            <div className="py-2 text-center">
+              <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-[var(--green-soft)] text-2xl">✓</div>
+              <h3 className="text-[20px] font-semibold text-[var(--ink)]">{s.title}</h3>
+              <p className="mt-2 text-[13.5px] text-[var(--ink-2)]">Everything's current and your family is covered. We'll nudge you again next month.</p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3 border-t border-[var(--line)] px-5 py-3.5">
+          <span className="text-[12.5px] text-[var(--ink-3)]">{s.hint}</span>
+          <div className="ml-auto flex gap-2.5">
+            {step === 1 && <button onClick={() => { onClose(); onNavigate("update"); }} className="rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-4 py-2 text-[13px] font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-2)]">Update balances</button>}
+            <button onClick={() => step < steps.length - 1 ? setStep(step + 1) : onClose()} className="rounded-full bg-[var(--solid)] px-5 py-2 text-[13px] font-semibold text-[var(--on-solid)] transition hover:opacity-90">{step === 0 ? "Start" : s.primary}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function HomeScreen({ vault, onSave, onNavigate, backupHealth, onExport }) {
   const bs = vault.balanceSheet ?? createEmptyBalanceSheet();
+  const attention = useMemo(() => deriveAttention(vault), [vault]);
+  const [checkinOpen, setCheckinOpen] = useState(false);
   const hasAccounts = bs.accounts.length > 0;
   const currentKey = monthKey();
   const currentSnap = snapshotForMonth(bs.snapshots, currentKey);
@@ -2078,25 +2701,38 @@ function HomeScreen({ vault, onSave, onNavigate, backupHealth, onExport }) {
   return (
     <section className="mx-auto max-w-2xl">
       {showBackupNudge && <BackupNudge reminder={reminder} onExport={onExport} />}
+      {checkinOpen && <CheckInModal vault={vault} series={series} attention={attention} monthName={monthLabel(currentKey).split(" ")[0]} onNavigate={onNavigate} onClose={() => setCheckinOpen(false)} />}
+
+      {needsUpdate && (
+        <button onClick={() => setCheckinOpen(true)} className="mb-8 flex w-full items-center gap-4 rounded-2xl border border-transparent bg-[var(--green-soft)] px-5 py-4 text-left transition hover:border-[var(--line)]">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--green)] text-lg text-white">🗓️</span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[14.5px] font-semibold text-[var(--ink)]">Your {monthLabel(currentKey).split(" ")[0]} check-in is ready</span>
+            <span className="mt-0.5 block text-[12.5px] text-[var(--ink-2)]">A calm two-minute look to keep everything current.</span>
+          </span>
+          <span className="shrink-0 rounded-full bg-[var(--solid)] px-4 py-2 text-[13px] font-semibold text-[var(--on-solid)]">Start check-in</span>
+        </button>
+      )}
+
       <div className="text-center">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">{monthLabel(currentKey)}</p>
-        <h1 className="mt-3 text-[64px] font-semibold leading-none tracking-tight text-[#1d1d1f] md:text-[80px]">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">{monthLabel(currentKey)}</p>
+        <h1 className="mt-3 text-[64px] font-semibold leading-none tracking-tight text-[var(--ink)] md:text-[80px]">
           {formatINR(last.net)}
         </h1>
-        <p className="mt-3 text-sm text-[#86868b]">Net worth</p>
+        <p className="mt-3 text-sm text-[var(--ink-3)]">Net worth</p>
 
         <div className="mt-10">
           <NetWorthChart bs={bs} />
         </div>
 
         {prev && (
-          <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-black/5 bg-white px-3.5 py-1.5 text-xs">
-            <span className={cx("font-semibold", delta >= 0 ? "text-[#0b6b3a]" : "text-[#b42318]")}>
+          <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--surface)] px-3.5 py-1.5 text-xs">
+            <span className={cx("font-semibold", delta >= 0 ? "text-[var(--green-ink)]" : "text-[var(--red-2)]")}>
               {delta >= 0 ? "▲" : "▼"} {formatINR(Math.abs(delta))}
             </span>
-            <span className="text-[#86868b]">{prev.month === series[series.length - 2]?.month ? "this month" : `since ${shortMonthLabel(prev.month)}`}</span>
+            <span className="text-[var(--ink-3)]">{prev.month === series[series.length - 2]?.month ? "this month" : `since ${shortMonthLabel(prev.month)}`}</span>
             {Number.isFinite(pct) && pct !== 0 && (
-              <span className="text-[#86868b]">· {pct >= 0 ? "+" : ""}{pct.toFixed(1)}%</span>
+              <span className="text-[var(--ink-3)]">· {pct >= 0 ? "+" : ""}{pct.toFixed(1)}%</span>
             )}
           </div>
         )}
@@ -2106,6 +2742,8 @@ function HomeScreen({ vault, onSave, onNavigate, backupHealth, onExport }) {
         <BreakdownRow label="Assets"      value={last.assets}      tone="default" />
         <BreakdownRow label="Liabilities" value={-last.liabilities} tone="muted" />
       </div>
+
+      <NeedsALook items={attention} onNavigate={onNavigate} />
 
       {bs.goal && (
         <GoalCard
@@ -2126,13 +2764,13 @@ function HomeScreen({ vault, onSave, onNavigate, backupHealth, onExport }) {
         ) : (
           <button
             onClick={() => onNavigate("update")}
-            className="rounded-full border border-black/8 bg-white px-6 py-2.5 text-xs font-semibold text-[#6e6e73] transition hover:text-[#1d1d1f]"
+            className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-6 py-2.5 text-xs font-semibold text-[var(--ink-2)] transition hover:text-[var(--ink)]"
           >
             Revise {shortMonthLabel(currentKey)} numbers
           </button>
         )}
         {needsUpdate && (
-          <p className="max-w-sm text-center text-xs text-[#a1a1a6]">
+          <p className="max-w-sm text-center text-xs text-[var(--ink-4)]">
             Five minutes once a month. Your sparkline keeps moving.
           </p>
         )}
@@ -2143,17 +2781,17 @@ function HomeScreen({ vault, onSave, onNavigate, backupHealth, onExport }) {
         <div className="mt-4 text-center">
           <button
             onClick={() => onNavigate("setup")}
-            className="text-[12px] text-[#86868b] underline-offset-4 transition hover:text-[#1d1d1f] hover:underline"
+            className="text-[12px] text-[var(--ink-3)] underline-offset-4 transition hover:text-[var(--ink)] hover:underline"
           >
             Manage accounts
           </button>
         </div>
       </div>
 
-      <div className="mt-16 border-t border-black/8 pt-6 text-center">
+      <div className="mt-16 border-t border-[var(--line)] pt-6 text-center">
         <button
           onClick={() => onNavigate("life")}
-          className="text-xs text-[#86868b] transition hover:text-[#1d1d1f]"
+          className="text-xs text-[var(--ink-3)] transition hover:text-[var(--ink)]"
         >
           Life Map · {vault.items.length} {vault.items.length === 1 ? "dossier" : "dossiers"} · sealed locally  →
         </button>
@@ -2167,7 +2805,7 @@ function BackupNudge({ reminder, onExport }) {
   return (
     <div className={cx(
       "mb-10 rounded-2xl border px-5 py-4",
-      tone === "danger" ? "border-[#ff453a]/25 bg-[#ff453a]/6" : "border-[#c88719]/25 bg-[#fff8eb]"
+      tone === "danger" ? "border-[#ff453a]/25 bg-[#ff453a]/6" : "border-[#c88719]/25 bg-[var(--amber-soft)]"
     )}>
       <div className="flex items-start gap-3">
         <span className={cx(
@@ -2175,10 +2813,10 @@ function BackupNudge({ reminder, onExport }) {
           tone === "danger" ? "bg-[#b42318]" : "bg-[#c88719]"
         )}>!</span>
         <div className="flex-1">
-          <p className={cx("text-[13px] font-semibold", tone === "danger" ? "text-[#7a1d12]" : "text-[#7a4b00]")}>
+          <p className={cx("text-[13px] font-semibold", tone === "danger" ? "text-[var(--red-ink)]" : "text-[var(--amber-ink)]")}>
             {reminder.title}
           </p>
-          <p className={cx("mt-1 text-[12px] leading-5", tone === "danger" ? "text-[#7a1d12]/80" : "text-[#7a4b00]/85")}>
+          <p className={cx("mt-1 text-[12px] leading-5", tone === "danger" ? "text-[var(--red-ink)]/80" : "text-[var(--amber-ink)]/85")}>
             {reminder.body} Without a backup, clearing this browser's data will lose your vault.
           </p>
         </div>
@@ -2201,11 +2839,11 @@ function BackupNudge({ reminder, onExport }) {
 function EmptyHome({ onStartSetup, onEnterVault, vault }) {
   return (
     <section className="mx-auto max-w-xl py-12 text-center">
-      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Welcome</p>
+      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Welcome</p>
       <h1 className="mt-4 text-[44px] font-semibold leading-[1.05] tracking-tight md:text-[56px]">
         Your wealth, in one&nbsp;number.
       </h1>
-      <p className="mx-auto mt-5 max-w-md text-[15px] leading-7 text-[#6e6e73]">
+      <p className="mx-auto mt-5 max-w-md text-[15px] leading-7 text-[var(--ink-2)]">
         Add your accounts once. Update them in five minutes each month.
         Watch the line move.
       </p>
@@ -2215,8 +2853,8 @@ function EmptyHome({ onStartSetup, onEnterVault, vault }) {
       >
         Set up balance sheet
       </button>
-      <div className="mt-12 border-t border-black/8 pt-6">
-        <button onClick={onEnterVault} className="text-xs text-[#86868b] transition hover:text-[#1d1d1f]">
+      <div className="mt-12 border-t border-[var(--line)] pt-6">
+        <button onClick={onEnterVault} className="text-xs text-[var(--ink-3)] transition hover:text-[var(--ink)]">
           or open the vault directly · {vault.items.length} {vault.items.length === 1 ? "dossier" : "dossiers"}  →
         </button>
       </div>
@@ -2251,45 +2889,45 @@ function GoalEditor({ currentGoal, onSave, onCancel }) {
   }
 
   return (
-    <div className="rounded-2xl border border-black/8 bg-white p-4">
-      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Goal</p>
+    <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4">
+      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">Goal</p>
       <input
         autoFocus
         value={label}
         onChange={(e) => setLabel(e.target.value)}
         placeholder="Optional label · e.g. House down payment"
-        className="mt-3 w-full rounded-md border border-black/10 bg-white px-2.5 py-2 text-[13px] outline-none focus:border-[#1d1d1f]"
+        className="mt-3 w-full rounded-md border border-[var(--line-2)] bg-[var(--surface)] px-2.5 py-2 text-[13px] outline-none focus:border-[var(--ink)]"
       />
       <div className="mt-2 grid grid-cols-2 gap-2">
         <label className="block">
-          <span className="block text-[10px] font-medium uppercase tracking-[0.12em] text-[#86868b]">Target net worth</span>
+          <span className="block text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--ink-3)]">Target net worth</span>
           <div className="mt-1 flex items-baseline">
-            <span className="text-[13px] text-[#c7c7cc]">₹</span>
+            <span className="text-[13px] text-[var(--ink-5)]">₹</span>
             <input
               type="text"
               inputMode="numeric"
               value={targetNet}
               onChange={(e) => setTargetNet(e.target.value.replace(/[^0-9]/g, ""))}
               placeholder="10000000"
-              className="ml-1 w-full rounded-md border border-black/10 bg-white px-2 py-1.5 text-[13px] tabular-nums outline-none focus:border-[#1d1d1f]"
+              className="ml-1 w-full rounded-md border border-[var(--line-2)] bg-[var(--surface)] px-2 py-1.5 text-[13px] tabular-nums outline-none focus:border-[var(--ink)]"
             />
           </div>
         </label>
         <label className="block">
-          <span className="block text-[10px] font-medium uppercase tracking-[0.12em] text-[#86868b]">By</span>
+          <span className="block text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--ink-3)]">By</span>
           <input
             type="date"
             value={targetDate}
             onChange={(e) => setTargetDate(e.target.value)}
-            className="mt-1 w-full rounded-md border border-black/10 bg-white px-2 py-1.5 text-[13px] outline-none focus:border-[#1d1d1f]"
+            className="mt-1 w-full rounded-md border border-[var(--line-2)] bg-[var(--surface)] px-2 py-1.5 text-[13px] outline-none focus:border-[var(--ink)]"
           />
         </label>
       </div>
       <div className="mt-4 flex items-center justify-between gap-2">
-        <button onClick={onCancel} className="text-[11px] text-[#86868b] hover:text-[#1d1d1f]" disabled={busy}>Cancel</button>
+        <button onClick={onCancel} className="text-[11px] text-[var(--ink-3)] hover:text-[var(--ink)]" disabled={busy}>Cancel</button>
         <div className="flex items-center gap-2">
           {currentGoal && (
-            <button onClick={clear} className="text-[11px] font-medium text-[#b42318] hover:underline" disabled={busy}>
+            <button onClick={clear} className="text-[11px] font-medium text-[var(--red-2)] hover:underline" disabled={busy}>
               Remove
             </button>
           )}
@@ -2316,33 +2954,33 @@ function GoalCard({ goal, currentNet, firstSnapshotNet }) {
     : "no deadline";
 
   return (
-    <div className="mt-10 rounded-2xl border border-black/6 bg-white p-5">
+    <div className="mt-10 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5">
       <div className="flex items-baseline justify-between">
         <div>
-          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Goal</p>
-          <p className="mt-1 text-[14px] font-medium text-[#1d1d1f]">
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Goal</p>
+          <p className="mt-1 text-[14px] font-medium text-[var(--ink)]">
             {goal.label ? goal.label : `Reach ${formatINR(progress.target)}`}
-            <span className="text-[#86868b]"> · {dateLabel}</span>
+            <span className="text-[var(--ink-3)]"> · {dateLabel}</span>
           </p>
         </div>
         <div className="text-right">
-          <div className="text-[22px] font-semibold tabular-nums text-[#1d1d1f]">{progress.pct.toFixed(0)}%</div>
+          <div className="text-[22px] font-semibold tabular-nums text-[var(--ink)]">{progress.pct.toFixed(0)}%</div>
           {daysLeft !== null && (
-            <div className={cx("text-[11px]", daysLeft < 0 ? "text-[#b42318]" : "text-[#86868b]")}>
+            <div className={cx("text-[11px]", daysLeft < 0 ? "text-[var(--red-2)]" : "text-[var(--ink-3)]")}>
               {daysLeft < 0 ? `${Math.abs(daysLeft)} d past due` : daysLeft === 0 ? "due today" : `${daysLeft} d left`}
             </div>
           )}
         </div>
       </div>
 
-      <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-[#f2f2f5]">
+      <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-[var(--surface-3)]">
         <div
           className={cx("h-full transition-all duration-500", reached ? "bg-[#0b6b3a]" : "bg-[#1d1d1f]")}
           style={{ width: `${progress.pct}%` }}
         />
       </div>
 
-      <div className="mt-3 flex items-baseline justify-between text-[11px] text-[#86868b]">
+      <div className="mt-3 flex items-baseline justify-between text-[11px] text-[var(--ink-3)]">
         <span>{formatINRCompact(currentNet)}</span>
         <span>{formatINRCompact(progress.target)}</span>
       </div>
@@ -2352,9 +2990,9 @@ function GoalCard({ goal, currentNet, firstSnapshotNet }) {
 
 function BreakdownRow({ label, value, tone }) {
   return (
-    <div className={cx("flex items-baseline justify-between border-b border-black/6 pb-3", tone === "muted" && "text-[#6e6e73]")}>
-      <span className="text-[13px] font-medium uppercase tracking-[0.12em] text-[#86868b]">{label}</span>
-      <span className="text-[22px] font-semibold tracking-tight tabular-nums text-[#1d1d1f]">{formatINR(value)}</span>
+    <div className={cx("flex items-baseline justify-between border-b border-[var(--line)] pb-3", tone === "muted" && "text-[var(--ink-2)]")}>
+      <span className="text-[13px] font-medium uppercase tracking-[0.12em] text-[var(--ink-3)]">{label}</span>
+      <span className="text-[22px] font-semibold tracking-tight tabular-nums text-[var(--ink)]">{formatINR(value)}</span>
     </div>
   );
 }
@@ -2383,7 +3021,7 @@ function CategoryBreakdown({ bs, values }) {
 
   return (
     <div>
-      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Breakdown</p>
+      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Breakdown</p>
       <div className="mt-4 space-y-1.5">
         {grouped.map((g) => {
           const pct = g.cat.kind === "asset" && assetTotal > 0 ? (g.total / assetTotal) * 100 : null;
@@ -2391,19 +3029,19 @@ function CategoryBreakdown({ bs, values }) {
             <button
               key={g.cat.id}
               onClick={() => setOpenCategoryId(g.cat.id)}
-              className="group flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left transition hover:bg-white"
+              className="group flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left transition hover:bg-[var(--surface)]"
             >
               <div className="flex items-center gap-3">
                 <span className={cx("h-1.5 w-1.5 rounded-full", g.cat.kind === "liability" ? "bg-[#b42318]" : "bg-[#1d1d1f]")} />
-                <span className="text-[14px] font-medium text-[#1d1d1f]">{g.cat.label}</span>
-                <span className="text-[12px] text-[#a1a1a6]">{g.count}</span>
-                {pct !== null && <span className="text-[11px] text-[#a1a1a6]">· {pct.toFixed(0)}%</span>}
+                <span className="text-[14px] font-medium text-[var(--ink)]">{g.cat.label}</span>
+                <span className="text-[12px] text-[var(--ink-4)]">{g.count}</span>
+                {pct !== null && <span className="text-[11px] text-[var(--ink-4)]">· {pct.toFixed(0)}%</span>}
               </div>
               <div className="flex items-center gap-2">
-                <span className={cx("text-[14px] font-semibold tabular-nums", g.cat.kind === "liability" ? "text-[#b42318]" : "text-[#1d1d1f]")}>
+                <span className={cx("text-[14px] font-semibold tabular-nums", g.cat.kind === "liability" ? "text-[var(--red-2)]" : "text-[var(--ink)]")}>
                   {g.cat.kind === "liability" ? "−" : ""}{formatINR(g.total).replace("−", "")}
                 </span>
-                <span className="text-[#c7c7cc] opacity-0 transition group-hover:opacity-100">›</span>
+                <span className="text-[var(--ink-5)] opacity-0 transition group-hover:opacity-100">›</span>
               </div>
             </button>
           );
@@ -2447,7 +3085,7 @@ function AllocationBar({ grouped, assetTotal }) {
           />
         ))}
       </div>
-      <p className="mt-2 text-[10px] uppercase tracking-[0.14em] text-[#a1a1a6]">Asset allocation</p>
+      <p className="mt-2 text-[10px] uppercase tracking-[0.14em] text-[var(--ink-4)]">Asset allocation</p>
     </div>
   );
 }
@@ -2464,19 +3102,19 @@ function CategorySheet({ bs, categoryId, values, onClose }) {
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/30 backdrop-blur-sm md:items-center" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-[#fbfbfd] p-6 shadow-[0_-12px_40px_rgba(0,0,0,0.12)] md:rounded-3xl md:p-8"
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-[var(--surface-2)] p-6 shadow-[0_-12px_40px_rgba(0,0,0,0.12)] md:rounded-3xl md:p-8"
       >
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">{cat?.kind === "liability" ? "Liability" : "Asset"}</p>
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">{cat?.kind === "liability" ? "Liability" : "Asset"}</p>
             <h2 className="mt-1 text-[24px] font-semibold tracking-tight">{cat?.label}</h2>
           </div>
-          <button onClick={onClose} className="text-[12px] text-[#86868b] hover:text-[#1d1d1f]">Close</button>
+          <button onClick={onClose} className="text-[12px] text-[var(--ink-3)] hover:text-[var(--ink)]">Close</button>
         </div>
 
         <div className="mt-6 space-y-3">
           {accounts.length === 0 && (
-            <p className="text-[13px] text-[#86868b]">No accounts in this category yet.</p>
+            <p className="text-[13px] text-[var(--ink-3)]">No accounts in this category yet.</p>
           )}
           {accounts.map((acc) => (
             <AccountHistoryRow key={acc.id} account={acc} snaps={snaps} values={values} />
@@ -2497,18 +3135,18 @@ function AccountHistoryRow({ account, snaps, values }) {
   const totalDelta = first > 0 ? last - first : 0;
 
   return (
-    <div className="rounded-2xl border border-black/6 bg-white p-4">
+    <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[15px] font-medium text-[#1d1d1f]">{account.name}</div>
+          <div className="truncate text-[15px] font-medium text-[var(--ink)]">{account.name}</div>
           {history.length >= 2 && (
-            <div className="mt-0.5 text-[11px] text-[#86868b]">
+            <div className="mt-0.5 text-[11px] text-[var(--ink-3)]">
               {totalDelta >= 0 ? "▲" : "▼"} {formatINR(Math.abs(totalDelta))} since {shortMonthLabel(history[0].month)}
             </div>
           )}
         </div>
         <div className="shrink-0 text-right">
-          <div className={cx("text-[17px] font-semibold tabular-nums", account.kind === "liability" ? "text-[#b42318]" : "text-[#1d1d1f]")}>
+          <div className={cx("text-[17px] font-semibold tabular-nums", account.kind === "liability" ? "text-[var(--red-2)]" : "text-[var(--ink)]")}>
             {account.kind === "liability" ? "−" : ""}{formatINR(current).replace("−", "")}
           </div>
         </div>
@@ -2534,7 +3172,7 @@ function MiniSparkline({ points }) {
     .join(" ");
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="mt-3 w-full" preserveAspectRatio="none">
-      <path d={path} stroke="#1d1d1f" strokeWidth="1" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      <path d={path} style={{ stroke: "var(--ink)" }} strokeWidth="1" fill="none" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -2582,17 +3220,17 @@ function NetWorthChart({ bs }) {
         <div className="min-h-[28px]">
           {hoverIdx !== null && active && (
             <div className="text-[12px] leading-tight">
-              <div className="font-semibold tabular-nums text-[#1d1d1f]">{formatINR(active.net)}</div>
-              <div className="text-[#86868b]">{monthLabel(active.month)}</div>
+              <div className="font-semibold tabular-nums text-[var(--ink)]">{formatINR(active.net)}</div>
+              <div className="text-[var(--ink-3)]">{monthLabel(active.month)}</div>
             </div>
           )}
         </div>
-        <div className="inline-flex items-center gap-1 rounded-full border border-black/8 bg-white p-1">
+        <div className="inline-flex items-center gap-1 rounded-full border border-[var(--line)] bg-[var(--surface)] p-1">
           {CHART_RANGES.map((r) => (
             <button
               key={r.id}
               onClick={() => { setRangeId(r.id); setHoverIdx(null); }}
-              className={cx("rounded-full px-3 py-1 text-[11px] font-semibold transition", rangeId === r.id ? "bg-[#1d1d1f] text-white" : "text-[#86868b] hover:text-[#1d1d1f]")}
+              className={cx("rounded-full px-3 py-1 text-[11px] font-semibold transition", rangeId === r.id ? "bg-[#1d1d1f] text-white" : "text-[var(--ink-3)] hover:text-[var(--ink)]")}
             >
               {r.label}
             </button>
@@ -2645,12 +3283,12 @@ function ChartSvg({ series, activeIdx, onHover }) {
     >
       <defs>
         <linearGradient id="netchart-fill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stopColor="#1d1d1f" stopOpacity="0.10" />
-          <stop offset="100%" stopColor="#1d1d1f" stopOpacity="0" />
+          <stop offset="0%"   style={{ stopColor: "var(--ink)" }} stopOpacity="0.10" />
+          <stop offset="100%" style={{ stopColor: "var(--ink)" }} stopOpacity="0" />
         </linearGradient>
       </defs>
       <path d={area} fill="url(#netchart-fill)" />
-      <path d={path} stroke="#1d1d1f" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      <path d={path} style={{ stroke: "var(--ink)" }} strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
 
       {/* All dots — small, dim for carried-forward */}
       {points.map((p, i) => (
@@ -2659,13 +3297,13 @@ function ChartSvg({ series, activeIdx, onHover }) {
           cx={p.x}
           cy={p.y}
           r={i === activeIdx ? 3.5 : 1.4}
-          fill={p.carried ? "#c7c7cc" : "#1d1d1f"}
+          style={{ fill: p.carried ? "var(--ink-5)" : "var(--ink)" }}
         />
       ))}
 
       {/* Vertical guide for active point */}
       {active && (
-        <line x1={active.x} x2={active.x} y1={P} y2={H - P} stroke="#1d1d1f" strokeOpacity="0.15" strokeDasharray="2,3" />
+        <line x1={active.x} x2={active.x} y1={P} y2={H - P} style={{ stroke: "var(--ink)" }} strokeOpacity="0.15" strokeDasharray="2,3" />
       )}
     </svg>
   );
@@ -2674,7 +3312,7 @@ function ChartSvg({ series, activeIdx, onHover }) {
 function Sparkline({ series }) {
   const nonEmpty = series.filter((s) => !s.empty);
   if (nonEmpty.length < 2) {
-    return <div className="h-16 text-xs text-[#a1a1a6]">A line will appear here after your second monthly update.</div>;
+    return <div className="h-16 text-xs text-[var(--ink-4)]">A line will appear here after your second monthly update.</div>;
   }
   const values = series.map((s) => s.net);
   const min = Math.min(...values);
@@ -2699,21 +3337,21 @@ function Sparkline({ series }) {
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" preserveAspectRatio="none">
         <defs>
           <linearGradient id="spark-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#1d1d1f" stopOpacity="0.10" />
-            <stop offset="100%" stopColor="#1d1d1f" stopOpacity="0" />
+            <stop offset="0%" style={{ stopColor: "var(--ink)" }} stopOpacity="0.10" />
+            <stop offset="100%" style={{ stopColor: "var(--ink)" }} stopOpacity="0" />
           </linearGradient>
         </defs>
         <path d={areaPath} fill="url(#spark-fill)" />
-        <path d={realPath} stroke="#1d1d1f" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={realPath} style={{ stroke: "var(--ink)" }} strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
         {points.map((p, i) => (
           <circle key={i}
             cx={p.x} cy={p.y}
             r={i === points.length - 1 ? 3 : (p.carried ? 1.2 : 1.8)}
-            fill={i === points.length - 1 ? "#1d1d1f" : (p.carried ? "#c7c7cc" : "#1d1d1f")}
+            style={{ fill: i === points.length - 1 ? "var(--ink)" : (p.carried ? "var(--ink-5)" : "var(--ink)") }}
           />
         ))}
       </svg>
-      <div className="mt-2 flex justify-between px-1 text-[10px] uppercase tracking-wider text-[#c7c7cc]">
+      <div className="mt-2 flex justify-between px-1 text-[10px] uppercase tracking-wider text-[var(--ink-5)]">
         <span>{shortMonthLabel(series[0].month)}</span>
         <span>{shortMonthLabel(series[Math.floor(series.length / 2)].month)}</span>
         <span>{shortMonthLabel(series[series.length - 1].month)}</span>
@@ -2810,13 +3448,13 @@ function SetupScreen({ vault, onSave, onNavigate }) {
   return (
     <section className="mx-auto max-w-xl">
       <div className="text-center">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">
           {isManageMode ? "Manage accounts" : "Set up balance sheet"}
         </p>
         <h1 className="mt-4 text-[36px] font-semibold leading-[1.1] tracking-tight md:text-[44px]">
           {isManageMode ? "Rename, add, or remove." : "List what you own and what you owe."}
         </h1>
-        <p className="mx-auto mt-4 max-w-md text-[14px] leading-6 text-[#6e6e73]">
+        <p className="mx-auto mt-4 max-w-md text-[14px] leading-6 text-[var(--ink-2)]">
           {isManageMode
             ? "Past monthly history stays attached to each account. Removed accounts stop counting from this month forward."
             : "Add an account name under each category. Values come next."}
@@ -2828,7 +3466,7 @@ function SetupScreen({ vault, onSave, onNavigate }) {
           const list = byCat.get(cat.id) ?? [];
           const open = openCategory === cat.id;
           return (
-            <div key={cat.id} className="rounded-2xl border border-black/6 bg-white">
+            <div key={cat.id} className="rounded-2xl border border-[var(--line)] bg-[var(--surface)]">
               <button
                 onClick={() => { setOpenCategory(open ? null : cat.id); setDraftName(""); }}
                 className="flex w-full items-center justify-between px-5 py-4 text-left"
@@ -2836,21 +3474,21 @@ function SetupScreen({ vault, onSave, onNavigate }) {
                 <div className="flex items-center gap-3">
                   <span className={cx("h-1.5 w-1.5 rounded-full", cat.kind === "liability" ? "bg-[#b42318]" : "bg-[#1d1d1f]")} />
                   <div>
-                    <div className="text-[14px] font-semibold text-[#1d1d1f]">{cat.label}</div>
-                    <div className="text-[11px] text-[#a1a1a6]">{cat.hint}</div>
+                    <div className="text-[14px] font-semibold text-[var(--ink)]">{cat.label}</div>
+                    <div className="text-[11px] text-[var(--ink-4)]">{cat.hint}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  {list.length > 0 && <span className="text-[12px] font-semibold text-[#1d1d1f]">{list.length}</span>}
-                  <span className={cx("text-[#c7c7cc] transition", open && "rotate-90")}>›</span>
+                  {list.length > 0 && <span className="text-[12px] font-semibold text-[var(--ink)]">{list.length}</span>}
+                  <span className={cx("text-[var(--ink-5)] transition", open && "rotate-90")}>›</span>
                 </div>
               </button>
               {open && (
-                <div className="border-t border-black/6 px-5 py-4">
+                <div className="border-t border-[var(--line)] px-5 py-4">
                   {list.length > 0 && (
                     <div className="mb-3 space-y-1.5">
                       {list.map((acc) => (
-                        <div key={acc.id} className="flex items-center justify-between gap-2 rounded-lg bg-[#fbfbfd] px-3 py-2 text-[13px]">
+                        <div key={acc.id} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)] px-3 py-2 text-[13px]">
                           {renamingId === acc.id ? (
                             <input
                               autoFocus
@@ -2861,7 +3499,7 @@ function SetupScreen({ vault, onSave, onNavigate }) {
                                 if (e.key === "Enter") commitRename(acc.id);
                                 if (e.key === "Escape") { setRenamingId(null); setRenameDraft(""); }
                               }}
-                              className="flex-1 rounded border border-black/10 bg-white px-2 py-1 text-[13px] outline-none focus:border-[#1d1d1f]"
+                              className="flex-1 rounded border border-[var(--line-2)] bg-[var(--surface)] px-2 py-1 text-[13px] outline-none focus:border-[var(--ink)]"
                             />
                           ) : (
                             <button
@@ -2872,7 +3510,7 @@ function SetupScreen({ vault, onSave, onNavigate }) {
                               {acc.name}
                             </button>
                           )}
-                          <button onClick={() => removeAccount(acc.id)} className="shrink-0 text-[11px] text-[#a1a1a6] hover:text-[#b42318]">remove</button>
+                          <button onClick={() => removeAccount(acc.id)} className="shrink-0 text-[11px] text-[var(--ink-4)] hover:text-[var(--red-2)]">remove</button>
                         </div>
                       ))}
                     </div>
@@ -2884,7 +3522,7 @@ function SetupScreen({ vault, onSave, onNavigate }) {
                       onChange={(e) => setDraftName(e.target.value)}
                       onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addAccount(cat.id); } }}
                       placeholder={cat.id === "cash" ? "HDFC savings" : cat.id === "investments" ? "Equity mutual funds" : "Account name"}
-                      className="flex-1 rounded-lg border border-black/8 bg-white px-3 py-2 text-[13px] outline-none focus:border-[#1d1d1f]"
+                      className="flex-1 rounded-lg border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-[13px] outline-none focus:border-[var(--ink)]"
                     />
                     <button onClick={() => addAccount(cat.id)} className="rounded-lg bg-[#1d1d1f] px-4 text-[12px] font-semibold text-white">Add</button>
                   </div>
@@ -2909,7 +3547,7 @@ function SetupScreen({ vault, onSave, onNavigate }) {
                 ? `Save · ${accounts.length} ${accounts.length === 1 ? "account" : "accounts"}`
                 : `Continue · ${accounts.length} ${accounts.length === 1 ? "account" : "accounts"}`}
         </button>
-        <button onClick={() => onNavigate("home")} className="text-xs text-[#86868b] hover:text-[#1d1d1f]">Cancel</button>
+        <button onClick={() => onNavigate("home")} className="text-xs text-[var(--ink-3)] hover:text-[var(--ink)]">Cancel</button>
       </div>
     </section>
   );
@@ -2945,7 +3583,7 @@ function UpdateScreen({ vault, onSave, onNavigate }) {
   if (accounts.length === 0) {
     return (
       <section className="mx-auto max-w-md py-16 text-center">
-        <p className="text-sm text-[#6e6e73]">Set up your accounts first.</p>
+        <p className="text-sm text-[var(--ink-2)]">Set up your accounts first.</p>
         <button onClick={() => onNavigate("setup")} className="mt-6 rounded-full bg-[#1d1d1f] px-6 py-3 text-sm font-semibold text-white">Set up balance sheet</button>
       </section>
     );
@@ -3009,13 +3647,13 @@ function UpdateScreen({ vault, onSave, onNavigate }) {
     const delta = prev ? last.net - prev.net : 0;
     return (
       <section className="mx-auto max-w-xl py-12 text-center">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">{monthLabel(key)} · saved</p>
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">{monthLabel(key)} · saved</p>
         <h1 className="mt-4 text-[44px] font-semibold leading-none tracking-tight md:text-[56px]">
           {delta >= 0 ? "+" : "−"}{formatINR(Math.abs(delta))}
         </h1>
-        <p className="mt-3 text-sm text-[#86868b]">{delta >= 0 ? "Net worth up this month" : "Net worth down this month"}</p>
+        <p className="mt-3 text-sm text-[var(--ink-3)]">{delta >= 0 ? "Net worth up this month" : "Net worth down this month"}</p>
         <div className="mt-10"><Sparkline series={series} /></div>
-        <p className="mt-8 text-[15px] tracking-tight text-[#1d1d1f]">New net worth · <span className="font-semibold">{formatINR(last.net)}</span></p>
+        <p className="mt-8 text-[15px] tracking-tight text-[var(--ink)]">New net worth · <span className="font-semibold">{formatINR(last.net)}</span></p>
         <button onClick={() => onNavigate("home")} className="mt-10 rounded-full bg-[#1d1d1f] px-7 py-3 text-sm font-semibold text-white">Done</button>
       </section>
     );
@@ -3042,28 +3680,28 @@ function UpdateScreen({ vault, onSave, onNavigate }) {
   return (
     <section className="mx-auto max-w-md py-6">
       <div className="mb-10 flex items-center justify-between">
-        <button onClick={back} className="text-xs text-[#86868b] hover:text-[#1d1d1f]">‹ {stepIndex === 0 ? "Home" : "Back"}</button>
-        <span className="text-[11px] uppercase tracking-[0.18em] text-[#86868b]">{stepIndex + 1} / {accounts.length}</span>
+        <button onClick={back} className="text-xs text-[var(--ink-3)] hover:text-[var(--ink)]">‹ {stepIndex === 0 ? "Home" : "Back"}</button>
+        <span className="text-[11px] uppercase tracking-[0.18em] text-[var(--ink-3)]">{stepIndex + 1} / {accounts.length}</span>
         <div className="flex items-center gap-3">
-          <button onClick={() => setMode("bulk")} className="text-xs text-[#86868b] hover:text-[#1d1d1f]">Bulk</button>
-          <button onClick={() => onNavigate("home")} className="text-xs text-[#86868b] hover:text-[#1d1d1f]">Cancel</button>
+          <button onClick={() => setMode("bulk")} className="text-xs text-[var(--ink-3)] hover:text-[var(--ink)]">Bulk</button>
+          <button onClick={() => onNavigate("home")} className="text-xs text-[var(--ink-3)] hover:text-[var(--ink)]">Cancel</button>
         </div>
       </div>
 
-      <div className="h-0.5 w-full overflow-hidden rounded-full bg-[#f2f2f5]">
+      <div className="h-0.5 w-full overflow-hidden rounded-full bg-[var(--surface-3)]">
         <div className="h-full bg-[#1d1d1f] transition-all duration-300" style={{ width: `${((stepIndex + 1) / accounts.length) * 100}%` }} />
       </div>
 
       <div className="mt-14 text-center">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">{cat?.label ?? ""}</p>
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">{cat?.label ?? ""}</p>
         <h2 className="mt-3 text-[32px] font-semibold leading-tight tracking-tight">{acc.name}</h2>
-        <p className="mt-3 text-[13px] text-[#a1a1a6]">
+        <p className="mt-3 text-[13px] text-[var(--ink-4)]">
           {prevValue > 0 ? `Last month · ${formatINR(prevValue)}` : "First entry"}
         </p>
 
         <div className="mt-12">
           <div className="flex items-baseline justify-center gap-1">
-            <span className="text-[36px] font-semibold text-[#c7c7cc]">₹</span>
+            <span className="text-[36px] font-semibold text-[var(--ink-5)]">₹</span>
             <input
               autoFocus
               type="text"
@@ -3072,11 +3710,11 @@ function UpdateScreen({ vault, onSave, onNavigate }) {
               onChange={(e) => setCurrent(e.target.value.replace(/[^0-9]/g, ""))}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); next(); } }}
               placeholder="0"
-              className="w-full max-w-xs bg-transparent text-center text-[56px] font-semibold leading-none tracking-tight tabular-nums text-[#1d1d1f] outline-none placeholder:text-[#e5e5ea]"
+              className="w-full max-w-xs bg-transparent text-center text-[56px] font-semibold leading-none tracking-tight tabular-nums text-[var(--ink)] outline-none placeholder:text-[#e5e5ea]"
             />
           </div>
           {prevValue > 0 && Number(values[acc.id]) > 0 && (
-            <p className="mt-4 text-[12px] text-[#86868b]">
+            <p className="mt-4 text-[12px] text-[var(--ink-3)]">
               {(() => {
                 const d = Number(values[acc.id]) - prevValue;
                 if (d === 0) return "No change";
@@ -3097,14 +3735,14 @@ function UpdateScreen({ vault, onSave, onNavigate }) {
         </button>
         <button
           onClick={() => { setCurrent(String(prevValue)); next(); }}
-          className="text-xs text-[#86868b] hover:text-[#1d1d1f]"
+          className="text-xs text-[var(--ink-3)] hover:text-[var(--ink)]"
         >
           Same as last month
         </button>
       </div>
 
-      <div className="mt-16 border-t border-black/8 pt-5 text-center">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[#86868b]">Running total</p>
+      <div className="mt-16 border-t border-[var(--line)] pt-5 text-center">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--ink-3)]">Running total</p>
         <p className="mt-2 text-[20px] font-semibold tabular-nums tracking-tight">{formatINR(previewTotals.net)}</p>
       </div>
     </section>
@@ -3149,13 +3787,13 @@ function BulkUpdateView({
   return (
     <section className="mx-auto max-w-2xl pb-32">
       <div className="mb-8 flex items-center justify-between">
-        <button onClick={onCancel} className="text-xs text-[#86868b] hover:text-[#1d1d1f]">‹ Home</button>
-        <span className="text-[11px] uppercase tracking-[0.18em] text-[#86868b]">{monthLabelText}</span>
-        <button onClick={onSwitchToGuided} className="text-xs text-[#86868b] hover:text-[#1d1d1f]">Guided</button>
+        <button onClick={onCancel} className="text-xs text-[var(--ink-3)] hover:text-[var(--ink)]">‹ Home</button>
+        <span className="text-[11px] uppercase tracking-[0.18em] text-[var(--ink-3)]">{monthLabelText}</span>
+        <button onClick={onSwitchToGuided} className="text-xs text-[var(--ink-3)] hover:text-[var(--ink)]">Guided</button>
       </div>
 
       <div className="text-center">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">{existing ? "Revise" : "Update"} all numbers</p>
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">{existing ? "Revise" : "Update"} all numbers</p>
         <h1 className="mt-3 text-[32px] font-semibold leading-tight tracking-tight md:text-[36px]">{monthLabelText}</h1>
       </div>
 
@@ -3165,8 +3803,8 @@ function BulkUpdateView({
           if (list.length === 0) return null;
           return (
             <div key={cat.id}>
-              <p className="px-1 text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">{cat.label}</p>
-              <div className="mt-2 divide-y divide-black/6 rounded-2xl border border-black/6 bg-white">
+              <p className="px-1 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">{cat.label}</p>
+              <div className="mt-2 divide-y divide-[var(--line)] rounded-2xl border border-[var(--line)] bg-[var(--surface)]">
                 {list.map((acc) => {
                   const prev = previousSnap?.values?.[acc.id] ?? 0;
                   const current = Number(values[acc.id]) || 0;
@@ -3174,23 +3812,23 @@ function BulkUpdateView({
                   return (
                     <div key={acc.id} className="flex items-center justify-between gap-3 px-4 py-3">
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-[14px] font-medium text-[#1d1d1f]">{acc.name}</div>
-                        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-[#86868b]">
-                          {prev > 0 ? <span>Last · {formatINR(prev)}</span> : <span className="text-[#a1a1a6]">No prior value</span>}
+                        <div className="truncate text-[14px] font-medium text-[var(--ink)]">{acc.name}</div>
+                        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-[var(--ink-3)]">
+                          {prev > 0 ? <span>Last · {formatINR(prev)}</span> : <span className="text-[var(--ink-4)]">No prior value</span>}
                           {prev > 0 && (
-                            <button onClick={() => copyLast(acc.id)} className="text-[#86868b] underline-offset-2 hover:text-[#1d1d1f] hover:underline">
+                            <button onClick={() => copyLast(acc.id)} className="text-[var(--ink-3)] underline-offset-2 hover:text-[var(--ink)] hover:underline">
                               same
                             </button>
                           )}
                           {prev > 0 && current > 0 && delta !== 0 && (
-                            <span className={delta > 0 ? "text-[#0b6b3a]" : "text-[#b42318]"}>
+                            <span className={delta > 0 ? "text-[var(--green-ink)]" : "text-[var(--red-2)]"}>
                               {delta > 0 ? "▲" : "▼"} {formatINRCompact(Math.abs(delta))}
                             </span>
                           )}
                         </div>
                       </div>
                       <div className="flex items-baseline gap-1">
-                        <span className="text-[13px] text-[#c7c7cc]">₹</span>
+                        <span className="text-[13px] text-[var(--ink-5)]">₹</span>
                         <input
                           type="text"
                           inputMode="numeric"
@@ -3198,8 +3836,8 @@ function BulkUpdateView({
                           onChange={(e) => set(acc.id, e.target.value)}
                           placeholder="0"
                           className={cx(
-                            "w-32 rounded-md border border-transparent bg-[#fbfbfd] px-2 py-1.5 text-right text-[15px] tabular-nums outline-none focus:border-[#1d1d1f] focus:bg-white",
-                            acc.kind === "liability" ? "text-[#b42318]" : "text-[#1d1d1f]"
+                            "w-32 rounded-md border border-transparent bg-[var(--surface-2)] px-2 py-1.5 text-right text-[15px] tabular-nums outline-none focus:border-[var(--ink)] focus:bg-[var(--surface)]",
+                            acc.kind === "liability" ? "text-[var(--red-2)]" : "text-[var(--ink)]"
                           )}
                         />
                       </div>
@@ -3213,14 +3851,14 @@ function BulkUpdateView({
       </div>
 
       {/* Sticky save bar at the bottom */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-black/8 bg-[#fbfbfd]/95 backdrop-blur-xl">
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--line)] bg-[var(--surface-2)]/95 backdrop-blur-xl">
         <div className="mx-auto flex max-w-2xl items-center justify-between gap-4 px-5 py-3">
           <div>
-            <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Net worth</div>
+            <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">Net worth</div>
             <div className="mt-0.5 flex items-baseline gap-2">
               <span className="text-[20px] font-semibold tabular-nums tracking-tight">{formatINR(previewTotals.net)}</span>
               {previousSnap && totalDelta !== 0 && (
-                <span className={cx("text-[12px] font-medium", totalDelta > 0 ? "text-[#0b6b3a]" : "text-[#b42318]")}>
+                <span className={cx("text-[12px] font-medium", totalDelta > 0 ? "text-[var(--green-ink)]" : "text-[var(--red-2)]")}>
                   {totalDelta > 0 ? "▲" : "▼"} {formatINRCompact(Math.abs(totalDelta))}
                 </span>
               )}
@@ -3245,113 +3883,11 @@ function BackupSizeNotice({ warning }) {
     <div className={cx(
       "mb-5 rounded-3xl border px-5 py-4 text-sm font-semibold",
       strong
-        ? "border-[#c68a19]/25 bg-[#fff7e5] text-[#7a4b00]"
-        : "border-black/10 bg-white text-[#6e6e73]"
+        ? "border-[#c68a19]/25 bg-[var(--amber-soft)] text-[var(--amber-ink)]"
+        : "border-[var(--line-2)] bg-[var(--surface)] text-[var(--ink-2)]"
     )}>
       {warning.copy}
     </div>
-  );
-}
-
-function LifeMapScreen({ vault, autoLockMs, onAutoLockChange, onReplaceRecoveryKey, onSave, onNavigate, entitlements, onOpenSettings }) {
-  const model = useMemo(() => getLifeModel(vault), [vault]);
-  const [selectedAreaId, setSelectedAreaId] = useState(null);
-  const [securityOpen, setSecurityOpen] = useState(false);
-  const workspaceRef = useRef(null);
-  const selectedArea = selectedAreaId ? model.areas.find((area) => area.id === selectedAreaId) : null;
-
-  function selectArea(id) {
-    const next = selectedAreaId === id ? null : id;
-    setSelectedAreaId(next);
-    if (next) {
-      window.setTimeout(() => workspaceRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }), 80);
-    }
-  }
-
-  return (
-    <section className="mx-auto max-w-5xl">
-      <div className="text-center">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Life Map</p>
-        <h1 className="mt-3 text-[36px] font-semibold leading-[1.1] tracking-tight text-[#1d1d1f] md:text-[44px]">
-          {model.protectedCount} of {model.areas.length} areas protected
-        </h1>
-        <div className="mt-4 inline-flex items-center gap-4 text-[12px] text-[#86868b]">
-          <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-[#34c759]" />{model.protectedCount} protected</span>
-          {model.reviewCount > 0 && <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-[#c88719]" />{model.reviewCount} review</span>}
-          {model.exposedCount > 0 && <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-[#d70015]" />{model.exposedCount} exposed</span>}
-        </div>
-      </div>
-
-      <div className="mt-12 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-        {model.areas.map((area, index) => (
-          <LifeMapCategoryCard
-            key={area.id}
-            area={area}
-            index={index}
-            selected={area.id === selectedAreaId}
-            onClick={() => selectArea(area.id)}
-          />
-        ))}
-      </div>
-
-      {selectedArea && (
-        <div ref={workspaceRef} className="mt-12 scroll-mt-28">
-          <CategoryWorkspace
-            vault={vault}
-            area={selectedArea}
-            onSave={onSave}
-            onCapture={() => onNavigate("capture")}
-            onClose={() => setSelectedAreaId(null)}
-            entitlements={entitlements}
-            onOpenSettings={onOpenSettings}
-          />
-        </div>
-      )}
-
-      <div className="mt-14 border-t border-black/8 pt-6">
-        <button
-          onClick={() => setSecurityOpen((v) => !v)}
-          className="flex w-full items-center justify-between text-left"
-        >
-          <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Security & audit</span>
-          <span className={cx("text-[#c7c7cc] transition", securityOpen && "rotate-90")}>›</span>
-        </button>
-        {securityOpen && (
-          <div className="mt-6">
-            <SecurityPanel autoLockMs={autoLockMs} onAutoLockChange={onAutoLockChange} onReplaceRecoveryKey={onReplaceRecoveryKey} />
-            <AuditTrail vault={vault} />
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function LifeMapCategoryCard({ area, index, selected, onClick }) {
-  const dot = area.state === "protected" ? "bg-[#34c759]" : area.state === "review" ? "bg-[#c88719]" : "bg-[#d70015]";
-  return (
-    <button
-      onClick={onClick}
-      className={cx(
-        "group rounded-2xl border bg-white p-5 text-left transition",
-        selected
-          ? "border-[#1d1d1f] shadow-[0_12px_40px_rgba(0,0,0,0.08)]"
-          : "border-black/6 hover:border-black/12 hover:shadow-[0_8px_24px_rgba(0,0,0,0.04)]"
-      )}
-    >
-      <div className="flex items-center justify-between">
-        <span className={cx("h-2 w-2 rounded-full", dot)} />
-        <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-[#c7c7cc]">{String(index + 1).padStart(2, "0")}</span>
-      </div>
-      <h3 className="mt-8 text-[20px] font-semibold tracking-tight text-[#1d1d1f]">{area.label}</h3>
-      <p className="mt-1.5 line-clamp-2 text-[13px] leading-5 text-[#86868b]">{area.promise}</p>
-      <div className="mt-6 flex items-center justify-between text-[12px]">
-        <span className="text-[#a1a1a6]">{area.count} {area.count === 1 ? "record" : "records"}</span>
-        <span className={cx("font-medium", area.state === "protected" ? "text-[#0b6b3a]" : area.state === "review" ? "text-[#7a4b00]" : "text-[#b42318]")}>
-          {area.state === "protected" ? "Protected" : area.state === "review" ? "Review" : "Not protected"}
-        </span>
-      </div>
-    </button>
   );
 }
 
@@ -3456,96 +3992,86 @@ function CategoryWorkspace({ vault, area, onSave, onCapture, onClose, entitlemen
     await onSave(appendAuditEvent(vault, event), null);
   }
 
+  const drawerOpen = mode === "edit" || (mode === "detail" && Boolean(selectedRecord));
+  function closeDrawer() { setMode("overview"); setSelectedId(null); setEditingRecord(null); }
+  const areaTint = "color-mix(in srgb, " + (AREA_TONE[area.id] || "var(--ink-4)") + " 14%, transparent)";
+  const areaStroke = AREA_TONE[area.id] || "var(--ink-3)";
+
   return (
-    <aside className="rounded-3xl bg-[#111113] p-6 text-white lg:p-8">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 pb-5">
-        <div className="flex items-baseline gap-3">
-          <h2 className="text-[26px] font-semibold tracking-tight">{area.label}</h2>
-          <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-white/40">{records.length} {records.length === 1 ? "record" : "records"}</span>
+    <div>
+      <div className="mb-6 flex items-center gap-4">
+        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl" style={{ background: areaTint }}>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={areaStroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={AREA_ICON[area.id]} /></svg>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={startCreate} className="rounded-full bg-white px-4 py-1.5 text-xs font-semibold text-[#111113] transition hover:bg-white/90">Add record</button>
-          <label className="cursor-pointer rounded-full border border-white/12 bg-white/8 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-white/12">
-            Upload
-            <input className="hidden" type="file" multiple accept="image/*,.pdf,.doc,.docx,.txt,.csv,.md,application/pdf" onChange={async (event) => {
-              const files = event.target.files;
-              if (!files?.length) return;
-              const target = selectedRecord ?? createBlankRecord(area);
-              await attachToRecord({ ...target, title: target.title || `${area.label} upload` }, files);
-              event.target.value = "";
-            }} />
-          </label>
-          {onClose && (
-            <button onClick={onClose} className="rounded-full border border-white/12 px-3 py-1.5 text-xs font-semibold text-white/60 transition hover:text-white">Close</button>
-          )}
+        <div className="min-w-0 flex-1">
+          <h1 className="text-[26px] font-semibold tracking-tight text-[var(--ink)]">{area.label}</h1>
+          <p className="mt-0.5 text-[13.5px] text-[var(--ink-3)]">{records.length} record{records.length === 1 ? "" : "s"} · {area.description}</p>
         </div>
+        <button onClick={startCreate} className="shrink-0 rounded-full bg-[var(--accent)] px-4 py-2.5 text-[13px] font-semibold text-white transition hover:bg-[var(--accent-hover)]">Add to this area</button>
       </div>
 
-      {message && <div className="mt-4 rounded-2xl border border-[#34c759]/20 bg-[#34c759]/10 px-4 py-3 text-sm font-semibold text-[#a8f0bd]">{message}</div>}
+      {message && <div className="mb-5 rounded-2xl border border-[#34c759]/20 bg-[#34c759]/10 px-4 py-3 text-sm font-semibold text-[var(--green-ink)]">{message}</div>}
 
-      {mode === "edit" ? (
-        <RecordEditorDrawer
-          area={area}
-          record={editingRecord}
-          onCancel={() => setMode(selectedRecord ? "detail" : "overview")}
-          onSave={saveRecord}
-        />
+      {records.length ? (
+        <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)]">
+          {records.map((rec, i) => (
+            <button key={rec.id} onClick={() => { setSelectedId(rec.id); setMode("detail"); }} className={cx("flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition hover:bg-[var(--surface-2)]", i > 0 && "border-t border-[var(--line)]")}>
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px]" style={{ background: areaTint }}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={areaStroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={AREA_ICON[area.id]} /></svg>
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[14px] font-medium text-[var(--ink)]">{rec.title || typeLabel(rec.type)}</span>
+                <span className="block truncate text-[12.5px] text-[var(--ink-3)]">{(rec.username || rec.bankDetails || rec.email || typeLabel(rec.type))} · {releaseLabel(rec)}</span>
+              </span>
+              <span className="shrink-0 text-[12px] text-[var(--ink-4)]">{timeAgo(rec.updatedAt)}</span>
+            </button>
+          ))}
+        </div>
       ) : (
-        <div className="mt-5 grid gap-5 xl:grid-cols-[0.74fr_1.26fr]">
-          <div>
-            <CategoryOverviewHeader area={area} records={records} />
-            <div className="mt-4 grid gap-2 rounded-[1.35rem] border border-white/[0.08] bg-black/20 p-2">
-              <input className="min-w-0 rounded-[1rem] border border-transparent bg-transparent px-3 py-2.5 text-sm text-white outline-none placeholder:text-white/34 focus:border-white/10 focus:bg-white/[0.06]" placeholder={`Search ${area.label.toLowerCase()}`} value={query} onChange={(event) => setQuery(event.target.value)} />
-              <select className="rounded-[1rem] border border-transparent bg-white/[0.08] px-3 py-2.5 text-sm font-semibold text-white outline-none focus:border-white/12" value={filter} onChange={(event) => setFilter(event.target.value)}>
-                <option value="all">All</option>
-                <option value="Emergency-enabled">Emergency</option>
-                <option value="Private">Private</option>
-                <option value="Needs review">Needs review</option>
-              </select>
-            </div>
-            <CategoryRecordList
-              records={filteredRecords}
-              selectedId={selectedRecord?.id}
-              onSelect={(record) => {
-                setSelectedId(record.id);
-                setMode("detail");
-              }}
-            />
+        <div className="rounded-2xl border border-dashed border-[var(--line-2)] p-12 text-center">
+          <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl" style={{ background: areaTint }}>
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={areaStroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={AREA_ICON[area.id]} /></svg>
           </div>
-
-          {mode === "detail" && selectedRecord ? (
-            <RecordDetailPanel
-              record={selectedRecord}
-              onEdit={() => startEdit(selectedRecord)}
-              onDelete={() => deleteRecord(selectedRecord)}
-              onAttach={(files) => attachToRecord(selectedRecord, files)}
-              onAttachmentDelete={(attachment) => deleteRecordAttachment(selectedRecord, attachment)}
-              onAttachmentReplace={(attachment, files) => replaceRecordAttachment(selectedRecord, attachment, files)}
-              onReveal={() => auditOnly("Sensitive value revealed")}
-              onHide={() => auditOnly("Sensitive value hidden")}
-              onExtract={async (text) => {
-                const draft = analyzeMessyInput(text);
-                await saveRecord({
-                  ...selectedRecord,
-                  username: selectedRecord.username || draft.username,
-                  secret: selectedRecord.secret || draft.secret,
-                  bankDetails: selectedRecord.bankDetails || draft.bankDetails,
-                  notes: `${selectedRecord.notes || ""}\n\nExtracted from attachment:\n${draft.bankDetails}`.trim()
-                }, "Attachment extraction reviewed");
-              }}
-            />
-          ) : (
-            <EmptyWorkspaceState area={area} records={filteredRecords} totalRecords={records.length} query={query} onClearSearch={() => {
-              setQuery("");
-              setFilter("all");
-            }} onCreate={startCreate} onCapture={onCapture} onSelect={(record) => {
-              setSelectedId(record.id);
-              setMode("detail");
-            }} />
-          )}
+          <h3 className="text-[17px] font-semibold text-[var(--ink)]">Nothing here yet</h3>
+          <p className="mx-auto mt-1.5 max-w-sm text-[13.5px] leading-relaxed text-[var(--ink-3)]">Anything you add to {area.label} will appear here — encrypted, and ready for your family when it's needed.</p>
+          <button onClick={startCreate} className="mt-5 rounded-full bg-[var(--accent)] px-5 py-2.5 text-[13px] font-semibold text-white transition hover:bg-[var(--accent-hover)]">Add to {area.label}</button>
         </div>
       )}
-    </aside>
+
+      {drawerOpen && (
+        <div className="fixed inset-0 z-40">
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={closeDrawer} />
+          <aside className="absolute right-0 top-0 h-full w-[460px] max-w-[94vw] overflow-y-auto border-l border-[var(--line)] bg-[var(--surface)] shadow-[-24px_0_60px_rgba(0,0,0,0.18)]">
+            {mode === "edit" ? (
+              <RecordEditorDrawer area={area} record={editingRecord} onCancel={closeDrawer} onSave={saveRecord} />
+            ) : (
+              <RecordDetailPanel
+                record={selectedRecord}
+                area={area}
+                onClose={closeDrawer}
+                onEdit={() => startEdit(selectedRecord)}
+                onDelete={() => deleteRecord(selectedRecord)}
+                onAttach={(files) => attachToRecord(selectedRecord, files)}
+                onAttachmentDelete={(attachment) => deleteRecordAttachment(selectedRecord, attachment)}
+                onAttachmentReplace={(attachment, files) => replaceRecordAttachment(selectedRecord, attachment, files)}
+                onReveal={() => auditOnly("Sensitive value revealed")}
+                onHide={() => auditOnly("Sensitive value hidden")}
+                onExtract={async (text) => {
+                  const draft = analyzeMessyInput(text);
+                  await saveRecord({
+                    ...selectedRecord,
+                    username: selectedRecord.username || draft.username,
+                    secret: selectedRecord.secret || draft.secret,
+                    bankDetails: selectedRecord.bankDetails || draft.bankDetails,
+                    notes: `${selectedRecord.notes || ""}\n\nExtracted from attachment:\n${draft.bankDetails}`.trim()
+                  }, "Attachment extraction reviewed");
+                }}
+              />
+            )}
+          </aside>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -3553,8 +4079,8 @@ function CategoryOverviewHeader({ area, records }) {
   const emergency = records.filter((record) => record.emergencyEligible).length;
   const review = records.filter((record) => releaseLabel(record) === "Needs review").length;
   return (
-    <div className="rounded-[1.5rem] border border-white/[0.08] bg-white/[0.055] p-4">
-      <p className="text-sm leading-6 text-white/58">{area.description}</p>
+    <div className="rounded-[1.5rem] border border-[var(--line)] bg-[var(--surface-2)] p-4">
+      <p className="text-sm leading-6 text-[var(--ink-3)]">{area.description}</p>
       <div className="mt-4 grid grid-cols-3 gap-3">
         <WorkspaceStat label="Records" value={records.length} />
         <WorkspaceStat label="Emergency" value={emergency} />
@@ -3562,7 +4088,7 @@ function CategoryOverviewHeader({ area, records }) {
       </div>
       <div className="mt-4 flex flex-wrap gap-1.5">
         {area.suggested.map((item) => (
-          <span key={item} className="rounded-full border border-white/[0.08] bg-black/15 px-2.5 py-1 text-[11px] font-semibold text-white/50">{item}</span>
+          <span key={item} className="rounded-full border border-[var(--line)] bg-[var(--surface-3)] px-2.5 py-1 text-[11px] font-semibold text-[var(--ink-3)]">{item}</span>
         ))}
       </div>
     </div>
@@ -3573,14 +4099,14 @@ function WorkspaceStat({ label, value }) {
   return (
     <div>
       <strong className="block text-xl font-semibold">{value}</strong>
-      <span className="text-[11px] font-semibold text-white/38">{label}</span>
+      <span className="text-[11px] font-semibold text-[var(--ink-3)]">{label}</span>
     </div>
   );
 }
 
 function CategoryRecordList({ records, selectedId, onSelect }) {
   if (records.length === 0) {
-    return <div className="mt-4 rounded-[1.5rem] border border-dashed border-white/14 p-5 text-sm leading-6 text-white/45">No matching records. Add a dossier or clear the search.</div>;
+    return <div className="mt-4 rounded-[1.5rem] border border-dashed border-[var(--line)] p-5 text-sm leading-6 text-[var(--ink-3)]">No matching records. Add a dossier or clear the search.</div>;
   }
 
   return (
@@ -3588,15 +4114,15 @@ function CategoryRecordList({ records, selectedId, onSelect }) {
       {records.map((record) => {
         const status = releaseLabel(record);
         return (
-          <button key={record.id} onClick={() => onSelect(record)} className={cx("group rounded-[1.4rem] border p-4 text-left transition duration-300 hover:-translate-y-0.5", selectedId === record.id ? "border-[#8fd5a6]/40 bg-[#8fd5a6]/[0.13] shadow-[inset_0_0_0_1px_rgba(143,213,166,0.08),0_18px_50px_rgba(0,0,0,0.18)]" : "border-white/[0.08] bg-white/[0.055] hover:border-white/12 hover:bg-white/[0.085]")}>
+          <button key={record.id} onClick={() => onSelect(record)} className={cx("group rounded-[1.4rem] border p-4 text-left transition duration-300 hover:-translate-y-0.5", selectedId === record.id ? "border-[var(--accent)] bg-[var(--green-soft)] shadow-[inset_0_0_0_1px_rgba(143,213,166,0.08),0_18px_50px_rgba(0,0,0,0.18)]" : "border-[var(--line)] bg-[var(--surface-2)] hover:border-[var(--line)] hover:bg-[var(--surface-2)]")}>
             <div>
               <div className="flex items-center justify-between gap-3">
-                <h3 className="min-w-0 text-base font-semibold leading-5 text-white">{record.title}</h3>
-                {selectedId === record.id && <span className="h-2 w-2 shrink-0 rounded-full bg-[#8fd5a6]" />}
+                <h3 className="min-w-0 text-base font-semibold leading-5 text-[var(--ink)]">{record.title}</h3>
+                {selectedId === record.id && <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--accent)]" />}
               </div>
-              <p className="mt-2 line-clamp-2 text-sm leading-5 text-white/45">{record.username || typeLabel(record.type)}</p>
+              <p className="mt-2 line-clamp-2 text-sm leading-5 text-[var(--ink-3)]">{record.username || typeLabel(record.type)}</p>
             </div>
-            <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold text-white/38">
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold text-[var(--ink-3)]">
               <span className={cx("rounded-full border px-2.5 py-1 text-[11px] font-semibold", releaseToneDark(status))}>{status}</span>
               <span>{record.attachments?.length ?? 0} attachment{record.attachments?.length === 1 ? "" : "s"}</span>
               <span>•</span>
@@ -3612,12 +4138,12 @@ function CategoryRecordList({ records, selectedId, onSelect }) {
 function EmptyWorkspaceState({ area, records, totalRecords = records.length, query = "", onClearSearch, onCreate, onCapture, onSelect }) {
   if (records.length > 0) {
     return (
-      <div className="grid min-h-[500px] place-items-center rounded-[1.75rem] border border-white/10 bg-white/7 p-6 text-center">
+      <div className="grid min-h-[500px] place-items-center rounded-[1.75rem] border border-[var(--line)] bg-[var(--surface-2)] p-6 text-center">
         <div>
-          <div className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-3xl bg-white/10 text-sm font-semibold text-white/60">OPEN</div>
+          <div className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-3xl bg-[var(--green-soft)] text-[var(--green-ink)]"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11 V8 a4 4 0 0 1 8 0 v3" /></svg></div>
           <h3 className="text-3xl font-semibold">Choose a dossier.</h3>
-          <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-white/45">Select a record on the left to view sensitive details, attachments, and release visibility.</p>
-          <button onClick={() => onSelect(records[0])} className="mt-6 rounded-full bg-white px-5 py-3 text-sm font-semibold text-[#111113]">Open first record</button>
+          <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-[var(--ink-3)]">Select a record on the left to view sensitive details, attachments, and release visibility.</p>
+          <button onClick={() => onSelect(records[0])} className="mt-6 rounded-full bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--accent-hover)]">Open first record</button>
         </div>
       </div>
     );
@@ -3625,121 +4151,133 @@ function EmptyWorkspaceState({ area, records, totalRecords = records.length, que
 
   if (totalRecords > 0) {
     return (
-      <div className="grid min-h-[500px] place-items-center rounded-[1.75rem] border border-dashed border-white/14 bg-white/7 p-6 text-center">
+      <div className="grid min-h-[500px] place-items-center rounded-[1.75rem] border border-dashed border-[var(--line)] bg-[var(--surface-2)] p-6 text-center">
         <div>
-          <div className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-3xl bg-white/10 text-sm font-semibold text-white/60">NONE</div>
+          <div className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-3xl bg-[var(--surface-2)] text-sm font-semibold text-[var(--ink-3)]">NONE</div>
           <h3 className="text-3xl font-semibold">No matching dossiers.</h3>
-          <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-white/45">
+          <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-[var(--ink-3)]">
             {query ? `Nothing in ${area.label} matches "${query}". Your records are still here.` : "The current filter hides every dossier in this area."}
           </p>
-          <button onClick={onClearSearch} className="mt-6 rounded-full bg-white px-5 py-3 text-sm font-semibold text-[#111113]">Clear search and filters</button>
+          <button onClick={onClearSearch} className="mt-6 rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-5 py-3 text-sm font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-2)]">Clear search and filters</button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="grid min-h-[500px] place-items-center rounded-[1.75rem] border border-dashed border-white/14 bg-white/7 p-6 text-center">
+    <div className="grid min-h-[500px] place-items-center rounded-[1.75rem] border border-dashed border-[var(--line)] bg-[var(--surface-2)] p-6 text-center">
       <div>
-        <div className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-3xl bg-white/10 text-sm font-semibold text-white/60">NEW</div>
+        <div className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-3xl bg-[var(--surface-2)] text-sm font-semibold text-[var(--ink-3)]">NEW</div>
         <h3 className="text-3xl font-semibold">No {area.label.toLowerCase()} dossier yet.</h3>
-        <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-white/45">Start with one record. Attach proof now or add it later when it is available.</p>
+        <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-[var(--ink-3)]">Start with one record. Attach proof now or add it later when it is available.</p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
-          <button onClick={onCreate} className="rounded-full bg-white px-5 py-3 text-sm font-semibold text-[#111113]">Create first record</button>
-          <button onClick={onCapture} className="rounded-full border border-white/10 bg-white/8 px-5 py-3 text-sm font-semibold text-white">Capture messy note</button>
+          <button onClick={onCreate} className="rounded-full bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--accent-hover)]">Create first record</button>
+          <button onClick={onCapture} className="rounded-full border border-[var(--line)] bg-[var(--surface-2)] px-5 py-3 text-sm font-semibold text-[var(--ink)]">Capture messy note</button>
         </div>
       </div>
     </div>
   );
 }
 
-function RecordDetailPanel({ record, onEdit, onDelete, onAttach, onAttachmentDelete, onAttachmentReplace, onReveal, onHide, onExtract }) {
+function RecordDetailPanel({ record, area, onClose, onEdit, onDelete, onAttach, onAttachmentDelete, onAttachmentReplace, onReveal, onHide, onExtract }) {
   const [revealed, setRevealed] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
-  const status = releaseLabel(record);
-  const note = record.notes || record.bankDetails || record.email || record.cardDetails || "No family note added yet.";
+  const emergency = record.emergencyEligible;
+  const fields = [
+    ["Identifier / account", record.username],
+    ["Email", record.email],
+    ["Bank details", record.bankDetails],
+    ["Card details", record.cardDetails],
+    ["Financial value", record.financial?.value ? formatINR(Number(record.financial.value)) : ""]
+  ].filter(([, v]) => v && String(v).trim());
+  const stroke = AREA_TONE[area?.id] || "var(--ink-3)";
+  const tint = "color-mix(in srgb, " + stroke + " 14%, transparent)";
+
+  function toggleReveal() {
+    setRevealed((cur) => { const next = !cur; next ? onReveal?.() : onHide?.(); return next; });
+  }
 
   return (
-    <section className="min-h-[640px] overflow-hidden rounded-[1.9rem] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.085),rgba(255,255,255,0.045))] p-5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_24px_70px_rgba(0,0,0,0.20)] lg:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="max-w-xl">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#8fd5a6]">Secure dossier</p>
-          <h3 className="mt-3 text-3xl font-semibold leading-[1.05] md:text-5xl">{record.title}</h3>
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-white/[0.08] bg-black/20 px-3 py-1.5 text-xs font-semibold text-white/58">{typeLabel(record.type)}</span>
-            <span className={cx("rounded-full border px-3 py-1.5 text-xs font-semibold", releaseToneDark(status))}>{status}</span>
+    <div className="flex h-full flex-col">
+      <div className="flex items-center gap-2 border-b border-[var(--line)] px-4 py-3">
+        <button onClick={onClose} aria-label="Close" className="grid h-9 w-9 place-items-center rounded-full border border-[var(--line)] text-[var(--ink-2)] transition hover:text-[var(--ink)]">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6 L18 18 M18 6 L6 18" /></svg>
+        </button>
+        <span className="flex-1" />
+        <button onClick={onEdit} aria-label="Edit" className="grid h-9 w-9 place-items-center rounded-full border border-[var(--line)] text-[var(--ink-2)] transition hover:text-[var(--ink)]">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20 h4 L18 10 l-4 -4 L4 16 Z" /><path d="M13.5 6.5 l4 4" /></svg>
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-5 py-6">
+        <div className="flex items-center gap-3.5">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[13px]" style={{ background: tint }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={AREA_ICON[area?.id]} /></svg>
+          </span>
+          <div className="min-w-0">
+            <h2 className="truncate text-[19px] font-semibold text-[var(--ink)]">{record.title || typeLabel(record.type)}</h2>
+            <div className="mt-0.5 text-[12.5px] text-[var(--ink-3)]">Updated {record.updatedAt ? new Date(record.updatedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—"}</div>
+            <span className="mt-1.5 inline-block rounded-full bg-[var(--surface-2)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--ink-2)]">{area?.label ?? typeLabel(record.type)}</span>
           </div>
         </div>
-        <div className="relative flex flex-wrap justify-end gap-2">
-          <button onClick={onEdit} className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#111113] transition hover:scale-[1.02]">Edit record</button>
-          <AttachmentUploader onFiles={onAttach} />
-          <button onClick={() => setMoreOpen((current) => !current)} className="rounded-full border border-white/[0.1] bg-white/[0.07] px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/[0.11]">More actions</button>
-          {moreOpen && (
-            <div className="absolute right-0 top-12 z-10 w-48 rounded-[1.25rem] border border-white/[0.1] bg-[#202124] p-2 shadow-[0_18px_60px_rgba(0,0,0,0.35)]">
-              <button onClick={onDelete} className="w-full rounded-[0.9rem] px-3 py-2 text-left text-sm font-semibold text-[#ffb4ae] transition hover:bg-[#ff3b30]/10">Delete record</button>
+
+        <div className="mt-6 text-[11px] font-semibold uppercase tracking-[0.07em] text-[var(--ink-3)]">Details</div>
+        <div className="mt-2.5 overflow-hidden rounded-xl border border-[var(--line)]">
+          {fields.map(([k, v], i) => (
+            <div key={k} className={cx("flex items-center gap-4 px-4 py-3", i > 0 && "border-t border-[var(--line)]")}>
+              <span className="w-32 shrink-0 text-[13px] text-[var(--ink-3)]">{k}</span>
+              <span className="flex-1 break-words text-[13.5px] font-medium text-[var(--ink)]">{v}</span>
+            </div>
+          ))}
+          {record.secret && (
+            <div className={cx("flex items-center gap-4 px-4 py-3", fields.length > 0 && "border-t border-[var(--line)]")}>
+              <span className="w-32 shrink-0 text-[13px] text-[var(--ink-3)]">Sensitive value</span>
+              <span className="flex-1 break-all text-[13.5px] font-medium text-[var(--ink)]">{revealed ? record.secret : maskSecret(record.secret)}</span>
+              <button onClick={toggleReveal} className="shrink-0 text-[12px] font-semibold text-[var(--accent)]">{revealed ? "Hide" : "Reveal"}</button>
             </div>
           )}
+          {fields.length === 0 && !record.secret && (
+            <div className="px-4 py-3 text-[13px] text-[var(--ink-3)]">No details added yet.</div>
+          )}
         </div>
+
+        <div className="mt-6 text-[11px] font-semibold uppercase tracking-[0.07em] text-[var(--ink-3)]">Who can access this</div>
+        <div className="mt-2.5 flex items-center gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-4">
+          <span className={cx("grid h-9 w-9 shrink-0 place-items-center rounded-[10px]", emergency ? "bg-[var(--green-soft)]" : "bg-[var(--surface-3)]")}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={emergency ? "var(--accent)" : "var(--ink-3)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3 L20 6 V12 C 20 17 16 20 12 21 C 8 20 4 17 4 12 V6 Z" />{emergency && <path d="M9 12 l2 2 l4 -4" />}</svg>
+          </span>
+          <div>
+            <div className="text-[13.5px] font-semibold text-[var(--ink)]">{emergency ? "Part of your release plan" : "Private to you"}</div>
+            <div className="mt-0.5 text-[12.5px] text-[var(--ink-3)]">{emergency ? "Your circle of trust can recover this for your family." : "Not included in your release plan. Only you can see this."}</div>
+          </div>
+        </div>
+
+        <div className="mt-6 text-[11px] font-semibold uppercase tracking-[0.07em] text-[var(--ink-3)]">History</div>
+        <div className="mt-2.5 overflow-hidden rounded-xl border border-[var(--line)]">
+          <div className="flex items-center gap-3 px-4 py-3 text-[13.5px]"><span className="h-2 w-2 rounded-full bg-[var(--green)]" /><span className="flex-1 text-[var(--ink-2)]">Last updated</span><span className="text-[var(--ink-4)]">{record.updatedAt ? new Date(record.updatedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—"}</span></div>
+          <div className="flex items-center gap-3 border-t border-[var(--line)] px-4 py-3 text-[13.5px]"><span className="h-2 w-2 rounded-full bg-[var(--ink-4)]" /><span className="flex-1 text-[var(--ink-2)]">Added to your vault</span><span className="text-[var(--ink-4)]">{record.createdAt ? new Date(record.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—"}</span></div>
+        </div>
+
+        {(record.attachments?.length ?? 0) > 0 && (
+          <>
+            <div className="mt-6 text-[11px] font-semibold uppercase tracking-[0.07em] text-[var(--ink-3)]">Attachments</div>
+            <div className="mt-2.5"><AttachmentGrid attachments={record.attachments ?? []} onDelete={onAttachmentDelete} onReplace={onAttachmentReplace} onExtract={onExtract} tone="light" /></div>
+          </>
+        )}
       </div>
 
-      <div className="mt-7 grid gap-4">
-        <DossierSection eyebrow="Overview" title="What this proves">
-          <div className="grid gap-2 sm:grid-cols-2">
-            <DetailLine label="Identifier" value={record.username || "Not added"} />
-            <DetailLine label="Verification" value={status === "Needs review" ? "Needs owner review" : "Current"} />
-          </div>
-        </DossierSection>
-
-        <DossierSection eyebrow="Sensitive fields" title="Hidden until intentionally revealed">
-          <div className="rounded-[1.2rem] border border-white/[0.08] bg-black/20 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-white/35">Protected value</p>
-                <p className="mt-2 break-all text-lg font-semibold text-white">{revealed ? (record.secret || "Not added") : maskSecret(record.secret)}</p>
-              </div>
-              <button onClick={() => {
-                setRevealed((current) => {
-                  const next = !current;
-                  if (next) onReveal?.();
-                  else onHide?.();
-                  return next;
-                });
-              }} className="rounded-full border border-white/[0.12] bg-white/[0.08] px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/[0.13]">
-                {revealed ? "Hide value" : "Reveal value"}
-              </button>
-            </div>
-          </div>
-          <div className="mt-3">
-            <TrustNote label="Reveal scope" dark>
-              Reveal/hide is a screen privacy control inside an unlocked vault. It is not a second encryption layer once the vault is open.
-            </TrustNote>
-          </div>
-        </DossierSection>
-
-        <DossierSection eyebrow="Release settings" title={record.emergencyEligible ? "Available only inside emergency release" : "Private to owner"}>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <DetailLine label="Visibility" value={record.emergencyEligible ? "Emergency-enabled" : "Private"} />
-            <DetailLine label="Owner review" value={status === "Needs review" ? "Required" : "Current"} />
-          </div>
-        </DossierSection>
-
-        <DossierSection eyebrow="Attachments" title="Proof files">
-          <AttachmentGrid attachments={record.attachments ?? []} onDelete={onAttachmentDelete} onReplace={onAttachmentReplace} onExtract={onExtract} tone="dark" />
-        </DossierSection>
-
-        <DossierSection eyebrow="Notes for family" title="Plain-language instruction">
-          <p className="whitespace-pre-line text-sm leading-6 text-white/68">{note}</p>
-        </DossierSection>
+      <div className="flex gap-3 border-t border-[var(--line)] px-4 py-3.5">
+        <button onClick={onEdit} className="flex-1 rounded-xl border border-[var(--line-2)] bg-[var(--surface)] px-4 py-2.5 text-[13.5px] font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-2)]">Edit</button>
+        <button onClick={onDelete} className="rounded-xl border border-[var(--red-2)] px-4 py-2.5 text-[13.5px] font-semibold text-[var(--red-2)] transition hover:bg-[var(--red-soft)]">Delete</button>
       </div>
-    </section>
+    </div>
   );
 }
 
 function DossierSection({ eyebrow, title, children }) {
   return (
-    <section className="border-t border-white/[0.08] pt-4 first:border-t-0 first:pt-0">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8fd5a6]/80">{eyebrow}</p>
-      <h4 className="mt-1 mb-3 text-base font-semibold text-white">{title}</h4>
+    <section className="border-t border-[var(--line)] pt-4 first:border-t-0 first:pt-0">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--green-ink)]/80">{eyebrow}</p>
+      <h4 className="mt-1 mb-3 text-base font-semibold text-[var(--ink)]">{title}</h4>
       {children}
     </section>
   );
@@ -3747,9 +4285,9 @@ function DossierSection({ eyebrow, title, children }) {
 
 function DetailLine({ label, value }) {
   return (
-    <div className="rounded-[1.1rem] border border-white/[0.07] bg-white/[0.045] p-4">
-      <span className="block text-xs font-semibold uppercase tracking-[0.12em] text-white/35">{label}</span>
-      <strong className="mt-2 block break-words text-sm font-semibold leading-5 text-white/82">{value}</strong>
+    <div className="rounded-[1.1rem] border border-[var(--line)] bg-[var(--surface-2)] p-4">
+      <span className="block text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ink-3)]">{label}</span>
+      <strong className="mt-2 block break-words text-sm font-semibold leading-5 text-[var(--ink-3)]">{value}</strong>
     </div>
   );
 }
@@ -3835,17 +4373,17 @@ function RecordEditorDrawer({ area, record, onCancel, onSave }) {
   }
 
   return (
-    <div className="mt-5 rounded-[1.9rem] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.085),rgba(255,255,255,0.045))] p-5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_24px_70px_rgba(0,0,0,0.20)] lg:p-6">
+    <div className="p-6 text-[var(--ink)]">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#8fd5a6]">{draft.id ? "Edit dossier" : "Create dossier"}</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--green-ink)]">{draft.id ? "Edit dossier" : "Create dossier"}</p>
           <h3 className="mt-2 text-3xl font-semibold md:text-4xl">{area.label} record</h3>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-white/48">Keep it short, verifiable, and useful to the person who may need this under stress.</p>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--ink-3)]">Keep it short, verifiable, and useful to the person who may need this under stress.</p>
         </div>
-        <button onClick={onCancel} className="rounded-full border border-white/[0.1] bg-white/[0.07] px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/[0.11]">Close</button>
+        <button onClick={onCancel} className="rounded-full border border-[var(--line)] bg-[var(--surface-2)] px-4 py-2 text-sm font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-2)]">Close</button>
       </div>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
+      <div className="mt-6 grid gap-4">
         <EditorField label="Title" dark>
           <input className="editor-input-dark" value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder={`${area.label} record name`} />
         </EditorField>
@@ -3875,15 +4413,15 @@ function RecordEditorDrawer({ area, record, onCancel, onSave }) {
         <textarea className="editor-input-dark min-h-32" value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} placeholder="What should your family know before acting?" />
       </EditorField>
 
-      <div className="mt-6 rounded-[1.5rem] border border-white/[0.08] bg-black/20 p-5">
+      <div className="mt-6 rounded-[1.5rem] border border-[var(--line)] bg-[var(--surface-3)] p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-sm font-semibold text-white">Attachments and extraction</p>
-            <p className="mt-1 text-sm text-white/45">Upload PDF, image, screenshot, or document proof.</p>
+            <p className="text-sm font-semibold text-[var(--ink)]">Attachments and extraction</p>
+            <p className="mt-1 text-sm text-[var(--ink-3)]">Upload PDF, image, screenshot, or document proof.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <AttachmentUploader onFiles={uploadFiles} />
-            <label className="cursor-pointer rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#111113] transition hover:scale-[1.02]">
+            <label className="cursor-pointer rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-4 py-2 text-sm font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-2)]">
               Extract screenshot
               <input className="hidden" type="file" accept="image/*" onChange={async (event) => {
                 const file = event.target.files?.[0];
@@ -3896,16 +4434,16 @@ function RecordEditorDrawer({ area, record, onCancel, onSave }) {
         <AttachmentGrid attachments={draft.attachments ?? []} onDelete={deleteDraftAttachment} onReplace={replaceDraftAttachment} tone="dark" />
       </div>
 
-      {message && <div className={cx("mt-4 rounded-2xl border px-4 py-3 text-sm font-semibold", messageTone === "red" ? "border-[#ff453a]/25 bg-[#ff453a]/10 text-[#ffb4ae]" : "border-[#34c759]/20 bg-[#34c759]/10 text-[#a8f0bd]")}>{message}</div>}
+      {message && <div className={cx("mt-4 rounded-2xl border px-4 py-3 text-sm font-semibold", messageTone === "red" ? "border-[#ff453a]/25 bg-[#ff453a]/10 text-[var(--red-2)]" : "border-[#34c759]/20 bg-[#34c759]/10 text-[var(--green-ink)]")}>{message}</div>}
 
-      <button onClick={handleSave} className="mt-6 w-full rounded-full bg-white px-5 py-4 text-sm font-semibold text-[#111113] transition hover:scale-[1.01]">Save dossier</button>
+      <button onClick={handleSave} className="mt-6 w-full rounded-full bg-[var(--accent)] px-5 py-4 text-sm font-semibold text-white transition hover:bg-[var(--accent-hover)]">Save dossier</button>
     </div>
   );
 }
 
 function EditorField({ label, children, className = "", dark = false }) {
   return (
-    <label className={cx("block text-sm font-semibold", dark ? "text-white/72" : "text-[#424245]", className)}>
+    <label className={cx("block text-sm font-semibold", dark ? "text-[var(--ink-3)]" : "text-[var(--ink-2)]", className)}>
       {label}
       <div className="mt-2">{children}</div>
     </label>
@@ -3914,7 +4452,7 @@ function EditorField({ label, children, className = "", dark = false }) {
 
 function AttachmentUploader({ onFiles, dark = true }) {
   return (
-    <label className={cx("cursor-pointer rounded-full px-4 py-2 text-sm font-semibold transition", dark ? "border border-white/10 bg-white/8 text-white hover:bg-white/12" : "border border-black/10 bg-white text-[#1d1d1f] hover:bg-[#fbfbfd]")}>
+    <label className={cx("cursor-pointer rounded-full px-4 py-2 text-sm font-semibold transition", dark ? "border border-[var(--line)] bg-[var(--surface-2)] text-[var(--ink)] hover:bg-[var(--surface-2)]" : "border border-[var(--line-2)] bg-[var(--surface)] text-[var(--ink)] hover:bg-[var(--surface-2)]")}>
       Upload file
       <input className="hidden" type="file" multiple accept="image/*,.pdf,.doc,.docx,.txt,.csv,.md,application/pdf" onChange={(event) => {
         if (event.target.files?.length) onFiles(event.target.files);
@@ -3931,7 +4469,7 @@ function AttachmentGrid({ attachments, onDelete, onReplace, onExtract, tone = "l
   }, [attachments]);
 
   if (!attachments?.length) {
-    return <div className={cx("mt-4 rounded-[1.25rem] border border-dashed p-5 text-sm", dark ? "border-white/[0.12] bg-black/15 text-white/42" : "border-black/10 bg-white/60 text-[#6e6e73]")}>No proof files attached yet.</div>;
+    return <div className={cx("mt-4 rounded-[1.25rem] border border-dashed p-5 text-sm", dark ? "border-[var(--line)] bg-[var(--surface-3)] text-[var(--ink-3)]" : "border-[var(--line-2)] bg-[var(--surface-2)] text-[var(--ink-2)]")}>No proof files attached yet.</div>;
   }
 
   return (
@@ -3939,21 +4477,21 @@ function AttachmentGrid({ attachments, onDelete, onReplace, onExtract, tone = "l
       {attachments.map((attachment) => {
         const kind = attachmentKind(attachment);
         return (
-          <div key={attachment.id} className={cx("overflow-hidden rounded-[1.25rem] border", dark ? "border-white/[0.08] bg-black/20" : "border-black/10 bg-white shadow-sm")}>
+          <div key={attachment.id} className={cx("overflow-hidden rounded-[1.25rem] border", dark ? "border-[var(--line)] bg-[var(--surface-3)]" : "border-[var(--line-2)] bg-[var(--surface)] shadow-sm")}>
             {kind === "Image" ? (
               <img src={attachment.dataUrl} alt={attachment.name} className="h-32 w-full object-cover" />
             ) : kind === "PDF" ? (
-              <iframe src={attachment.dataUrl} title={attachment.name} className={cx("h-32 w-full", dark ? "bg-white/8" : "bg-[#f5f5f7]")} />
+              <iframe src={attachment.dataUrl} title={attachment.name} className={cx("h-32 w-full", dark ? "bg-[var(--surface-2)]" : "bg-[var(--bg)]")} />
             ) : (
-              <div className={cx("grid h-32 place-items-center text-sm font-semibold", dark ? "bg-white/[0.055] text-white/45" : "bg-[#f5f5f7] text-[#86868b]")}>{attachmentIcon(kind)}</div>
+              <div className={cx("grid h-32 place-items-center text-sm font-semibold", dark ? "bg-[var(--surface-2)] text-[var(--ink-3)]" : "bg-[var(--bg)] text-[var(--ink-3)]")}>{attachmentIcon(kind)}</div>
             )}
             <div className="p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <strong className={cx("block break-all text-sm", dark ? "text-white/86" : "text-[#1d1d1f]")}>{attachment.name}</strong>
-                  <span className={cx("mt-1 block text-xs font-semibold", dark ? "text-white/38" : "text-[#86868b]")}>{kind} • {Math.max(1, Math.round((attachment.size ?? 0) / 1024))} KB</span>
+                  <strong className={cx("block break-all text-sm", dark ? "text-white/86" : "text-[var(--ink)]")}>{attachment.name}</strong>
+                  <span className={cx("mt-1 block text-xs font-semibold", dark ? "text-white/38" : "text-[var(--ink-3)]")}>{kind} • {Math.max(1, Math.round((attachment.size ?? 0) / 1024))} KB</span>
                 </div>
-                <a href={attachment.dataUrl} download={attachment.name} className={cx("rounded-full border px-3 py-1 text-xs font-semibold", dark ? "border-white/[0.1] bg-white/[0.06] text-white" : "border-black/10 text-[#1d1d1f]")}>Open</a>
+                <a href={attachment.dataUrl} download={attachment.name} className={cx("rounded-full border px-3 py-1 text-xs font-semibold", dark ? "border-white/[0.1] bg-white/[0.06] text-white" : "border-[var(--line-2)] text-[var(--ink)]")}>Open</a>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {kind === "Image" && onExtract && (
@@ -3969,7 +4507,7 @@ function AttachmentGrid({ attachments, onDelete, onReplace, onExtract, tone = "l
                   }} className={cx("rounded-full px-3 py-1.5 text-xs font-semibold", dark ? "border border-[#8fd5a6]/20 bg-[#8fd5a6]/12 text-[#b7f3c4]" : "bg-[#1d1d1f] text-white")}>Extract</button>
                 )}
                 {onReplace && (
-                  <label className={cx("cursor-pointer rounded-full px-3 py-1.5 text-xs font-semibold", dark ? "border border-white/[0.1] bg-white/[0.06] text-white" : "border border-black/10 text-[#1d1d1f]")}>
+                  <label className={cx("cursor-pointer rounded-full px-3 py-1.5 text-xs font-semibold", dark ? "border border-white/[0.1] bg-white/[0.06] text-white" : "border border-[var(--line-2)] text-[var(--ink)]")}>
                     Replace
                     <input className="hidden" type="file" accept="image/*,.pdf,.doc,.docx,.txt,.csv,.md,application/pdf" onChange={async (event) => {
                       if (event.target.files?.length) await onReplace(attachment, event.target.files);
@@ -3978,7 +4516,7 @@ function AttachmentGrid({ attachments, onDelete, onReplace, onExtract, tone = "l
                   </label>
                 )}
                 {onDelete && (
-                  <button onClick={() => onDelete(attachment)} className={cx("rounded-full px-3 py-1.5 text-xs font-semibold", dark ? "border border-[#ff453a]/20 bg-[#ff453a]/10 text-[#ffb4ae]" : "border border-[#ff3b30]/20 text-[#b42318]")}>Delete</button>
+                  <button onClick={() => onDelete(attachment)} className={cx("rounded-full px-3 py-1.5 text-xs font-semibold", dark ? "border border-[#ff453a]/20 bg-[#ff453a]/10 text-[#ffb4ae]" : "border border-[#ff3b30]/20 text-[var(--red-2)]")}>Delete</button>
                 )}
               </div>
             </div>
@@ -4075,22 +4613,22 @@ function CaptureScreen({ vault, onSave, onNavigate }) {
   return (
     <section className="mx-auto max-w-2xl">
       <div className="text-center">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Capture</p>
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Capture</p>
         <h1 className="mt-3 text-[36px] font-semibold leading-[1.1] tracking-tight md:text-[44px]">Drop in the mess.</h1>
-        <p className="mx-auto mt-4 max-w-md text-[14px] leading-6 text-[#6e6e73]">
+        <p className="mx-auto mt-4 max-w-md text-[14px] leading-6 text-[var(--ink-2)]">
           Paste a note or upload a screenshot. We propose a draft. You decide what becomes a record.
         </p>
       </div>
 
       <textarea
-        className="mt-10 min-h-44 w-full rounded-2xl border border-black/8 bg-white p-5 text-[15px] leading-7 outline-none transition focus:border-[#1d1d1f]"
+        className="mt-10 min-h-44 w-full rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5 text-[15px] leading-7 outline-none transition focus:border-[var(--ink)]"
         placeholder="Paste anything — bank details, a password note, an email screenshot's text…"
         value={messyText}
         onChange={(event) => setMessyText(event.target.value)}
       />
 
       <div className="mt-3 flex items-center justify-between gap-3">
-        <label className="cursor-pointer text-[12px] text-[#6e6e73] underline-offset-4 hover:text-[#1d1d1f] hover:underline">
+        <label className="cursor-pointer text-[12px] text-[var(--ink-2)] underline-offset-4 hover:text-[var(--ink)] hover:underline">
           <input className="hidden" type="file" accept="image/*,.txt,.csv,.md,application/pdf" onChange={handleUpload} />
           {ocrBusy ? "Reading locally…" : "Upload screenshot or file"}
         </label>
@@ -4103,17 +4641,17 @@ function CaptureScreen({ vault, onSave, onNavigate }) {
         </button>
       </div>
 
-      {message && <div className="mt-6 rounded-2xl border border-[#34c759]/20 bg-[#34c759]/8 px-4 py-3 text-[13px] font-medium text-[#0b6b3a]">{message}</div>}
+      {message && <div className="mt-6 rounded-2xl border border-[#34c759]/20 bg-[#34c759]/8 px-4 py-3 text-[13px] font-medium text-[var(--green-ink)]">{message}</div>}
 
       {hasStructuredDrafts && drafts.length > 1 && (
         <div className="mt-8">
-          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Review queue · {drafts.length}</p>
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Review queue · {drafts.length}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {drafts.map((item, index) => (
               <button
                 key={item.candidateId}
                 onClick={() => setSelectedDraftIndex(index)}
-                className={cx("rounded-full border px-3 py-1.5 text-[12px] font-medium transition", selectedDraftIndex === index ? "border-[#1d1d1f] bg-[#1d1d1f] text-white" : "border-black/10 bg-white text-[#6e6e73] hover:text-[#1d1d1f]")}
+                className={cx("rounded-full border px-3 py-1.5 text-[12px] font-medium transition", selectedDraftIndex === index ? "border-[#1d1d1f] bg-[#1d1d1f] text-white" : "border-[var(--line-2)] bg-[var(--surface)] text-[var(--ink-2)] hover:text-[var(--ink)]")}
               >
                 {item.title}
               </button>
@@ -4123,13 +4661,13 @@ function CaptureScreen({ vault, onSave, onNavigate }) {
       )}
 
       {hasStructuredDrafts && (
-        <div className="mt-8 rounded-2xl border border-black/6 bg-white p-6">
+        <div className="mt-8 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-6">
           <div className="flex items-baseline justify-between">
             <h2 className="text-[20px] font-semibold tracking-tight">{activeDraft.title || "Untitled draft"}</h2>
-            <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-[#86868b]">{confidenceLabel(activeDraft.confidence)}</span>
+            <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--ink-3)]">{confidenceLabel(activeDraft.confidence)}</span>
           </div>
 
-          <div className="mt-6 divide-y divide-black/6">
+          <div className="mt-6 divide-y divide-[var(--line)]">
             <DraftRowLight label="Type" value={TYPE_OPTIONS.find(([id]) => id === activeDraft.type)?.[1] ?? "Not selected"} />
             <DraftRowLight label="Identifier" value={activeDraft.username || "Not detected"} />
             <DraftRowLight label="Sensitive key" value={activeDraft.secret || "Not detected"} muted={!activeDraft.secret} />
@@ -4137,11 +4675,11 @@ function CaptureScreen({ vault, onSave, onNavigate }) {
           </div>
 
           {activeDraft?.warnings?.length > 0 && (
-            <div className="mt-6 rounded-xl bg-[#fff8eb] px-4 py-3">
-              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[#7a4b00]">Review before saving</p>
+            <div className="mt-6 rounded-xl bg-[var(--amber-soft)] px-4 py-3">
+              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--amber-ink)]">Review before saving</p>
               <div className="mt-2 space-y-1">
                 {activeDraft.warnings.map((warning) => (
-                  <p key={warning} className="text-[13px] leading-5 text-[#7a4b00]">{warning}</p>
+                  <p key={warning} className="text-[13px] leading-5 text-[var(--amber-ink)]">{warning}</p>
                 ))}
               </div>
             </div>
@@ -4150,29 +4688,29 @@ function CaptureScreen({ vault, onSave, onNavigate }) {
           <button onClick={saveRecord} className="mt-8 w-full rounded-full bg-[#1d1d1f] px-5 py-3 text-sm font-semibold text-white transition hover:bg-black">
             Save as protected record
           </button>
-          <p className="mt-3 text-center text-[11px] text-[#a1a1a6]">Nothing is saved until you confirm.</p>
+          <p className="mt-3 text-center text-[11px] text-[var(--ink-4)]">Nothing is saved until you confirm.</p>
         </div>
       )}
 
-      <div className="mt-12 border-t border-black/8 pt-5">
+      <div className="mt-12 border-t border-[var(--line)] pt-5">
         <button
           onClick={() => setShowManual((v) => !v)}
           className="flex w-full items-center justify-between text-left"
         >
-          <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Or enter manually</span>
-          <span className={cx("text-[#c7c7cc] transition", showManual && "rotate-90")}>›</span>
+          <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Or enter manually</span>
+          <span className={cx("text-[var(--ink-5)] transition", showManual && "rotate-90")}>›</span>
         </button>
         {showManual && (
           <div className="mt-5 grid gap-3 md:grid-cols-2">
-            <input className="rounded-xl border border-black/8 bg-white px-4 py-3 text-[14px] outline-none focus:border-[#1d1d1f]" placeholder="Title" value={manual.title} onChange={(event) => setManual({ ...manual, title: event.target.value })} />
-            <select className="rounded-xl border border-black/8 bg-white px-4 py-3 text-[14px] outline-none focus:border-[#1d1d1f]" value={manual.type} onChange={(event) => setManual({ ...manual, type: event.target.value })}>
+            <input className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)]" placeholder="Title" value={manual.title} onChange={(event) => setManual({ ...manual, title: event.target.value })} />
+            <select className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)]" value={manual.type} onChange={(event) => setManual({ ...manual, type: event.target.value })}>
               {TYPE_OPTIONS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
             </select>
-            <input className="rounded-xl border border-black/8 bg-white px-4 py-3 text-[14px] outline-none focus:border-[#1d1d1f]" placeholder="Login / account / policy" value={manual.username} onChange={(event) => setManual({ ...manual, username: event.target.value })} />
-            <input className="rounded-xl border border-black/8 bg-white px-4 py-3 text-[14px] outline-none focus:border-[#1d1d1f]" placeholder="Secret / PIN / key" value={manual.secret} onChange={(event) => setManual({ ...manual, secret: event.target.value })} />
+            <input className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)]" placeholder="Login / account / policy" value={manual.username} onChange={(event) => setManual({ ...manual, username: event.target.value })} />
+            <input className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)]" placeholder="Secret / PIN / key" value={manual.secret} onChange={(event) => setManual({ ...manual, secret: event.target.value })} />
             <button
               onClick={() => { setDrafts([{ ...manual, candidateId: crypto.randomUUID(), confidence: 1, warnings: [], extractedFields: [] }]); setSelectedDraftIndex(0); }}
-              className="md:col-span-2 mt-2 rounded-full border border-black/8 bg-white px-5 py-2.5 text-xs font-semibold text-[#1d1d1f] transition hover:bg-[#fbfbfd]"
+              className="md:col-span-2 mt-2 rounded-full border border-[var(--line)] bg-[var(--surface)] px-5 py-2.5 text-xs font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-2)]"
             >
               Preview as draft
             </button>
@@ -4186,13 +4724,116 @@ function CaptureScreen({ vault, onSave, onNavigate }) {
 function DraftRowLight({ label, value, muted }) {
   return (
     <div className="flex items-baseline justify-between gap-4 py-3">
-      <span className="text-[12px] font-medium uppercase tracking-[0.14em] text-[#86868b]">{label}</span>
-      <span className={cx("max-w-[60%] break-words text-right text-[14px] font-medium", muted ? "text-[#a1a1a6]" : "text-[#1d1d1f]")}>{value}</span>
+      <span className="text-[12px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">{label}</span>
+      <span className={cx("max-w-[60%] break-words text-right text-[14px] font-medium", muted ? "text-[var(--ink-4)]" : "text-[var(--ink)]")}>{value}</span>
+    </div>
+  );
+}
+
+function RecoveryPreview({ vault, settings, onClose }) {
+  const [step, setStep] = useState(0);
+  const nomineeRaw = (settings.mainNominee || "your nominee").split(/[-–·]/)[0].trim() || "your nominee";
+  const holders = settings.keyHolders.filter((h) => h.trim());
+  const need = RELEASE_POLICY.requiredKeys;
+  const grouped = AREAS.map((a) => ({ area: a, records: vault.items.filter((it) => a.types.includes(it.type)) })).filter((g) => g.records.length);
+
+  const steps = [
+    {
+      tone: "green", icon: "shield",
+      title: "See what your family would see",
+      lead: `This is exactly what ${nomineeRaw} and your circle of trust would experience if your vault ever needed to be opened. It's a safe practice run — nothing is shared, and no one is contacted.`
+    },
+    {
+      tone: "blue", icon: "person",
+      title: `${nomineeRaw} asks to open the vault`,
+      lead: `When the time comes, ${nomineeRaw} signs in and makes a request, explaining why. Your circle of trust is notified at once — and ${nomineeRaw} can never do this alone.`
+    },
+    {
+      tone: "green", icon: "people",
+      title: "Your circle agrees",
+      lead: `At least ${need} of your trusted people must approve together. No single person — not even ${nomineeRaw} — can open the vault alone.`,
+      holders: true
+    },
+    {
+      tone: "amber", icon: "clock",
+      title: "You have 14 days to stop it",
+      lead: "The moment a request begins, you're alerted on every device. If something isn't right, you stop everything with a single tap. The vault only opens after 14 quiet days."
+    },
+    {
+      tone: "green", icon: "unlock",
+      title: `${nomineeRaw} can now see everything`,
+      lead: "Here's what your family receives — clearly organised, area by area.",
+      receive: true
+    }
+  ];
+  const s = steps[step];
+  const toneClass = { green: "bg-[var(--green-soft)] text-[var(--green-ink)]", blue: "bg-[var(--blue-soft)] text-[var(--blue)]", amber: "bg-[var(--amber-soft)] text-[var(--amber-ink)]" };
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-[var(--bg)]">
+      <div className="flex h-14 items-center gap-3 border-b border-[var(--line)] bg-[var(--surface)] px-5">
+        <span className="inline-flex items-center gap-2 rounded-full bg-[var(--amber-soft)] px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--amber-ink)]">
+          <span className="h-1.5 w-1.5 rounded-full bg-[var(--amber)]" />Practice run
+        </span>
+        <span className="text-[13px] text-[var(--ink-3)]">Nothing is shared and no one is contacted.</span>
+        <button onClick={onClose} aria-label="Exit practice run" className="ml-auto grid h-9 w-9 place-items-center rounded-full border border-[var(--line)] text-[var(--ink-2)] transition hover:text-[var(--ink)]">✕</button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-xl px-6 py-12">
+          <div className={cx("mb-6 grid h-16 w-16 place-items-center rounded-2xl text-2xl", toneClass[s.tone])}>
+            {s.icon === "shield" ? "🛡️" : s.icon === "person" ? "🙋" : s.icon === "people" ? "👥" : s.icon === "clock" ? "🕑" : "🔓"}
+          </div>
+          <h2 className="text-[26px] font-semibold tracking-tight text-[var(--ink)]">{s.title}</h2>
+          <p className="mt-3 text-[15px] leading-relaxed text-[var(--ink-2)]">{s.lead}</p>
+
+          {s.holders && (
+            <div className="mt-6 flex flex-col gap-2">
+              {(holders.length ? holders : ["(no key holders added yet)"]).map((h, i) => {
+                const ok = i < need && holders.length;
+                return (
+                  <div key={i} className="flex items-center gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3">
+                    <span className={cx("grid h-8 w-8 place-items-center rounded-full text-[13px] font-semibold", ok ? "bg-[var(--green-soft)] text-[var(--green-ink)]" : "bg-[var(--surface-3)] text-[var(--ink-4)]")}>{(h[0] || "?").toUpperCase()}</span>
+                    <span className="flex-1 truncate text-[14px] font-medium text-[var(--ink)]">{h.split(/[-–]/)[0].trim()}</span>
+                    <span className={cx("text-[12.5px] font-semibold", ok ? "text-[var(--green-ink)]" : "text-[var(--ink-4)]")}>{ok ? "Agreed" : "Not needed"}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {s.receive && (
+            <div className="mt-6">
+              {grouped.length ? grouped.map((g) => (
+                <div key={g.area.id} className="mb-4">
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">{g.area.label} · {g.records.length}</div>
+                  <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface)]">
+                    {g.records.map((r, i) => (
+                      <div key={i} className={cx("px-4 py-3 text-[14px] text-[var(--ink)]", i > 0 && "border-t border-[var(--line)]")}>{r.title || typeLabel(r.type)}</div>
+                    ))}
+                  </div>
+                </div>
+              )) : <div className="rounded-xl border border-dashed border-[var(--line-2)] p-6 text-center text-[13.5px] text-[var(--ink-3)]">Records you add will appear here for your family.</div>}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 border-t border-[var(--line)] bg-[var(--surface)] px-5 py-3.5">
+        <div className="flex gap-1.5">
+          {steps.map((_, i) => <span key={i} className={cx("h-1.5 rounded-full transition-all", i === step ? "w-5 bg-[var(--green)]" : "w-1.5 bg-[var(--line-2)]")} />)}
+        </div>
+        <div className="ml-auto flex gap-2.5">
+          {step > 0 && <button onClick={() => setStep(step - 1)} className="rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-4 py-2 text-[13px] font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-2)]">Back</button>}
+          <button onClick={() => step < steps.length - 1 ? setStep(step + 1) : onClose()} className="rounded-full bg-[var(--solid)] px-5 py-2 text-[13px] font-semibold text-[var(--on-solid)] transition hover:opacity-90">{step < steps.length - 1 ? "Next" : "Finish"}</button>
+        </div>
+      </div>
     </div>
   );
 }
 
 function ReleaseScreen({ vault, onSave, session, vaultKey }) {
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [settings, setSettings] = useState(vault.releaseSettings);
   const [activeKeys, setActiveKeys] = useState(() => settings.keyHolders.map((holder, index) => holder.trim() ? index : null).filter((index) => index !== null).slice(0, RELEASE_POLICY.requiredKeys));
   const [releaseStep, setReleaseStep] = useState(1);
@@ -4239,15 +4880,26 @@ function ReleaseScreen({ vault, onSave, session, vaultKey }) {
 
   return (
     <section className="mx-auto max-w-2xl">
+      {previewOpen && <RecoveryPreview vault={vault} settings={settings} onClose={() => setPreviewOpen(false)} />}
+
+      <div className="mb-8 flex items-center gap-4 rounded-2xl border border-[var(--line)] bg-[var(--surface)] px-5 py-4 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--green-soft)] text-lg">👁️</div>
+        <div className="min-w-0 flex-1">
+          <div className="text-[14.5px] font-semibold text-[var(--ink)]">See what your family would see</div>
+          <div className="mt-0.5 text-[12.5px] text-[var(--ink-3)]">A safe practice run — walk through the whole recovery, step by step. Nothing is shared.</div>
+        </div>
+        <button onClick={() => setPreviewOpen(true)} className="shrink-0 rounded-full bg-[var(--solid)] px-4 py-2.5 text-[13px] font-semibold text-[var(--on-solid)] transition hover:opacity-90">Start practice run</button>
+      </div>
+
       {cloudEnabled && <CloudKeyHolders vaultKey={vaultKey} entitlements={entitlements} />}
 
       {!cloudEnabled && (
-      <div className="mb-10 rounded-2xl border border-[#c88719]/30 bg-[#fff8eb] px-5 py-4">
+      <div className="mb-10 rounded-2xl border border-[#c88719]/30 bg-[var(--amber-soft)] px-5 py-4">
         <div className="flex items-start gap-3">
           <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[#c88719] text-[11px] font-bold text-white">!</span>
           <div>
-            <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[#7a4b00]">Planning mode only</p>
-            <p className="mt-1.5 text-[13px] leading-5 text-[#7a4b00]">
+            <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[var(--amber-ink)]">Planning mode only</p>
+            <p className="mt-1.5 text-[13px] leading-5 text-[var(--amber-ink)]">
               {supabaseOn
                 ? <>Sign in to activate the real release service. Without an account, this page only stores your plan locally — Lyfos cannot contact anyone for you.</>
                 : <>This deployment is local-only. Sign in is not available. Your release plan stays on this device; you must share these instructions with your nominee yourself.</>}
@@ -4259,24 +4911,24 @@ function ReleaseScreen({ vault, onSave, session, vaultKey }) {
 
       {!cloudEnabled && (
       <div className="text-center">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Release plan · Draft</p>
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Release plan · Draft</p>
         <h1 className="mt-3 text-[36px] font-semibold leading-[1.1] tracking-tight md:text-[44px]">
           {confirmed ? "Your plan is complete." : "Plan who would help your family."}
         </h1>
-        <p className="mx-auto mt-4 max-w-md text-[14px] leading-6 text-[#6e6e73]">
+        <p className="mx-auto mt-4 max-w-md text-[14px] leading-6 text-[var(--ink-2)]">
           You name a nominee and five trusted key holders. In the future, three keys plus a 14-day hold will be required to release.
         </p>
       </div>
       )}
 
       {!cloudEnabled && (
-      <div className={cx("mt-10 rounded-2xl border p-5", confirmed ? "border-[#34c759]/25 bg-[#34c759]/8" : hasDuplicates ? "border-[#ff453a]/25 bg-[#ff453a]/6" : "border-black/8 bg-white")}>
+      <div className={cx("mt-10 rounded-2xl border p-5", confirmed ? "border-[#34c759]/25 bg-[#34c759]/8" : hasDuplicates ? "border-[#ff453a]/25 bg-[#ff453a]/6" : "border-[var(--line)] bg-[var(--surface)]")}>
         <div className="grid grid-cols-3 gap-3 text-center">
           <ReleaseStat label="Nominee" value={nomineeReady ? "Set" : "—"} ok={nomineeReady} />
           <ReleaseStat label="Key holders" value={`${filledKeys}/5`} ok={filledKeys >= RELEASE_POLICY.requiredKeys} />
           <ReleaseStat label="Threshold" value={`${activeKeys.length}/3`} ok={activeKeys.length >= RELEASE_POLICY.requiredKeys} />
         </div>
-        <p className={cx("mt-4 text-center text-[13px] leading-5", confirmed ? "text-[#0b6b3a]" : hasDuplicates ? "text-[#b42318]" : "text-[#6e6e73]")}>
+        <p className={cx("mt-4 text-center text-[13px] leading-5", confirmed ? "text-[var(--green-ink)]" : hasDuplicates ? "text-[var(--red-2)]" : "text-[var(--ink-2)]")}>
           {releaseStatus}
         </p>
       </div>
@@ -4290,7 +4942,7 @@ function ReleaseScreen({ vault, onSave, session, vaultKey }) {
         {releaseStep === 1 && (
           <ReleasePanelLight subtitle="Choose the Main Nominee" body="This is the person who starts a recovery request. They still cannot open the vault alone.">
             <input
-              className="w-full rounded-xl border border-black/8 bg-white px-4 py-3 text-[14px] outline-none focus:border-[#1d1d1f]"
+              className="w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)]"
               value={settings.mainNominee}
               onChange={(event) => { setMessage(""); setSettings({ ...settings, mainNominee: event.target.value }); }}
               placeholder="Name or email"
@@ -4303,9 +4955,9 @@ function ReleaseScreen({ vault, onSave, session, vaultKey }) {
             <div className="grid gap-2.5">
               {settings.keyHolders.map((holder, index) => (
                 <div key={index} className="flex items-center gap-3">
-                  <span className="w-6 text-[12px] font-medium text-[#a1a1a6]">{index + 1}</span>
+                  <span className="w-6 text-[12px] font-medium text-[var(--ink-4)]">{index + 1}</span>
                   <input
-                    className={cx("flex-1 rounded-xl border bg-white px-4 py-2.5 text-[14px] outline-none", duplicateIndexes.includes(index) ? "border-[#ff453a]/40 focus:border-[#ff453a]" : "border-black/8 focus:border-[#1d1d1f]")}
+                    className={cx("flex-1 rounded-xl border bg-[var(--surface)] px-4 py-2.5 text-[14px] outline-none", duplicateIndexes.includes(index) ? "border-[#ff453a]/40 focus:border-[#ff453a]" : "border-[var(--line)] focus:border-[var(--ink)]")}
                     value={holder}
                     onChange={(event) => {
                       setMessage("");
@@ -4322,7 +4974,7 @@ function ReleaseScreen({ vault, onSave, session, vaultKey }) {
                       setActiveKeys((current) => current.includes(index) ? current.filter((item) => item !== index) : [...current, index].slice(-5));
                     }}
                     disabled={!holder.trim()}
-                    className={cx("rounded-full border px-3 py-1.5 text-[11px] font-semibold transition", activeKeys.includes(index) ? "border-[#34c759]/40 bg-[#34c759]/10 text-[#0b6b3a]" : "border-black/8 bg-white text-[#86868b] hover:text-[#1d1d1f] disabled:opacity-30")}
+                    className={cx("rounded-full border px-3 py-1.5 text-[11px] font-semibold transition", activeKeys.includes(index) ? "border-[#34c759]/40 bg-[#34c759]/10 text-[var(--green-ink)]" : "border-[var(--line)] bg-[var(--surface)] text-[var(--ink-3)] hover:text-[var(--ink)] disabled:opacity-30")}
                   >
                     {activeKeys.includes(index) ? "Selected" : "Select"}
                   </button>
@@ -4334,7 +4986,7 @@ function ReleaseScreen({ vault, onSave, session, vaultKey }) {
 
         {releaseStep === 3 && (
           <ReleasePanelLight subtitle="Owner alert and threshold rules" body="These rules are shown as product logic. A production release requires a backend alert service.">
-            <div className="divide-y divide-black/6">
+            <div className="divide-y divide-[var(--line)]">
               <RuleRow label="Threshold" value="3 of 5 keys" />
               <RuleRow label="Owner hold" value="14 days" />
               <RuleRow label="Owner alerts" value="2 per day" />
@@ -4346,9 +4998,9 @@ function ReleaseScreen({ vault, onSave, session, vaultKey }) {
           <ReleasePanelLight subtitle="Preview emergency access" body="The exact sequence a nominee should expect. Simulated in this prototype.">
             <div className="space-y-0">
               {["Main Nominee signs in", "3 of 5 trusted keys join", "14-day owner alert hold", "Emergency-enabled records open"].map((step, index) => (
-                <div key={step} className="flex items-center gap-4 border-b border-black/6 py-3.5 last:border-0">
-                  <span className="grid h-7 w-7 place-items-center rounded-full bg-[#fbfbfd] text-[12px] font-semibold text-[#6e6e73]">{index + 1}</span>
-                  <span className="text-[14px] text-[#1d1d1f]">{step}</span>
+                <div key={step} className="flex items-center gap-4 border-b border-[var(--line)] py-3.5 last:border-0">
+                  <span className="grid h-7 w-7 place-items-center rounded-full bg-[var(--surface-2)] text-[12px] font-semibold text-[var(--ink-2)]">{index + 1}</span>
+                  <span className="text-[14px] text-[var(--ink)]">{step}</span>
                 </div>
               ))}
             </div>
@@ -4357,7 +5009,7 @@ function ReleaseScreen({ vault, onSave, session, vaultKey }) {
 
         {releaseStep === 5 && (
           <ReleasePanelLight subtitle="Readiness state" body={confirmed ? "Coherent for demo. Production still needs identity, alert delivery, and server-side enforcement." : "Not ready. Fix the readiness gaps before relying on it."}>
-            <div className="divide-y divide-black/6">
+            <div className="divide-y divide-[var(--line)]">
               <RuleRow label="Nominee" value={nomineeReady ? "Ready" : "Missing"} tone={nomineeReady ? "ok" : "warn"} />
               <RuleRow label="Key holders" value={`${filledKeys}/5 added`} tone={filledKeys >= 5 ? "ok" : "warn"} />
               <RuleRow label="Threshold" value={`${activeKeys.length}/3 selected`} tone={activeKeys.length >= 3 ? "ok" : "warn"} />
@@ -4367,17 +5019,17 @@ function ReleaseScreen({ vault, onSave, session, vaultKey }) {
       </div>
 
       <div className="mt-6 flex items-center justify-between">
-        <button onClick={() => setReleaseStep(Math.max(1, releaseStep - 1))} disabled={releaseStep === 1} className="text-xs font-medium text-[#86868b] hover:text-[#1d1d1f] disabled:opacity-30">‹ Back</button>
-        <button onClick={() => setReleaseStep(Math.min(5, releaseStep + 1))} disabled={releaseStep === 5} className="text-xs font-medium text-[#1d1d1f] hover:text-black disabled:opacity-30">Next ›</button>
+        <button onClick={() => setReleaseStep(Math.max(1, releaseStep - 1))} disabled={releaseStep === 1} className="text-xs font-medium text-[var(--ink-3)] hover:text-[var(--ink)] disabled:opacity-30">‹ Back</button>
+        <button onClick={() => setReleaseStep(Math.min(5, releaseStep + 1))} disabled={releaseStep === 5} className="text-xs font-medium text-[var(--ink)] hover:text-black disabled:opacity-30">Next ›</button>
       </div>
 
-      {message && <div className={cx("mt-6 rounded-2xl px-4 py-3 text-[13px] font-medium", message.includes("Duplicate") ? "bg-[#ff453a]/8 text-[#b42318]" : "bg-[#34c759]/8 text-[#0b6b3a]")}>{message}</div>}
+      {message && <div className={cx("mt-6 rounded-2xl px-4 py-3 text-[13px] font-medium", message.includes("Duplicate") ? "bg-[#ff453a]/8 text-[var(--red-2)]" : "bg-[#34c759]/8 text-[var(--green-ink)]")}>{message}</div>}
 
       <div className="mt-10 flex flex-col items-center">
         <button onClick={saveSettings} className="rounded-full bg-[#1d1d1f] px-8 py-3.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition hover:bg-black">
           Save release circle
         </button>
-        <p className="mt-3 text-[11px] text-[#a1a1a6]">Saved locally. No emails are sent in this prototype.</p>
+        <p className="mt-3 text-[11px] text-[var(--ink-4)]">Saved locally. No emails are sent in this prototype.</p>
       </div>
       </>
       )}
@@ -4484,30 +5136,30 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
   return (
     <div className="mb-12">
       <div className="text-center">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Release plan</p>
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Release plan</p>
         <h1 className="mt-3 text-[36px] font-semibold leading-[1.1] tracking-tight md:text-[44px]">
           {planActive ? "Your circle is active." : "Build your circle of five."}
         </h1>
-        <p className="mx-auto mt-4 max-w-md text-[14px] leading-6 text-[#6e6e73]">
+        <p className="mx-auto mt-4 max-w-md text-[14px] leading-6 text-[var(--ink-2)]">
           Five trusted humans. Three of them, plus a 14-day hold, are required to release your vault to your nominee. Each is invited by email and accepts on their own device — Lyfos never sees their share of your key.
         </p>
       </div>
 
       {/* Readiness pill row */}
-      <div className="mt-10 grid grid-cols-3 gap-3 rounded-2xl border border-black/8 bg-white p-4 text-center">
+      <div className="mt-10 grid grid-cols-3 gap-3 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4 text-center">
         <ReleaseStat label="Invited" value={holders.length} ok={holders.length === 5} />
         <ReleaseStat label="Accepted" value={accepted} ok={accepted === 5} />
         <ReleaseStat label="Verified" value={verified} ok={verified === 5} />
       </div>
 
-      {error && <div className="mt-4 rounded-xl bg-[#ff453a]/8 px-4 py-3 text-[13px] font-medium text-[#b42318]">{error}</div>}
+      {error && <div className="mt-4 rounded-xl bg-[#ff453a]/8 px-4 py-3 text-[13px] font-medium text-[var(--red-2)]">{error}</div>}
       {inviteFeedback && <InviteFeedback feedback={inviteFeedback} onClose={() => setInviteFeedback(null)} />}
 
       <div className="mt-8 space-y-2">
         {holders.length === 0 && !loading && (
-          <div className="rounded-2xl border border-dashed border-black/12 bg-white p-6 text-center">
-            <p className="text-[14px] font-medium text-[#1d1d1f]">No key holders yet.</p>
-            <p className="mt-1 text-[12px] text-[#86868b]">Invite five people who would help your nominee if something happens to you.</p>
+          <div className="rounded-2xl border border-dashed border-[var(--line-2)] bg-[var(--surface)] p-6 text-center">
+            <p className="text-[14px] font-medium text-[var(--ink)]">No key holders yet.</p>
+            <p className="mt-1 text-[12px] text-[var(--ink-3)]">Invite five people who would help your nominee if something happens to you.</p>
           </div>
         )}
         {holders.map((h) => <KeyHolderRow key={h.id} holder={h} onRevoke={() => revoke(h)} />)}
@@ -4526,7 +5178,7 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
           <InviteForm busy={busy} onCancel={() => setShowInvite(false)} onSubmit={handleInviteCreated} />
         )}
         {holders.length === 5 && accepted < 5 && (
-          <p className="text-[12px] text-[#86868b]">Waiting on {5 - accepted} {5 - accepted === 1 ? "holder" : "holders"} to accept.</p>
+          <p className="text-[12px] text-[var(--ink-3)]">Waiting on {5 - accepted} {5 - accepted === 1 ? "holder" : "holders"} to accept.</p>
         )}
         {canFinalize && (
           <>
@@ -4536,7 +5188,7 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
             >
               Finalize plan
             </button>
-            <p className="max-w-sm text-center text-[12px] text-[#86868b]">
+            <p className="max-w-sm text-center text-[12px] text-[var(--ink-3)]">
               All 5 accepted. Finalize to split your vault key into shares — one for each holder.
             </p>
           </>
@@ -4545,12 +5197,12 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
           <FreeReleaseUpgradePrompt />
         )}
         {planActive && (
-          <p className="text-[12px] text-[#0b6b3a]">Your circle is active. If something happens to you, 3 of 5 plus a 14-day hold are required to release.</p>
+          <p className="text-[12px] text-[var(--green-ink)]">Your circle is active. If something happens to you, 3 of 5 plus a 14-day hold are required to release.</p>
         )}
       </div>
 
       {finalizeFeedback && (
-        <div className="mt-6 rounded-2xl border border-[#34c759]/30 bg-[#34c759]/8 px-4 py-3 text-center text-[13px] font-medium text-[#0b6b3a]">
+        <div className="mt-6 rounded-2xl border border-[#34c759]/30 bg-[#34c759]/8 px-4 py-3 text-center text-[13px] font-medium text-[var(--green-ink)]">
           {finalizeFeedback}
         </div>
       )}
@@ -4572,13 +5224,13 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
 
 function FreeReleaseUpgradePrompt() {
   return (
-    <div className="w-full max-w-md rounded-2xl border border-[#c88719]/30 bg-[#fff8eb] p-5">
-      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#7a4b00]">Upgrade to finalize</p>
-      <h3 className="mt-1 text-[16px] font-semibold tracking-tight text-[#7a4b00]">Your five are ready.</h3>
-      <p className="mt-2 text-[13px] leading-5 text-[#7a4b00]">
+    <div className="w-full max-w-md rounded-2xl border border-[#c88719]/30 bg-[var(--amber-soft)] p-5">
+      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--amber-ink)]">Upgrade to finalize</p>
+      <h3 className="mt-1 text-[16px] font-semibold tracking-tight text-[var(--amber-ink)]">Your five are ready.</h3>
+      <p className="mt-2 text-[13px] leading-5 text-[var(--amber-ink)]">
         Finalizing splits your vault key into 5 cryptographic shares and turns on the live release service. It's the central paid feature.
       </p>
-      <p className="mt-3 text-[13px] leading-5 text-[#7a4b00]">
+      <p className="mt-3 text-[13px] leading-5 text-[var(--amber-ink)]">
         Open <strong>Settings → Billing</strong> to upgrade to Lyfos Vault (₹999/yr) or Family (₹2,499/yr).
       </p>
     </div>
@@ -4652,17 +5304,17 @@ function ClaimUrlPanel() {
   }
 
   return (
-    <div className="mt-10 rounded-2xl border border-black/8 bg-white p-5">
+    <div className="mt-10 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5">
       <div className="flex items-baseline justify-between">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Claim link for your nominee</p>
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Claim link for your nominee</p>
         {!editing && settings && (
-          <button onClick={() => setEditing(true)} className="text-[11px] font-medium text-[#86868b] hover:text-[#1d1d1f]">Edit</button>
+          <button onClick={() => setEditing(true)} className="text-[11px] font-medium text-[var(--ink-3)] hover:text-[var(--ink)]">Edit</button>
         )}
       </div>
 
       {!settings && !editing && (
         <div className="mt-3">
-          <p className="text-[13px] leading-5 text-[#6e6e73]">
+          <p className="text-[13px] leading-5 text-[var(--ink-2)]">
             Generate a stable URL you share once with your nominee. They keep it (printed copy, password manager, sealed envelope). If you ever need to release the vault — this is the link.
           </p>
           <button
@@ -4676,22 +5328,22 @@ function ClaimUrlPanel() {
 
       {settings && !editing && (
         <div className="mt-3">
-          <p className="text-[13px] text-[#1d1d1f]">
+          <p className="text-[13px] text-[var(--ink)]">
             Nominee: <strong>{settings.nominee_label || "—"}</strong>
-            {settings.nominee_email && <span className="text-[#86868b]"> · {settings.nominee_email}</span>}
+            {settings.nominee_email && <span className="text-[var(--ink-3)]"> · {settings.nominee_email}</span>}
           </p>
           {settings.claim_text && (
-            <p className="mt-2 text-[12px] leading-5 text-[#6e6e73]">"{settings.claim_text}"</p>
+            <p className="mt-2 text-[12px] leading-5 text-[var(--ink-2)]">"{settings.claim_text}"</p>
           )}
-          <button onClick={() => setShowUrl((v) => !v)} className="mt-3 text-[11px] font-medium text-[#86868b] underline-offset-2 hover:text-[#1d1d1f] hover:underline">
+          <button onClick={() => setShowUrl((v) => !v)} className="mt-3 text-[11px] font-medium text-[var(--ink-3)] underline-offset-2 hover:text-[var(--ink)] hover:underline">
             {showUrl ? "Hide URL" : "Show claim URL"}
           </button>
           {showUrl && url && (
             <div className="mt-2">
-              <div className="break-all rounded-md bg-[#fbfbfd] px-3 py-2 font-mono text-[11px]">{url}</div>
+              <div className="break-all rounded-md bg-[var(--surface-2)] px-3 py-2 font-mono text-[11px]">{url}</div>
               <div className="mt-2 flex items-center gap-3">
-                <button onClick={copyUrl} className="text-[11px] font-medium text-[#1d1d1f] underline-offset-2 hover:underline">Copy</button>
-                <button onClick={rotate} className="text-[11px] font-medium text-[#b42318] underline-offset-2 hover:underline" disabled={busy}>Rotate</button>
+                <button onClick={copyUrl} className="text-[11px] font-medium text-[var(--ink)] underline-offset-2 hover:underline">Copy</button>
+                <button onClick={rotate} className="text-[11px] font-medium text-[var(--red-2)] underline-offset-2 hover:underline" disabled={busy}>Rotate</button>
               </div>
             </div>
           )}
@@ -4701,37 +5353,37 @@ function ClaimUrlPanel() {
       {editing && (
         <div className="mt-3 space-y-2">
           <label className="block">
-            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Nominee label</span>
+            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">Nominee label</span>
             <input
               value={nomineeLabel}
               onChange={(e) => setNomineeLabel(e.target.value)}
               placeholder="Priya Sharma (spouse)"
-              className="mt-1 w-full rounded-md border border-black/10 bg-white px-3 py-2 text-[13px] outline-none focus:border-[#1d1d1f]"
+              className="mt-1 w-full rounded-md border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[13px] outline-none focus:border-[var(--ink)]"
             />
           </label>
           <label className="block">
-            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Nominee email · optional, helps them know the link is for them</span>
+            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">Nominee email · optional, helps them know the link is for them</span>
             <input
               type="email"
               value={nomineeEmail}
               onChange={(e) => setNomineeEmail(e.target.value)}
               placeholder="priya@example.com"
-              className="mt-1 w-full rounded-md border border-black/10 bg-white px-3 py-2 text-[13px] outline-none focus:border-[#1d1d1f]"
+              className="mt-1 w-full rounded-md border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[13px] outline-none focus:border-[var(--ink)]"
             />
           </label>
           <label className="block">
-            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Note for them · optional, shown on the claim page</span>
+            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">Note for them · optional, shown on the claim page</span>
             <textarea
               value={claimText}
               onChange={(e) => setClaimText(e.target.value)}
               rows={3}
               placeholder="If you're reading this, something has happened to me. Bank passwords + property papers are inside. Call my CA Nikhil first."
-              className="mt-1 w-full rounded-md border border-black/10 bg-white px-3 py-2 text-[13px] leading-5 outline-none focus:border-[#1d1d1f]"
+              className="mt-1 w-full rounded-md border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[13px] leading-5 outline-none focus:border-[var(--ink)]"
             />
           </label>
-          {error && <div className="rounded-md bg-[#ff453a]/8 px-3 py-2 text-[12px] text-[#b42318]">{error}</div>}
+          {error && <div className="rounded-md bg-[#ff453a]/8 px-3 py-2 text-[12px] text-[var(--red-2)]">{error}</div>}
           <div className="mt-3 flex items-center justify-between gap-2">
-            <button onClick={() => { setEditing(false); refresh(); }} className="text-[11px] text-[#86868b] hover:text-[#1d1d1f]" disabled={busy}>Cancel</button>
+            <button onClick={() => { setEditing(false); refresh(); }} className="text-[11px] text-[var(--ink-3)] hover:text-[var(--ink)]" disabled={busy}>Cancel</button>
             <button onClick={save} disabled={busy} className="rounded-full bg-[#1d1d1f] px-4 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50">
               {busy ? "Saving…" : "Save"}
             </button>
@@ -4750,56 +5402,56 @@ function FinalizeModal({ acceptedHolders, finalizing, hasVaultKey, onCancel, onC
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/30 backdrop-blur-sm md:items-center" onClick={onCancel}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-[#fbfbfd] p-6 shadow-[0_-12px_40px_rgba(0,0,0,0.12)] md:rounded-3xl md:p-8"
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-[var(--surface-2)] p-6 shadow-[0_-12px_40px_rgba(0,0,0,0.12)] md:rounded-3xl md:p-8"
       >
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Finalize</p>
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Finalize</p>
         <h2 className="mt-2 text-[24px] font-semibold tracking-tight">Activate your release plan.</h2>
 
-        <p className="mt-4 text-[14px] leading-6 text-[#6e6e73]">
+        <p className="mt-4 text-[14px] leading-6 text-[var(--ink-2)]">
           Lyfos will split your vault key into 5 cryptographic shares and seal one to each holder's release public key. Your key holders will be able to release their shares only when:
         </p>
-        <ul className="mt-3 space-y-1.5 pl-5 text-[13px] leading-5 text-[#6e6e73] list-disc">
+        <ul className="mt-3 space-y-1.5 pl-5 text-[13px] leading-5 text-[var(--ink-2)] list-disc">
           <li>Your nominee files a death/incapacity claim with proof</li>
           <li>Lyfos approves the claim after review</li>
           <li>3 of your 5 holders approve their share release</li>
           <li>A 14-day hold passes during which you are alerted daily and can cancel with one tap</li>
         </ul>
 
-        <div className="mt-5 rounded-xl bg-[#fff8eb] px-4 py-3 text-[12px] leading-5 text-[#7a4b00]">
+        <div className="mt-5 rounded-xl bg-[var(--amber-soft)] px-4 py-3 text-[12px] leading-5 text-[var(--amber-ink)]">
           <strong>Nothing happens to your vault.</strong> Your vault stays encrypted; Lyfos still cannot read it. You can continue using Lyfos exactly as before.
         </div>
 
         <div className="mt-6">
-          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Provisioning shares to</p>
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">Provisioning shares to</p>
           <ul className="mt-2 space-y-1">
             {acceptedHolders.map((h, i) => (
-              <li key={h.id} className="flex items-center justify-between rounded-md bg-white px-3 py-1.5 text-[12px]">
+              <li key={h.id} className="flex items-center justify-between rounded-md bg-[var(--surface)] px-3 py-1.5 text-[12px]">
                 <span>{i + 1}. {h.label}</span>
-                <span className="text-[10px] text-[#86868b]">{h.holder_email}</span>
+                <span className="text-[10px] text-[var(--ink-3)]">{h.holder_email}</span>
               </li>
             ))}
           </ul>
         </div>
 
         {!hasVaultKey && (
-          <div className="mt-5 rounded-xl bg-[#ff453a]/8 px-4 py-3 text-[12px] font-medium text-[#b42318]">
+          <div className="mt-5 rounded-xl bg-[#ff453a]/8 px-4 py-3 text-[12px] font-medium text-[var(--red-2)]">
             Unlock your vault first. The unlock has to happen on this device so the key never leaves your browser.
           </div>
         )}
 
         <label className="mt-6 block">
-          <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Type <strong>finalize</strong> to confirm</span>
+          <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">Type <strong>finalize</strong> to confirm</span>
           <input
             value={confirmText}
             onChange={(e) => setConfirmText(e.target.value)}
             placeholder="finalize"
             disabled={!hasVaultKey || finalizing}
-            className="mt-2 w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-[14px] outline-none focus:border-[#1d1d1f] disabled:opacity-50"
+            className="mt-2 w-full rounded-lg border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[14px] outline-none focus:border-[var(--ink)] disabled:opacity-50"
           />
         </label>
 
         <div className="mt-6 flex items-center justify-between gap-3">
-          <button onClick={onCancel} disabled={finalizing} className="text-[12px] text-[#86868b] hover:text-[#1d1d1f]">Cancel</button>
+          <button onClick={onCancel} disabled={finalizing} className="text-[12px] text-[var(--ink-3)] hover:text-[var(--ink)]">Cancel</button>
           <button
             onClick={onConfirm}
             disabled={!ready || !hasVaultKey || finalizing}
@@ -4820,11 +5472,11 @@ function KeyHolderRow({ holder, onRevoke }) {
   const [showUrl, setShowUrl] = useState(false);
 
   return (
-    <div className="rounded-2xl border border-black/8 bg-white p-4">
+    <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[14px] font-medium text-[#1d1d1f]">{holder.label}</div>
-          <div className="mt-0.5 truncate text-[12px] text-[#86868b]">{holder.holder_email}</div>
+          <div className="truncate text-[14px] font-medium text-[var(--ink)]">{holder.label}</div>
+          <div className="mt-0.5 truncate text-[12px] text-[var(--ink-3)]">{holder.holder_email}</div>
         </div>
         <div className="shrink-0 text-right">
           <KeyHolderStatusPill status={holder.status} />
@@ -4835,18 +5487,18 @@ function KeyHolderRow({ holder, onRevoke }) {
         <div className="mt-3">
           <button
             onClick={() => setShowUrl((v) => !v)}
-            className="text-[11px] font-medium text-[#86868b] underline-offset-2 hover:text-[#1d1d1f] hover:underline"
+            className="text-[11px] font-medium text-[var(--ink-3)] underline-offset-2 hover:text-[var(--ink)] hover:underline"
           >
             {showUrl ? "Hide invite link" : "Show invite link"}
           </button>
           {showUrl && (
-            <div className="mt-2 break-all rounded-md bg-[#fbfbfd] px-3 py-2 font-mono text-[11px] text-[#3a3a3c]">{inviteUrl}</div>
+            <div className="mt-2 break-all rounded-md bg-[var(--surface-2)] px-3 py-2 font-mono text-[11px] text-[#3a3a3c]">{inviteUrl}</div>
           )}
         </div>
       )}
 
       <div className="mt-3 flex items-center justify-end">
-        <button onClick={onRevoke} className="text-[11px] font-medium text-[#b42318] hover:underline">Revoke</button>
+        <button onClick={onRevoke} className="text-[11px] font-medium text-[var(--red-2)] hover:underline">Revoke</button>
       </div>
     </div>
   );
@@ -4854,11 +5506,11 @@ function KeyHolderRow({ holder, onRevoke }) {
 
 function KeyHolderStatusPill({ status }) {
   const tone = {
-    pending:  ["bg-[#fff8eb] text-[#7a4b00]", "Pending invite"],
-    accepted: ["bg-[#34c759]/10 text-[#0b6b3a]", "Accepted"],
-    verified: ["bg-[#34c759]/20 text-[#0b6b3a]", "Verified"],
-    revoked:  ["bg-[#ff453a]/8 text-[#b42318]", "Revoked"]
-  }[status] ?? ["bg-[#f2f2f5] text-[#6e6e73]", status];
+    pending:  ["bg-[var(--amber-soft)] text-[var(--amber-ink)]", "Pending invite"],
+    accepted: ["bg-[#34c759]/10 text-[var(--green-ink)]", "Accepted"],
+    verified: ["bg-[#34c759]/20 text-[var(--green-ink)]", "Verified"],
+    revoked:  ["bg-[#ff453a]/8 text-[var(--red-2)]", "Revoked"]
+  }[status] ?? ["bg-[var(--surface-3)] text-[var(--ink-2)]", status];
   return <span className={cx("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider", tone[0])}>{tone[1]}</span>;
 }
 
@@ -4873,42 +5525,42 @@ function InviteForm({ busy, onCancel, onSubmit }) {
   }
 
   return (
-    <form onSubmit={submit} className="w-full max-w-md rounded-2xl border border-black/8 bg-white p-5">
-      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Invite a key holder</p>
+    <form onSubmit={submit} className="w-full max-w-md rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5">
+      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">Invite a key holder</p>
       <label className="mt-3 block">
-        <span className="text-[11px] text-[#86868b]">Label</span>
+        <span className="text-[11px] text-[var(--ink-3)]">Label</span>
         <input
           autoFocus
           value={label}
           onChange={(e) => setLabel(e.target.value)}
           required
           placeholder="Vikram Sharma (brother)"
-          className="mt-1 w-full rounded-md border border-black/8 bg-white px-3 py-2 text-[14px] outline-none focus:border-[#1d1d1f]"
+          className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-[14px] outline-none focus:border-[var(--ink)]"
         />
       </label>
       <label className="mt-3 block">
-        <span className="text-[11px] text-[#86868b]">Their email</span>
+        <span className="text-[11px] text-[var(--ink-3)]">Their email</span>
         <input
           type="email"
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="vikram@example.com"
-          className="mt-1 w-full rounded-md border border-black/8 bg-white px-3 py-2 text-[14px] outline-none focus:border-[#1d1d1f]"
+          className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-[14px] outline-none focus:border-[var(--ink)]"
         />
       </label>
       <label className="mt-3 block">
-        <span className="text-[11px] text-[#86868b]">Their phone <span className="text-[#a1a1a6]">· optional, for SMS alerts</span></span>
+        <span className="text-[11px] text-[var(--ink-3)]">Their phone <span className="text-[var(--ink-4)]">· optional, for SMS alerts</span></span>
         <input
           type="tel"
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
           placeholder="+91 98765 43210"
-          className="mt-1 w-full rounded-md border border-black/8 bg-white px-3 py-2 text-[14px] outline-none focus:border-[#1d1d1f]"
+          className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-[14px] outline-none focus:border-[var(--ink)]"
         />
       </label>
       <div className="mt-5 flex items-center justify-between gap-2">
-        <button type="button" onClick={onCancel} className="text-[12px] text-[#86868b] hover:text-[#1d1d1f]">Cancel</button>
+        <button type="button" onClick={onCancel} className="text-[12px] text-[var(--ink-3)] hover:text-[var(--ink)]">Cancel</button>
         <button
           type="submit"
           disabled={busy || !label.trim() || !email.trim()}
@@ -4929,14 +5581,14 @@ function InviteFeedback({ feedback, onClose }) {
     <div className="mt-4 rounded-2xl border border-[#34c759]/30 bg-[#34c759]/8 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium text-[#0b6b3a]">Invite created.</p>
-          <p className="mt-1 text-[12px] leading-5 text-[#0b6b3a]/85">
+          <p className="text-[13px] font-medium text-[var(--green-ink)]">Invite created.</p>
+          <p className="mt-1 text-[12px] leading-5 text-[var(--green-ink)]/85">
             We tried to email them automatically. If the email doesn't arrive, share this link directly — they need to open it on their own device:
           </p>
-          <div className="mt-2 break-all rounded-md bg-white/80 px-3 py-2 font-mono text-[11px]">{feedback.inviteUrl}</div>
-          <button onClick={copyLink} className="mt-2 text-[11px] font-medium text-[#0b6b3a] underline-offset-2 hover:underline">Copy link</button>
+          <div className="mt-2 break-all rounded-md bg-[var(--surface-3)] px-3 py-2 font-mono text-[11px]">{feedback.inviteUrl}</div>
+          <button onClick={copyLink} className="mt-2 text-[11px] font-medium text-[var(--green-ink)] underline-offset-2 hover:underline">Copy link</button>
         </div>
-        <button onClick={onClose} className="shrink-0 text-[11px] text-[#86868b] hover:text-[#1d1d1f]">Close</button>
+        <button onClick={onClose} className="shrink-0 text-[11px] text-[var(--ink-3)] hover:text-[var(--ink)]">Close</button>
       </div>
     </div>
   );
@@ -4945,8 +5597,8 @@ function InviteFeedback({ feedback, onClose }) {
 function ReleaseStat({ label, value, ok }) {
   return (
     <div>
-      <div className={cx("text-[26px] font-semibold tracking-tight", ok ? "text-[#1d1d1f]" : "text-[#a1a1a6]")}>{value}</div>
-      <div className="mt-0.5 text-[11px] font-medium uppercase tracking-[0.12em] text-[#86868b]">{label}</div>
+      <div className={cx("text-[26px] font-semibold tracking-tight", ok ? "text-[var(--ink)]" : "text-[var(--ink-4)]")}>{value}</div>
+      <div className="mt-0.5 text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--ink-3)]">{label}</div>
     </div>
   );
 }
@@ -4955,11 +5607,11 @@ function ReleaseStepNav({ step, onStep }) {
   const steps = ["Nominee", "Keys", "Rules", "Preview", "Ready"];
   return (
     <div className="mt-10 flex justify-center">
-      <div className="inline-flex items-center gap-1 rounded-full border border-black/8 bg-white p-1">
+      <div className="inline-flex items-center gap-1 rounded-full border border-[var(--line)] bg-[var(--surface)] p-1">
         {steps.map((label, index) => {
           const id = index + 1;
           return (
-            <button key={label} onClick={() => onStep(id)} className={cx("rounded-full px-3 py-1.5 text-[11px] font-semibold transition", step === id ? "bg-[#1d1d1f] text-white" : "text-[#86868b] hover:text-[#1d1d1f]")}>
+            <button key={label} onClick={() => onStep(id)} className={cx("rounded-full px-3 py-1.5 text-[11px] font-semibold transition", step === id ? "bg-[#1d1d1f] text-white" : "text-[var(--ink-3)] hover:text-[var(--ink)]")}>
               {label}
             </button>
           );
@@ -4973,7 +5625,7 @@ function ReleasePanelLight({ subtitle, body, children }) {
   return (
     <div>
       <h3 className="text-[20px] font-semibold tracking-tight">{subtitle}</h3>
-      <p className="mt-2 text-[13px] leading-5 text-[#6e6e73]">{body}</p>
+      <p className="mt-2 text-[13px] leading-5 text-[var(--ink-2)]">{body}</p>
       <div className="mt-6">{children}</div>
     </div>
   );
@@ -4982,16 +5634,16 @@ function ReleasePanelLight({ subtitle, body, children }) {
 function RuleRow({ label, value, tone }) {
   return (
     <div className="flex items-baseline justify-between py-3.5">
-      <span className="text-[12px] font-medium uppercase tracking-[0.14em] text-[#86868b]">{label}</span>
-      <span className={cx("text-[14px] font-medium", tone === "warn" ? "text-[#b42318]" : tone === "ok" ? "text-[#0b6b3a]" : "text-[#1d1d1f]")}>{value}</span>
+      <span className="text-[12px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">{label}</span>
+      <span className={cx("text-[14px] font-medium", tone === "warn" ? "text-[var(--red-2)]" : tone === "ok" ? "text-[var(--green-ink)]" : "text-[var(--ink)]")}>{value}</span>
     </div>
   );
 }
 
 function RuleTile({ label, value }) {
   return (
-    <div className="rounded-xl border border-black/8 bg-white p-4">
-      <span className="block text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">{label}</span>
+    <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4">
+      <span className="block text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">{label}</span>
       <strong className="mt-2 block text-[15px] font-semibold">{value}</strong>
     </div>
   );
@@ -5022,7 +5674,7 @@ function ReleaseCircle({ settings, activeKeys, onToggleKey }) {
         const configured = Boolean(holder.trim());
         const active = activeKeys.includes(index);
         return (
-          <button key={index} onClick={() => onToggleKey(index)} disabled={!configured} title={configured ? holder : "Add this key holder before it can participate"} style={{ left: x, top: y }} className={cx("absolute grid h-20 w-20 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border text-sm font-semibold transition", configured && "hover:scale-105", active ? "border-[#34c759]/50 bg-[#34c759] text-[#111113] shadow-[0_0_45px_rgba(52,199,89,0.28)]" : configured ? "border-white/14 bg-white/10 text-white/68" : "border-white/[0.06] bg-white/[0.035] text-white/24")}>
+          <button key={index} onClick={() => onToggleKey(index)} disabled={!configured} title={configured ? holder : "Add this key holder before it can participate"} style={{ left: x, top: y }} className={cx("absolute grid h-20 w-20 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border text-sm font-semibold transition", configured && "hover:scale-105", active ? "border-[#34c759]/50 bg-[#34c759] text-[var(--ink)] shadow-[0_0_45px_rgba(52,199,89,0.28)]" : configured ? "border-white/14 bg-white/10 text-white/68" : "border-white/[0.06] bg-white/[0.035] text-white/24")}>
             {keyHolderLabel(holder, index)}
           </button>
         );
@@ -5047,27 +5699,27 @@ function Signal({ label, value, tone }) {
     red: "bg-[#d70015]"
   };
   return (
-    <div className="rounded-[1.5rem] border border-black/10 bg-[#f5f5f7] p-5">
+    <div className="rounded-[1.5rem] border border-[var(--line-2)] bg-[var(--bg)] p-5">
       <span className={cx("mb-5 block h-2 w-10 rounded-full", colors[tone])} />
       <strong className="block text-4xl font-semibold">{value}</strong>
-      <p className="mt-2 text-sm font-semibold text-[#6e6e73]">{label}</p>
+      <p className="mt-2 text-sm font-semibold text-[var(--ink-2)]">{label}</p>
     </div>
   );
 }
 
 function SecurityPanel({ autoLockMs, onAutoLockChange, onReplaceRecoveryKey }) {
   return (
-    <section className="mt-6 rounded-[1.75rem] border border-black/10 bg-[#fbfbfd] p-5">
+    <section className="mt-6 rounded-[1.75rem] border border-[var(--line-2)] bg-[var(--surface-2)] p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-semibold uppercase text-[#0071e3]">Session security</p>
+          <p className="text-sm font-semibold uppercase text-[var(--blue)]">Session security</p>
           <h3 className="mt-2 text-2xl font-semibold">Relock policy</h3>
-          <p className="mt-2 text-sm leading-6 text-[#6e6e73]">
+          <p className="mt-2 text-sm leading-6 text-[var(--ink-2)]">
             Decrypted records stay only in this open session. OS-One relocks after {getAutoLockLabel(autoLockMs)} of inactivity, when you seal manually, or when the app moves to the background.
           </p>
         </div>
         <select
-          className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-[#1d1d1f] shadow-sm outline-none"
+          className="rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-4 py-2 text-sm font-semibold text-[var(--ink)] shadow-sm outline-none"
           value={autoLockMs}
           onChange={(event) => onAutoLockChange(Number(event.target.value))}
           aria-label="Auto-lock timeout"
@@ -5124,16 +5776,16 @@ function RecoveryKeyStatusPanel({ onReplaceRecoveryKey }) {
   }
 
   return (
-    <div className="mt-4 rounded-[1.25rem] border border-black/10 bg-white p-4">
+    <div className="mt-4 rounded-[1.25rem] border border-[var(--line-2)] bg-[var(--surface)] p-4">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#86868b]">Recovery key</p>
-          <h4 className="mt-2 text-lg font-semibold text-[#1d1d1f]">Configured, not viewable</h4>
-          <p className="mt-2 max-w-xl text-sm leading-6 text-[#6e6e73]">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ink-3)]">Recovery key</p>
+          <h4 className="mt-2 text-lg font-semibold text-[var(--ink)]">Configured, not viewable</h4>
+          <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--ink-2)]">
             OS-One cannot show your existing recovery key again. You can replace it while this vault is unlocked. Replacement does not rescue a vault if both the phrase and recovery key are already lost.
           </p>
         </div>
-        <span className="rounded-full bg-[#f5f5f7] px-3 py-1 text-xs font-semibold text-[#6e6e73]">{metadata.canViewExistingKey ? "Viewable" : "Cannot view existing key"}</span>
+        <span className="rounded-full bg-[var(--bg)] px-3 py-1 text-xs font-semibold text-[var(--ink-2)]">{metadata.canViewExistingKey ? "Viewable" : "Cannot view existing key"}</span>
       </div>
 
       {!active && (
@@ -5144,21 +5796,21 @@ function RecoveryKeyStatusPanel({ onReplaceRecoveryKey }) {
 
       {active && (
         <div className="mt-4 rounded-2xl border border-[#ff9500]/20 bg-[#ff9500]/8 p-4">
-          <p className="text-sm font-semibold text-[#7a4a00]">New recovery key</p>
-          <p className="mt-1 text-xs leading-5 text-[#7a4a00]/80">Save this key before confirming. After confirmation, the old recovery key stops working.</p>
-          <div className="mt-3 select-all break-words rounded-2xl bg-white p-4 font-mono text-sm font-semibold tracking-[0.04em] text-[#1d1d1f]">{replacement.generatedRecoveryKey}</div>
-          <label className="mt-3 block text-xs font-semibold text-[#7a4a00]">
+          <p className="text-sm font-semibold text-[var(--amber-ink)]">New recovery key</p>
+          <p className="mt-1 text-xs leading-5 text-[var(--amber-ink)]/80">Save this key before confirming. After confirmation, the old recovery key stops working.</p>
+          <div className="mt-3 select-all break-words rounded-2xl bg-[var(--surface)] p-4 font-mono text-sm font-semibold tracking-[0.04em] text-[var(--ink)]">{replacement.generatedRecoveryKey}</div>
+          <label className="mt-3 block text-xs font-semibold text-[var(--amber-ink)]">
             Type the new recovery key to confirm
-            <input className="mt-2 w-full rounded-2xl border border-[#ff9500]/20 bg-white px-4 py-3 text-sm text-[#1d1d1f] outline-none" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="OS1A-..." />
+            <input className="mt-2 w-full rounded-2xl border border-[#ff9500]/20 bg-[var(--surface)] px-4 py-3 text-sm text-[var(--ink)] outline-none" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="OS1A-..." />
           </label>
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" onClick={confirmReplacement} className="rounded-full bg-[#1d1d1f] px-4 py-2.5 text-sm font-semibold text-white">Confirm replacement</button>
-            <button type="button" onClick={cancelReplacement} className="rounded-full border border-black/10 bg-white px-4 py-2.5 text-sm font-semibold text-[#1d1d1f]">Cancel</button>
+            <button type="button" onClick={cancelReplacement} className="rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-4 py-2.5 text-sm font-semibold text-[var(--ink)]">Cancel</button>
           </div>
         </div>
       )}
 
-      {message && <p className="mt-3 text-xs font-semibold text-[#6e6e73]">{message}</p>}
+      {message && <p className="mt-3 text-xs font-semibold text-[var(--ink-2)]">{message}</p>}
     </div>
   );
 }
@@ -5166,33 +5818,33 @@ function RecoveryKeyStatusPanel({ onReplaceRecoveryKey }) {
 function AuditTrail({ vault }) {
   const groups = getAuditGroups(vault, 18);
   return (
-    <section className="mt-6 rounded-[1.75rem] border border-black/10 bg-[#fbfbfd] p-5">
+    <section className="mt-6 rounded-[1.75rem] border border-[var(--line-2)] bg-[var(--surface-2)] p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-semibold uppercase text-[#0071e3]">Local audit</p>
+          <p className="text-sm font-semibold uppercase text-[var(--blue)]">Local audit</p>
           <h3 className="mt-2 text-2xl font-semibold">Recent sealed activity</h3>
         </div>
-        <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#6e6e73] shadow-sm">Encrypted</span>
+        <span className="rounded-full bg-[var(--surface)] px-3 py-1 text-xs font-semibold text-[var(--ink-2)] shadow-sm">Encrypted</span>
       </div>
-      <p className="mt-3 text-sm leading-6 text-[#6e6e73]">This history is stored inside the encrypted local vault. It records actor, action, time, and reason without storing secret values.</p>
+      <p className="mt-3 text-sm leading-6 text-[var(--ink-2)]">This history is stored inside the encrypted local vault. It records actor, action, time, and reason without storing secret values.</p>
       <div className="mt-4 grid gap-4">
         {groups.length ? groups.map((group) => (
-          <div key={group.label} className="rounded-[1.25rem] border border-black/8 bg-white p-3">
-            <p className="px-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#86868b]">{group.label}</p>
+          <div key={group.label} className="rounded-[1.25rem] border border-[var(--line)] bg-[var(--surface)] p-3">
+            <p className="px-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ink-3)]">{group.label}</p>
             <div className="mt-2 grid gap-2">
               {group.events.map((event) => (
-                <div key={event.id} className="rounded-2xl bg-[#f5f5f7] px-4 py-3">
+                <div key={event.id} className="rounded-2xl bg-[var(--bg)] px-4 py-3">
                   <div className="flex items-center justify-between gap-4">
-                    <strong className="text-sm font-semibold text-[#1d1d1f]">{event.action}</strong>
-                    <span className="shrink-0 text-xs font-semibold text-[#86868b]">{new Date(event.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                    <strong className="text-sm font-semibold text-[var(--ink)]">{event.action}</strong>
+                    <span className="shrink-0 text-xs font-semibold text-[var(--ink-3)]">{new Date(event.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                   </div>
-                  <p className="mt-1 text-xs leading-5 text-[#6e6e73]">{event.actor} · {event.reason}</p>
+                  <p className="mt-1 text-xs leading-5 text-[var(--ink-2)]">{event.actor} · {event.reason}</p>
                 </div>
               ))}
             </div>
           </div>
         )) : (
-          <div className="rounded-2xl border border-dashed border-black/10 bg-white px-4 py-4 text-sm text-[#6e6e73]">No local audit events yet.</div>
+          <div className="rounded-2xl border border-dashed border-[var(--line-2)] bg-[var(--surface)] px-4 py-4 text-sm text-[var(--ink-2)]">No local audit events yet.</div>
         )}
       </div>
     </section>
@@ -5201,8 +5853,8 @@ function AuditTrail({ vault }) {
 
 function TrustPoint({ title, body }) {
   return (
-    <div className="rounded-3xl border border-black/10 bg-[#f5f5f7] p-4">
-      <strong className="block text-[#1d1d1f]">{title}</strong>
+    <div className="rounded-3xl border border-[var(--line-2)] bg-[var(--bg)] p-4">
+      <strong className="block text-[var(--ink)]">{title}</strong>
       <span className="mt-1 block">{body}</span>
     </div>
   );
@@ -5214,7 +5866,7 @@ function BrandBar() {
       <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[#1d1d1f] text-lg font-semibold text-white">O</div>
       <div>
         <div className="text-lg font-semibold">OS-One Vault</div>
-        <div className="text-sm font-medium text-[#86868b]">Private life infrastructure</div>
+        <div className="text-sm font-medium text-[var(--ink-3)]">Private life infrastructure</div>
       </div>
     </div>
   );
@@ -5234,11 +5886,11 @@ function RecoveryKeyPanel({ recoveryKey, recoveryConfirm, onGenerate, onConfirmC
   }
 
   return (
-    <div className="rounded-2xl border border-black/8 bg-white p-4">
+    <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex-1">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86868b]">Recovery phrase</p>
-          <p className="mt-1.5 text-[13px] leading-[1.55] text-[#6e6e73]">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">Recovery phrase</p>
+          <p className="mt-1.5 text-[13px] leading-[1.55] text-[var(--ink-2)]">
             {recoveryKey
               ? "Write these 24 words on paper. Lyfos cannot show them again."
               : "A 24-word phrase, separate from your vault phrase. The only way back if you forget the vault phrase."}
@@ -5247,7 +5899,7 @@ function RecoveryKeyPanel({ recoveryKey, recoveryConfirm, onGenerate, onConfirmC
         <button
           type="button"
           onClick={onGenerate}
-          className="rounded-full border border-black/8 bg-white px-4 py-1.5 text-[12px] font-semibold text-[#1d1d1f] transition hover:bg-black/[0.03]"
+          className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-4 py-1.5 text-[12px] font-semibold text-[var(--ink)] transition hover:bg-black/[0.03]"
         >
           {recoveryKey ? "Regenerate" : "Generate"}
         </button>
@@ -5256,16 +5908,16 @@ function RecoveryKeyPanel({ recoveryKey, recoveryConfirm, onGenerate, onConfirmC
       {recoveryKey && (
         <div className="mt-4">
           {isBip39 ? (
-            <div className="grid grid-cols-3 gap-1.5 rounded-xl border border-black/8 bg-[#fbfbfd] p-3 sm:grid-cols-4">
+            <div className="grid grid-cols-3 gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-3 sm:grid-cols-4">
               {words.map((word, i) => (
-                <div key={i} className="flex items-baseline gap-2 rounded-md bg-white px-2 py-1.5">
-                  <span className="w-5 text-right text-[10px] font-medium tabular-nums text-[#a1a1a6]">{i + 1}</span>
-                  <span className="select-all text-[13px] font-medium text-[#1d1d1f]">{word}</span>
+                <div key={i} className="flex items-baseline gap-2 rounded-md bg-[var(--surface)] px-2 py-1.5">
+                  <span className="w-5 text-right text-[10px] font-medium tabular-nums text-[var(--ink-4)]">{i + 1}</span>
+                  <span className="select-all text-[13px] font-medium text-[var(--ink)]">{word}</span>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="select-all break-words rounded-xl border border-black/8 bg-[#fbfbfd] px-4 py-3 font-mono text-xs font-semibold text-[#1d1d1f]">
+            <div className="select-all break-words rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-4 py-3 font-mono text-xs font-semibold text-[var(--ink)]">
               {recoveryKey}
             </div>
           )}
@@ -5274,23 +5926,23 @@ function RecoveryKeyPanel({ recoveryKey, recoveryConfirm, onGenerate, onConfirmC
             <button
               type="button"
               onClick={copy}
-              className="text-[11px] font-medium text-[#6e6e73] underline-offset-4 hover:text-[#1d1d1f] hover:underline"
+              className="text-[11px] font-medium text-[var(--ink-2)] underline-offset-4 hover:text-[var(--ink)] hover:underline"
             >
               Copy to clipboard
             </button>
-            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#a1a1a6]">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--ink-4)]">
               Store offline · paper, safe
             </span>
           </div>
 
           <label className="mt-4 block">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86868b]">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">
               Confirm by re-typing
             </span>
             {isBip39 ? (
               <textarea
                 rows={3}
-                className="mt-2 w-full rounded-xl border border-black/8 bg-white px-4 py-3 text-[14px] leading-6 text-[#1d1d1f] outline-none transition placeholder:text-[#a1a1a6] focus:border-[#1d1d1f]"
+                className="mt-2 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] leading-6 text-[var(--ink)] outline-none transition placeholder:text-[var(--ink-4)] focus:border-[var(--ink)]"
                 value={recoveryConfirm}
                 onChange={(event) => onConfirmChange(event.target.value)}
                 placeholder="Type the 24 words separated by spaces"
@@ -5299,7 +5951,7 @@ function RecoveryKeyPanel({ recoveryKey, recoveryConfirm, onGenerate, onConfirmC
               />
             ) : (
               <input
-                className="mt-2 w-full rounded-xl border border-black/8 bg-white px-4 py-3 text-[14px] text-[#1d1d1f] outline-none transition placeholder:text-[#a1a1a6] focus:border-[#1d1d1f]"
+                className="mt-2 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] text-[var(--ink)] outline-none transition placeholder:text-[var(--ink-4)] focus:border-[var(--ink)]"
                 value={recoveryConfirm}
                 onChange={(event) => onConfirmChange(event.target.value)}
                 placeholder="OS1A-…"
@@ -5318,7 +5970,7 @@ function BrandMini() {
       <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#1d1d1f] text-sm font-semibold text-white">L</div>
       <div className="hidden sm:block">
         <div className="text-sm font-semibold">Lyfos</div>
-        <div className="text-xs font-medium text-[#86868b]">Locally encrypted</div>
+        <div className="text-xs font-medium text-[var(--ink-3)]">Locally encrypted</div>
       </div>
     </div>
   );
@@ -5395,64 +6047,64 @@ function ImportBackup({ currentRecord, onImported, onRestoreConfirmed }) {
 
   return (
     <div>
-      <label className="cursor-pointer rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-[#1d1d1f] shadow-sm transition hover:bg-[#fbfbfd]">
+      <label className="cursor-pointer rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-4 py-2 text-sm font-semibold text-[var(--ink)] shadow-sm transition hover:bg-[var(--surface-2)]">
         Practice restore preview
         <input className="hidden" type="file" accept="application/json,.json" onChange={importBackup} />
       </label>
-      <p className="mt-2 max-w-xs text-xs leading-5 text-[#86868b]">Preview decrypts a backup in memory so you can inspect its impact. Nothing is replaced until you complete the destructive confirmation.</p>
+      <p className="mt-2 max-w-xs text-xs leading-5 text-[var(--ink-3)]">Preview decrypts a backup in memory so you can inspect its impact. Nothing is replaced until you complete the destructive confirmation.</p>
       {backupText && (
-        <div className="mt-3 max-w-sm rounded-[1.25rem] border border-black/10 bg-[#f5f5f7] p-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6e6e73]">Practice preview only</p>
-          <p className="mt-2 text-sm font-semibold text-[#1d1d1f]">{backupName}</p>
-          <div className="mt-3 grid grid-cols-2 gap-2 rounded-full bg-white p-1">
+        <div className="mt-3 max-w-sm rounded-[1.25rem] border border-[var(--line-2)] bg-[var(--bg)] p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ink-2)]">Practice preview only</p>
+          <p className="mt-2 text-sm font-semibold text-[var(--ink)]">{backupName}</p>
+          <div className="mt-3 grid grid-cols-2 gap-2 rounded-full bg-[var(--surface)] p-1">
             {[
               ["passphrase", "Phrase"],
               ["recovery", "Recovery"]
             ].map(([id, label]) => (
-              <button key={id} type="button" onClick={() => setMode(id)} className={cx("rounded-full px-3 py-1.5 text-xs font-semibold transition", mode === id ? "bg-[#1d1d1f] text-white" : "text-[#6e6e73]")}>{label}</button>
+              <button key={id} type="button" onClick={() => setMode(id)} className={cx("rounded-full px-3 py-1.5 text-xs font-semibold transition", mode === id ? "bg-[#1d1d1f] text-white" : "text-[var(--ink-2)]")}>{label}</button>
             ))}
           </div>
-          <input className="mt-3 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none focus:border-[#0071e3]" type={mode === "passphrase" ? "password" : "text"} value={secret} onChange={(event) => setSecret(event.target.value)} placeholder={mode === "passphrase" ? "Vault phrase for this backup" : "Recovery key for this backup"} />
+          <input className="mt-3 w-full rounded-2xl border border-[var(--line-2)] bg-[var(--surface)] px-4 py-3 text-sm outline-none focus:border-[#0071e3]" type={mode === "passphrase" ? "password" : "text"} value={secret} onChange={(event) => setSecret(event.target.value)} placeholder={mode === "passphrase" ? "Vault phrase for this backup" : "Recovery key for this backup"} />
           <button type="button" onClick={decryptPreview} disabled={busy || !secret.trim()} className="mt-3 w-full rounded-full bg-[#1d1d1f] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Checking..." : "Run practice preview"}</button>
         </div>
       )}
       {preview?.ok && (
         <div className="mt-3 max-w-sm rounded-[1.25rem] border border-[#0071e3]/20 bg-[#0071e3]/8 p-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#0f4c81]">{preview.impactCopy.eyebrow}</p>
-          <p className="mt-2 text-sm font-semibold text-[#0f4c81]">{preview.impactCopy.summary}</p>
-          <p className="mt-2 text-xs leading-5 text-[#0f4c81]/80">{preview.impactCopy.unchanged}</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--blue)]">{preview.impactCopy.eyebrow}</p>
+          <p className="mt-2 text-sm font-semibold text-[var(--blue)]">{preview.impactCopy.summary}</p>
+          <p className="mt-2 text-xs leading-5 text-[var(--blue)]/80">{preview.impactCopy.unchanged}</p>
           <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
             <RestoreMetric label="Format" value={`v${preview.metadata.formatVersion}`} />
             <RestoreMetric label="Records" value={preview.metadata.recordCount} />
             <RestoreMetric label="Attachments" value={preview.metadata.attachmentCount} />
             <RestoreMetric label="Audit events" value={preview.metadata.auditEventCount} />
           </div>
-          <div className="mt-3 rounded-2xl bg-white/70 p-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6e6e73]">Restore impact</p>
-            <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-[#6e6e73]">
+          <div className="mt-3 rounded-2xl bg-[var(--surface-3)] p-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ink-2)]">Restore impact</p>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-[var(--ink-2)]">
               <span>Current records: {preview.impact.current?.recordCount ?? "locked"}</span>
               <span>Incoming records: {preview.impact.incoming.recordCount}</span>
               <span>Current attachments: {preview.impact.current?.attachmentCount ?? "locked"}</span>
               <span>Incoming attachments: {preview.impact.incoming.attachmentCount}</span>
             </div>
-            <p className="mt-2 text-xs leading-5 text-[#6e6e73]">{preview.impactCopy.destructiveWarning}</p>
+            <p className="mt-2 text-xs leading-5 text-[var(--ink-2)]">{preview.impactCopy.destructiveWarning}</p>
           </div>
-          <p className="mt-3 text-xs leading-5 text-[#0f4c81]">Created {preview.metadata.createdAt ? new Date(preview.metadata.createdAt).toLocaleString() : "unknown"}. Updated {preview.metadata.updatedAt ? new Date(preview.metadata.updatedAt).toLocaleString() : "unknown"}.</p>
+          <p className="mt-3 text-xs leading-5 text-[var(--blue)]">Created {preview.metadata.createdAt ? new Date(preview.metadata.createdAt).toLocaleString() : "unknown"}. Updated {preview.metadata.updatedAt ? new Date(preview.metadata.updatedAt).toLocaleString() : "unknown"}.</p>
           <div className="mt-3 rounded-2xl border border-[#ff3b30]/20 bg-[#ff3b30]/8 p-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#a12b2b]">Destructive replace</p>
-            <p className="mt-2 text-xs leading-5 text-[#a12b2b]">This is the only path that changes local vault data. Type the exact phrase below to continue.</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--red-2)]">Destructive replace</p>
+            <p className="mt-2 text-xs leading-5 text-[var(--red-2)]">This is the only path that changes local vault data. Type the exact phrase below to continue.</p>
           </div>
-          <label className="mt-3 block text-xs font-semibold text-[#a12b2b]">
+          <label className="mt-3 block text-xs font-semibold text-[var(--red-2)]">
             Type {DESTRUCTIVE_RESTORE_CONFIRMATION} to confirm
-            <input className="mt-2 w-full rounded-2xl border border-[#34c759]/20 bg-white px-4 py-3 text-sm text-[#1d1d1f] outline-none" value={confirmText} onChange={(event) => setConfirmText(event.target.value)} />
+            <input className="mt-2 w-full rounded-2xl border border-[#34c759]/20 bg-[var(--surface)] px-4 py-3 text-sm text-[var(--ink)] outline-none" value={confirmText} onChange={(event) => setConfirmText(event.target.value)} />
           </label>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            <button type="button" onClick={refusePreview} className="rounded-full border border-black/10 bg-white px-4 py-2.5 text-sm font-semibold text-[#1d1d1f]">Close preview without replacing</button>
+            <button type="button" onClick={refusePreview} className="rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-4 py-2.5 text-sm font-semibold text-[var(--ink)]">Close preview without replacing</button>
             <button type="button" onClick={confirmRestore} disabled={!canConfirmDestructiveRestore(confirmText)} className="rounded-full bg-[#1d1d1f] px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45">Replace local vault</button>
           </div>
         </div>
       )}
-      {error && <div className="mt-2 text-xs font-semibold text-[#b42318]">{error}</div>}
+      {error && <div className="mt-2 text-xs font-semibold text-[var(--red-2)]">{error}</div>}
     </div>
   );
 }
@@ -5506,42 +6158,42 @@ function BackupVerificationPanel({ currentRecord, backupHealth, onBackupHealthCh
   return (
     <div className="max-w-sm">
       <BackupHealthPanel copy={healthCopy} health={backupHealth} />
-      <label className="cursor-pointer rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-[#1d1d1f] shadow-sm transition hover:bg-[#fbfbfd]">
+      <label className="cursor-pointer rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-4 py-2 text-sm font-semibold text-[var(--ink)] shadow-sm transition hover:bg-[var(--surface-2)]">
         Verify backup
         <input className="hidden" type="file" accept="application/json,.json" onChange={selectBackup} />
       </label>
-      <p className="mt-2 max-w-xs text-xs leading-5 text-[#86868b]">Verification decrypts a backup in memory to confirm it can open. It does not replace your local vault or prove the backup is current.</p>
+      <p className="mt-2 max-w-xs text-xs leading-5 text-[var(--ink-3)]">Verification decrypts a backup in memory to confirm it can open. It does not replace your local vault or prove the backup is current.</p>
       {backupText && (
-        <div className="mt-3 max-w-sm rounded-[1.25rem] border border-black/10 bg-[#f5f5f7] p-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6e6e73]">Verification only</p>
-          <p className="mt-2 text-sm font-semibold text-[#1d1d1f]">{backupName}</p>
-          <div className="mt-3 grid grid-cols-2 gap-2 rounded-full bg-white p-1">
+        <div className="mt-3 max-w-sm rounded-[1.25rem] border border-[var(--line-2)] bg-[var(--bg)] p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ink-2)]">Verification only</p>
+          <p className="mt-2 text-sm font-semibold text-[var(--ink)]">{backupName}</p>
+          <div className="mt-3 grid grid-cols-2 gap-2 rounded-full bg-[var(--surface)] p-1">
             {[
               ["passphrase", "Phrase"],
               ["recovery", "Recovery"]
             ].map(([id, label]) => (
-              <button key={id} type="button" onClick={() => setMode(id)} className={cx("rounded-full px-3 py-1.5 text-xs font-semibold transition", mode === id ? "bg-[#1d1d1f] text-white" : "text-[#6e6e73]")}>{label}</button>
+              <button key={id} type="button" onClick={() => setMode(id)} className={cx("rounded-full px-3 py-1.5 text-xs font-semibold transition", mode === id ? "bg-[#1d1d1f] text-white" : "text-[var(--ink-2)]")}>{label}</button>
             ))}
           </div>
-          <input className="mt-3 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none focus:border-[#0071e3]" type={mode === "passphrase" ? "password" : "text"} value={secret} onChange={(event) => setSecret(event.target.value)} placeholder={mode === "passphrase" ? "Vault phrase for this backup" : "Recovery key for this backup"} />
+          <input className="mt-3 w-full rounded-2xl border border-[var(--line-2)] bg-[var(--surface)] px-4 py-3 text-sm outline-none focus:border-[#0071e3]" type={mode === "passphrase" ? "password" : "text"} value={secret} onChange={(event) => setSecret(event.target.value)} placeholder={mode === "passphrase" ? "Vault phrase for this backup" : "Recovery key for this backup"} />
           <button type="button" onClick={runVerification} disabled={busy || !secret.trim()} className="mt-3 w-full rounded-full bg-[#1d1d1f] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Verifying..." : "Verify without restoring"}</button>
         </div>
       )}
       {result?.ok && (
         <div className="mt-3 max-w-sm rounded-[1.25rem] border border-[#34c759]/20 bg-[#34c759]/10 p-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#0b6b3a]">Backup opens</p>
-          <p className="mt-2 text-sm font-semibold text-[#0b6b3a]">This file decrypted successfully. It has not replaced your local vault.</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--green-ink)]">Backup opens</p>
+          <p className="mt-2 text-sm font-semibold text-[var(--green-ink)]">This file decrypted successfully. It has not replaced your local vault.</p>
           <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
             <RestoreMetric label="Format" value={result.formatLabel.replace(" encrypted backup manifest", "")} />
             <RestoreMetric label="Records" value={result.metadata.recordCount} />
             <RestoreMetric label="Attachments" value={result.metadata.attachmentCount} />
             <RestoreMetric label="Audit events" value={result.metadata.auditEventCount} />
           </div>
-          <p className="mt-3 text-xs leading-5 text-[#0b6b3a]">Verification does not mean this backup is the newest copy. Backup health comes in the next stage.</p>
+          <p className="mt-3 text-xs leading-5 text-[var(--green-ink)]">Verification does not mean this backup is the newest copy. Backup health comes in the next stage.</p>
         </div>
       )}
       {result && !result.ok && (
-        <div className="mt-3 max-w-sm rounded-[1.25rem] border border-[#ff3b30]/20 bg-[#ff3b30]/8 p-4 text-sm font-semibold text-[#a12b2b]">
+        <div className="mt-3 max-w-sm rounded-[1.25rem] border border-[#ff3b30]/20 bg-[#ff3b30]/8 p-4 text-sm font-semibold text-[var(--red-2)]">
           {verificationErrorCopy(result)}
         </div>
       )}
@@ -5553,10 +6205,10 @@ function BackupHealthPanel({ copy, health }) {
   const status = health?.status;
   const reminder = getBackupReminderCopy(health);
   const tone = status === "verified_current"
-    ? "border-[#34c759]/20 bg-[#34c759]/10 text-[#0b6b3a]"
+    ? "border-[#34c759]/20 bg-[#34c759]/10 text-[var(--green-ink)]"
     : status === "verified_stale" || status === "verification_failed"
-      ? "border-[#ff9500]/25 bg-[#ff9500]/10 text-[#7a4a00]"
-      : "border-black/10 bg-white text-[#1d1d1f]";
+      ? "border-[#ff9500]/25 bg-[#ff9500]/10 text-[var(--amber-ink)]"
+      : "border-[var(--line-2)] bg-[var(--surface)] text-[var(--ink)]";
 
   return (
     <div className={cx("mb-3 rounded-[1.25rem] border p-4", tone)}>
@@ -5564,7 +6216,7 @@ function BackupHealthPanel({ copy, health }) {
       <h3 className="mt-2 text-base font-semibold">{copy.title}</h3>
       <p className="mt-2 text-xs leading-5 opacity-75">{copy.body}</p>
       {reminder.level === "stale" && (
-        <div className="mt-3 rounded-2xl bg-white/70 p-3">
+        <div className="mt-3 rounded-2xl bg-[var(--surface-3)] p-3">
           <p className="text-xs font-semibold">{reminder.title}</p>
           <p className="mt-1 text-xs leading-5 opacity-75">{reminder.body}</p>
         </div>
@@ -5590,13 +6242,37 @@ function restoreEraCopy(era) {
 
 function RestoreMetric({ label, value }) {
   return (
-    <div className="rounded-2xl bg-white/70 p-3">
-      <span className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-[#6e6e73]">{label}</span>
-      <strong className="mt-1 block text-lg text-[#1d1d1f]">{value}</strong>
+    <div className="rounded-2xl bg-[var(--surface-3)] p-3">
+      <span className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--ink-2)]">{label}</span>
+      <strong className="mt-1 block text-lg text-[var(--ink)]">{value}</strong>
     </div>
   );
 }
 
 initTelemetry();
 registerServiceWorker();
-createRoot(document.getElementById("root")).render(<App />);
+function ThemeToggle() {
+  const [theme, setTheme] = useState(() => (typeof localStorage !== "undefined" && localStorage.getItem("lyfos-theme")) === "dark" ? "dark" : "light");
+  useEffect(() => {
+    document.body.dataset.theme = theme;
+    try { localStorage.setItem("lyfos-theme", theme); } catch {}
+  }, [theme]);
+  const dark = theme === "dark";
+  return (
+    <button
+      type="button"
+      aria-label="Switch theme"
+      title={dark ? "Switch to light" : "Switch to dark"}
+      onClick={() => setTheme(dark ? "light" : "dark")}
+      className="fixed right-4 top-4 z-30 grid h-9 w-9 place-items-center rounded-full border border-[var(--line-2)] bg-[var(--surface)] text-[var(--ink-2)] shadow-[0_2px_8px_rgba(0,0,0,0.08)] transition hover:text-[var(--ink)]"
+    >
+      {dark ? (
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4.2" /><path d="M12 2 V4 M12 20 V22 M4 12 H2 M22 12 H20 M5 5 l1.5 1.5 M17.5 17.5 L19 19 M19 5 l-1.5 1.5 M6.5 17.5 L5 19" /></svg>
+      ) : (
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.8 A9 9 0 1 1 11.2 3 a7 7 0 0 0 9.8 9.8 Z" /></svg>
+      )}
+    </button>
+  );
+}
+
+createRoot(document.getElementById("root")).render(<><App /><ThemeToggle /></>);
