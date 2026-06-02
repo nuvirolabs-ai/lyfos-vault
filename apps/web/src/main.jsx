@@ -4546,7 +4546,7 @@ function RecoveryPreview({ vault, settings, onClose }) {
   );
 }
 
-function ReleaseScreen({ vault, onSave, session, vaultKey }) {
+function ReleaseScreen({ vault, onSave, session, vaultKey, entitlements }) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [settings, setSettings] = useState(vault.releaseSettings);
   const [activeKeys, setActiveKeys] = useState(() => settings.keyHolders.map((holder, index) => holder.trim() ? index : null).filter((index) => index !== null).slice(0, RELEASE_POLICY.requiredKeys));
