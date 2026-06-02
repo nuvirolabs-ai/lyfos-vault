@@ -1724,6 +1724,93 @@ function AtAGlance({ vault, backupHealth, onOpenArea, onNavigate }) {
   );
 }
 
+function GlobalSearch({ vault, onOpenArea, onOpenRecord, onNavigate }) {
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const boxRef = useRef(null);
+  const inputRef = useRef(null);
+  const query = q.trim().toLowerCase();
+
+  const results = useMemo(() => {
+    if (query.length < 3) return [];
+    const out = [];
+    const pages = [["home", "Home"], ["records", "All records"], ["money", "Balance sheet"], ["release", "Circle of trust"], ["settings", "Settings"]];
+    pages.forEach(([id, label]) => { if (label.toLowerCase().includes(query)) out.push({ kind: "page", id, label, sub: "Page" }); });
+    AREAS.forEach((a) => { if (a.label.toLowerCase().includes(query) || a.promise.toLowerCase().includes(query)) out.push({ kind: "area", area: a, label: a.label, sub: "Life area" }); });
+    (vault.items ?? []).forEach((it) => {
+      const hay = `${it.title} ${it.username} ${it.email} ${it.bankDetails} ${it.cardDetails} ${it.notes} ${typeLabel(it.type)}`.toLowerCase();
+      if (hay.includes(query)) out.push({ kind: "record", item: it, label: it.title || typeLabel(it.type), sub: getAreaForType(it.type).label });
+    });
+    return out.slice(0, 8);
+  }, [query, vault]);
+
+  useEffect(() => { setActive(0); }, [query]);
+  useEffect(() => {
+    function onDoc(e) { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); }
+    function onKey(e) { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); inputRef.current?.focus(); setOpen(true); } }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
+  }, []);
+
+  function choose(r) {
+    if (!r) return;
+    if (r.kind === "record") onOpenRecord(r.item);
+    else if (r.kind === "area") onOpenArea(r.area.id);
+    else onNavigate(r.id);
+    setQ(""); setOpen(false); inputRef.current?.blur();
+  }
+
+  const showDropdown = open && query.length >= 3;
+
+  return (
+    <div ref={boxRef} className="relative mx-auto hidden w-full max-w-md md:block">
+      <div className="flex items-center gap-2 rounded-[10px] border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-[13px] text-[var(--ink-3)] focus-within:border-[var(--accent)]">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="M21 21 L16 16" /></svg>
+        <input
+          ref={inputRef}
+          value={q}
+          onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown") { e.preventDefault(); setActive((a) => Math.min(a + 1, results.length - 1)); }
+            else if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)); }
+            else if (e.key === "Enter") { e.preventDefault(); choose(results[active]); }
+            else if (e.key === "Escape") { setOpen(false); }
+          }}
+          placeholder="Search records, money, people…"
+          className="flex-1 bg-transparent text-[13px] text-[var(--ink)] outline-none placeholder:text-[var(--ink-3)]"
+        />
+        <span className="rounded-[5px] border border-[var(--line)] bg-[var(--surface)] px-1.5 py-px font-mono text-[11px] text-[var(--ink-3)]">⌘K</span>
+      </div>
+
+      {showDropdown && (
+        <div className="absolute left-0 right-0 top-11 z-50 overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface)] shadow-[0_20px_54px_rgba(0,0,0,0.22)]">
+          {results.length === 0 ? (
+            <div className="px-4 py-6 text-center text-[13px] text-[var(--ink-3)]">No matches for “{q.trim()}”.</div>
+          ) : results.map((r, i) => (
+            <button
+              key={r.kind + (r.item?.id ?? r.area?.id ?? r.id) + i}
+              onMouseEnter={() => setActive(i)}
+              onClick={() => choose(r)}
+              className={cx("flex w-full items-center gap-3 px-4 py-2.5 text-left transition", i === active ? "bg-[var(--surface-2)]" : "")}
+            >
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[var(--surface-2)] text-[var(--ink-3)]">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={r.kind === "page" ? "M4 6 H20 M4 12 H20 M4 18 H14" : AREA_ICON[r.kind === "area" ? r.area.id : getAreaForType(r.item.type).id]} /></svg>
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13.5px] font-medium text-[var(--ink)]">{r.label}</span>
+                <span className="block truncate text-[12px] text-[var(--ink-3)]">{r.sub}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SettingsPage({ vault, onExport, onReset, onLoadDemo, session, onShowAuthScreen, onSignOut, subscription, entitlements, onSubscriptionChange, autoLockMs, onAutoLockChange }) {
   const supabaseOn = isSupabaseConfigured();
   const [theme, setTheme] = useState(() => (typeof document !== "undefined" && document.body.dataset.theme === "dark") ? "dark" : "light");
@@ -1801,9 +1888,11 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
   }
 
   const [areaId, setAreaId] = useState(null);
+  const [pendingRecordId, setPendingRecordId] = useState(null);
   const model = useMemo(() => getLifeModel(vault), [vault]);
   const stateDot = { protected: "var(--green)", review: "var(--amber)", exposed: "var(--rose,#c0335e)" };
-  function openArea(id) { setAreaId(id); setScreen("area"); }
+  function openArea(id) { setPendingRecordId(null); setAreaId(id); setScreen("area"); }
+  function openRecord(item) { const a = getAreaForType(item.type); setAreaId(a.id); setPendingRecordId(item.id); setScreen("area"); }
   const selectedArea = AREAS.find((a) => a.id === areaId) ?? AREAS[0];
   const initials = (session?.user?.email?.[0] ?? "L").toUpperCase();
 
@@ -1824,10 +1913,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
           </span>
           Lyfos
         </div>
-        <div className="mx-auto hidden w-full max-w-md items-center gap-2 rounded-[10px] border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-[13px] text-[var(--ink-3)] md:flex">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="M21 21 L16 16" /></svg>
-          Search records, money, people…
-        </div>
+        <GlobalSearch vault={vault} onOpenArea={openArea} onOpenRecord={openRecord} onNavigate={setScreen} />
         <div className="ml-auto flex items-center gap-2.5">
           <NotificationBell vault={vault} backupHealth={backupHealth} onNavigate={setScreen} onOpenSettings={() => setScreen("settings")} />
           <button onClick={() => onLock("Manual lock")} className="rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-3.5 py-1.5 text-[12.5px] font-semibold text-[var(--ink-2)] transition hover:text-[var(--ink)]">Seal</button>
@@ -1875,7 +1961,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
               {screen === "update"  && <UpdateScreen vault={vault} onSave={onSave} onNavigate={setScreen} />}
               {screen === "capture" && <CaptureScreen vault={vault} onSave={onSave} onNavigate={(s) => setScreen(s === "life" ? "home" : s)} />}
               {screen === "release" && <ReleaseScreen vault={vault} onSave={onSave} session={session} vaultKey={vaultKey} entitlements={entitlements} />}
-              {screen === "area"    && <CategoryWorkspace vault={vault} area={selectedArea} onSave={onSave} onCapture={() => setScreen("capture")} onClose={() => setScreen("home")} entitlements={entitlements} onOpenSettings={() => setScreen("settings")} />}
+              {screen === "area"    && <CategoryWorkspace vault={vault} area={selectedArea} initialRecordId={pendingRecordId} onSave={onSave} onCapture={() => setScreen("capture")} onClose={() => setScreen("home")} entitlements={entitlements} onOpenSettings={() => setScreen("settings")} />}
             {screen === "settings" && <SettingsPage vault={vault} onExport={onExport} onReset={onReset} onLoadDemo={loadDemoData} session={session} onShowAuthScreen={onShowAuthScreen} onSignOut={onSignOut} subscription={subscription} entitlements={entitlements} onSubscriptionChange={onSubscriptionChange} autoLockMs={autoLockMs} onAutoLockChange={onAutoLockChange} />}
 
               <footer className="mt-14 flex flex-wrap items-center justify-between gap-4 border-t border-[var(--line)] py-6 text-[11px] font-medium text-[var(--ink-4)]">
@@ -3642,7 +3728,7 @@ function BackupSizeNotice({ warning }) {
   );
 }
 
-function CategoryWorkspace({ vault, area, onSave, onCapture, onClose, entitlements, onOpenSettings }) {
+function CategoryWorkspace({ vault, area, initialRecordId, onSave, onCapture, onClose, entitlements, onOpenSettings }) {
   const [mode, setMode] = useState("overview");
   const [selectedId, setSelectedId] = useState(null);
   const [editingRecord, setEditingRecord] = useState(null);
@@ -3661,13 +3747,13 @@ function CategoryWorkspace({ vault, area, onSave, onCapture, onClose, entitlemen
   const selectedRecord = selectedId ? (records.find((item) => item.id === selectedId) ?? null) : null;
 
   useEffect(() => {
-    setMode("overview");
-    setSelectedId(null);
+    setMode(initialRecordId ? "detail" : "overview");
+    setSelectedId(initialRecordId ?? null);
     setEditingRecord(null);
     setQuery("");
     setFilter("all");
     setMessage("");
-  }, [area.id]);
+  }, [area.id, initialRecordId]);
 
   function startCreate() {
     setEditingRecord(createBlankRecord(area));
