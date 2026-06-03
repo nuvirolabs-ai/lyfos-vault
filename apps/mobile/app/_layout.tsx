@@ -10,6 +10,7 @@ import { StatusBar } from "expo-status-bar";
 import { AppProvider, useApp } from "../src/AppContext";
 import { registerForPushNotifications, attachNotificationTapHandler } from "../src/lib/notifications";
 import { isSupabaseConfigured } from "../src/lib/auth";
+import { nextRoute } from "../src/lib/routing";
 
 export default function RootLayout() {
   return (
@@ -35,28 +36,15 @@ function Routing() {
   }, [session?.user?.id]);
 
   useEffect(() => {
-    if (!sessionLoaded) return;
-    const first = segments[0] ?? "";
-    // Public routes (no auth needed) — let them stay
-    const PUBLIC = new Set(["invite", "claim", "release", "hold-release", "download", "admin", "auth"]);
-    if (PUBLIC.has(first)) return;
-
-    // Decide based on app state
-    if (isSupabaseConfigured() && !session && !storedRecord) {
-      if (first !== "(auth)") router.replace("/(auth)/sign-in");
-      return;
-    }
-    if (storedRecord && !unlocked) {
-      if (first !== "(entry)") router.replace("/(entry)/unlock");
-      return;
-    }
-    if (!storedRecord && session) {
-      if (first !== "(entry)") router.replace("/(entry)/create");
-      return;
-    }
-    if (unlocked && (first === "(auth)" || first === "(entry)" || first === "")) {
-      router.replace("/(tabs)/home");
-    }
+    const target = nextRoute({
+      sessionLoaded,
+      supabaseConfigured: isSupabaseConfigured(),
+      hasSession: Boolean(session),
+      hasStoredRecord: Boolean(storedRecord),
+      unlocked,
+      first: segments[0] ?? ""
+    });
+    if (target) router.replace(target as any);
   }, [sessionLoaded, session?.user?.id, storedRecord, unlocked, segments[0]]);
 
   return (
