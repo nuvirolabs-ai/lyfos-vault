@@ -20,11 +20,27 @@ import { gcm }        from "@noble/ciphers/aes";
 import nacl           from "tweetnacl";
 import { sha256 }     from "@noble/hashes/sha256";
 
-const ARGON2_PARAMS = {
+export interface Argon2Params { m: number; t: number; p: number; dkLen: number; }
+
+// Web-compatible parameters (hash-wasm on web uses the same). Used to read
+// any envelope that doesn't carry its own params.
+export const ARGON2_PARAMS: Argon2Params = {
   m: 64 * 1024,  // 64 MiB
   t: 3,          // iterations
   p: 1,          // parallelism
   dkLen: 32      // 256-bit output
+};
+
+// Lighter parameters for NEW mobile-created vaults. Pure-JS Argon2id at 64 MiB
+// is impractical on Hermes (tens of seconds / OOM); 19 MiB + t=2 is an
+// OWASP-recommended config that derives in a fraction of the time. The chosen
+// params are written into each envelope's kdf.params, and both mobile and web
+// read them back on unlock — so vaults stay fully cross-compatible.
+export const ARGON2_PARAMS_MOBILE: Argon2Params = {
+  m: 19456,      // 19 MiB
+  t: 2,
+  p: 1,
+  dkLen: 32
 };
 
 // ============================================================
@@ -47,9 +63,9 @@ export async function aesGcmDecrypt(key: Uint8Array, envelope: { iv: string; cip
 // ============================================================
 // Argon2id (key derivation from passphrase)
 // ============================================================
-export async function deriveArgon2idKey(secret: string, salt: Uint8Array): Promise<Uint8Array> {
+export async function deriveArgon2idKey(secret: string, salt: Uint8Array, params: Argon2Params = ARGON2_PARAMS): Promise<Uint8Array> {
   // @noble/hashes accepts string or Uint8Array for the password.
-  return argon2id(secret, salt, ARGON2_PARAMS);
+  return argon2id(secret, salt, params);
 }
 
 // ============================================================

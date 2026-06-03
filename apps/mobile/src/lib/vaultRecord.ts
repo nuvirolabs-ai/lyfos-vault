@@ -4,7 +4,8 @@
 
 import {
   aesGcmEncrypt, aesGcmDecrypt, deriveArgon2idKey,
-  randomBytes, toBase64, fromBase64, utf8, fromUtf8
+  randomBytes, toBase64, fromBase64, utf8, fromUtf8,
+  ARGON2_PARAMS, ARGON2_PARAMS_MOBILE, Argon2Params
 } from "./crypto";
 import { generateMnemonic, validateMnemonic, mnemonicToEntropy } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english";
@@ -86,13 +87,27 @@ export async function reencryptVaultPayload(record: VaultRecord, vaultKey: Uint8
   };
 }
 
+// Envelope params travel in hash-wasm's shape (what web writes/reads);
+// convert to/from @noble/hashes' shape.
+interface EnvelopeKdfParams { memoryKiB: number; iterations: number; parallelism: number; outputLength: number; }
+function toEnvelopeParams(p: Argon2Params): EnvelopeKdfParams {
+  return { memoryKiB: p.m, iterations: p.t, parallelism: p.p, outputLength: p.dkLen };
+}
+function toNobleParams(p?: EnvelopeKdfParams): Argon2Params {
+  if (!p) return ARGON2_PARAMS; // legacy/absent → 64 MiB web default
+  return { m: p.memoryKiB, t: p.iterations, p: p.parallelism, dkLen: p.outputLength };
+}
+
 async function wrapVaultKey(vaultKey: Uint8Array, secret: string, type: "passphrase" | "recovery"): Promise<KeyEnvelope> {
   const salt = randomBytes(16);
-  const wrappingKey = await deriveArgon2idKey(secret, salt);
+  // New mobile vaults use the lighter, Hermes-practical params, recorded in
+  // the envelope so any client (mobile or web) derives the same key on unlock.
+  const params = ARGON2_PARAMS_MOBILE;
+  const wrappingKey = await deriveArgon2idKey(secret, salt, params);
   const wrapped = await aesGcmEncrypt(wrappingKey, utf8(JSON.stringify({ vaultKey: toBase64(vaultKey) })));
   return {
     type,
-    kdf: { name: ARGON2ID, salt: toBase64(salt), params: { memoryKiB: 64*1024, iterations: 3, parallelism: 1, outputLength: 32 } },
+    kdf: { name: ARGON2ID, salt: toBase64(salt), params: toEnvelopeParams(params) },
     wrappedKey: { algorithm: "AES-GCM", ...wrapped }
   };
 }
@@ -101,7 +116,9 @@ async function unwrapVaultKey(envelope: KeyEnvelope, secret: string): Promise<Ui
   const salt = fromBase64(envelope.kdf.salt);
   let wrappingKey: Uint8Array;
   if (envelope.kdf.name === ARGON2ID) {
-    wrappingKey = await deriveArgon2idKey(secret, salt);
+    // Always derive with the params stored in THIS envelope, so we can open
+    // vaults created with any params (e.g. 64 MiB web vaults).
+    wrappingKey = await deriveArgon2idKey(secret, salt, toNobleParams(envelope.kdf.params as EnvelopeKdfParams | undefined));
   } else if (envelope.kdf.name === PBKDF2) {
     wrappingKey = await derivePbkdf2Key(secret, salt, envelope.kdf.iterations ?? 600000);
   } else {
