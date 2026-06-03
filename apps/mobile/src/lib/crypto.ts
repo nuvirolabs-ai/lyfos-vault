@@ -15,7 +15,7 @@
 //
 // All bytes go in / out as Uint8Array. Base64 helpers live at the bottom.
 
-import { argon2id }   from "@noble/hashes/argon2";
+import { argon2idAsync } from "@noble/hashes/argon2";
 import { gcm }        from "@noble/ciphers/aes";
 import nacl           from "tweetnacl";
 import { sha256 }     from "@noble/hashes/sha256";
@@ -64,8 +64,12 @@ export async function aesGcmDecrypt(key: Uint8Array, envelope: { iv: string; cip
 // Argon2id (key derivation from passphrase)
 // ============================================================
 export async function deriveArgon2idKey(secret: string, salt: Uint8Array, params: Argon2Params = ARGON2_PARAMS): Promise<Uint8Array> {
-  // @noble/hashes accepts string or Uint8Array for the password.
-  return argon2id(secret, salt, params);
+  // Use the ASYNC variant with asyncTick so the derivation yields to the event
+  // loop periodically instead of blocking the JS thread. On Hermes a synchronous
+  // Argon2id freezes the entire UI (buttons unresponsive, spinner stuck) for the
+  // whole computation; argon2idAsync keeps the app responsive and produces the
+  // identical key. asyncTick = max ms of work between yields.
+  return argon2idAsync(secret, salt, { ...params, asyncTick: 16 });
 }
 
 // ============================================================
