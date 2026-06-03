@@ -134,13 +134,8 @@ export default function CreateVaultScreen() {
             )}
 
             {error ? <Card tone="danger" style={{ marginTop: 12 }}><Body style={{ color: "#b42318" }}>{error}</Body></Card> : null}
-          </ScrollView>
 
-          {/* Action buttons live OUTSIDE the ScrollView in a fixed footer so a
-              tap always reaches them — a button inside a ScrollView can have
-              its first tap swallowed to dismiss the soft keyboard. */}
-          <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16 }}>
-            <Footnote style={{ textAlign: "center", marginBottom: 8, color: colors.text4 }}>debug: {dbg}</Footnote>
+            <Footnote style={{ textAlign: "center", marginTop: 20, marginBottom: 8, color: colors.text4 }}>debug: {dbg}</Footnote>
             <PrimaryButton
               onPress={go}
               busy={busy}
@@ -151,7 +146,7 @@ export default function CreateVaultScreen() {
                 <LinkText onPress={() => { setError(""); setStep((s) => (s - 1) as any); }}>Back</LinkText>
               </View>
             )}
-          </View>
+          </ScrollView>
         </SafeAreaView>
       </KeyboardAvoidingView>
     </Screen>

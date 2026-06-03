@@ -3,6 +3,7 @@
 // session + storedRecord + unlocked state.
 
 import React, { useEffect } from "react";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Stack, useRouter, useSegments, useRootNavigationState } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -14,12 +15,17 @@ import { nextRoute } from "../src/lib/routing";
 
 export default function RootLayout() {
   return (
-    <SafeAreaProvider>
-      <AppProvider>
-        <StatusBar style="dark" />
-        <Routing />
-      </AppProvider>
-    </SafeAreaProvider>
+    // GestureHandlerRootView is required at the app root for React Navigation /
+    // expo-router touch + gesture handling to work on native. Without it,
+    // taps can silently fail to reach buttons.
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <AppProvider>
+          <StatusBar style="dark" />
+          <Routing />
+        </AppProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
