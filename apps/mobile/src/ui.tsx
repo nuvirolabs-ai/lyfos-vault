@@ -1,31 +1,36 @@
 // Shared UI primitives — minimal, matched to the web's Apple aesthetic.
 
 import React from "react";
-import { Pressable, Text, TextInput, View, ViewStyle, TextStyle, StyleSheet, ActivityIndicator } from "react-native";
+import { Pressable, Text, TextInput, TextProps, View, ViewStyle, TextStyle, StyleSheet, ActivityIndicator } from "react-native";
 import { colors, radii, typography } from "./theme";
+
+// Text primitives forward any extra react-native Text props
+// (numberOfLines, selectable, onPress, accessibilityRole, etc.) so
+// truncation and copy-to-select work at the call sites.
+type TextComponentProps = TextProps & { style?: TextStyle };
 
 export function Screen({ children, style }: { children: React.ReactNode; style?: ViewStyle }) {
   return <View style={[s.screen, style]}>{children}</View>;
 }
 
-export function Eyebrow({ children }: { children: React.ReactNode }) {
-  return <Text style={s.eyebrow}>{String(children).toUpperCase()}</Text>;
+export function Eyebrow({ children, style, ...rest }: TextComponentProps) {
+  return <Text style={[s.eyebrow, style]} {...rest}>{String(children).toUpperCase()}</Text>;
 }
 
-export function H1({ children, style }: { children: React.ReactNode; style?: TextStyle }) {
-  return <Text style={[s.h1, style]}>{children}</Text>;
+export function H1({ children, style, ...rest }: TextComponentProps) {
+  return <Text style={[s.h1, style]} {...rest}>{children}</Text>;
 }
-export function H2({ children, style }: { children: React.ReactNode; style?: TextStyle }) {
-  return <Text style={[s.h2, style]}>{children}</Text>;
+export function H2({ children, style, ...rest }: TextComponentProps) {
+  return <Text style={[s.h2, style]} {...rest}>{children}</Text>;
 }
-export function H3({ children, style }: { children: React.ReactNode; style?: TextStyle }) {
-  return <Text style={[s.h3, style]}>{children}</Text>;
+export function H3({ children, style, ...rest }: TextComponentProps) {
+  return <Text style={[s.h3, style]} {...rest}>{children}</Text>;
 }
-export function Body({ children, style }: { children: React.ReactNode; style?: TextStyle }) {
-  return <Text style={[s.body, style]}>{children}</Text>;
+export function Body({ children, style, ...rest }: TextComponentProps) {
+  return <Text style={[s.body, style]} {...rest}>{children}</Text>;
 }
-export function Footnote({ children, style }: { children: React.ReactNode; style?: TextStyle }) {
-  return <Text style={[s.foot, style]}>{children}</Text>;
+export function Footnote({ children, style, ...rest }: TextComponentProps) {
+  return <Text style={[s.foot, style]} {...rest}>{children}</Text>;
 }
 
 export function PrimaryButton({ onPress, disabled, busy, label, style }: { onPress: () => void; disabled?: boolean; busy?: boolean; label: string; style?: ViewStyle }) {

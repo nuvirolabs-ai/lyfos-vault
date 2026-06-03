@@ -12,7 +12,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Screen, Eyebrow, H1, Body, Footnote, PrimaryButton, LinkText, Card } from "../src/ui";
 import { useApp } from "../src/AppContext";
 import { fetchMyReleaseRequests, fetchSharesReleasedFor } from "../src/lib/releaseClaim";
-import { openSealedShare, combineShares, fromUtf8, aesGcmDecrypt, fromBase64 } from "../src/lib/crypto";
+import { openSealedShare, fromUtf8, aesGcmDecrypt, fromBase64 } from "../src/lib/crypto";
+import { combineShares } from "../src/lib/vaultRecord";
 import { getSupabase } from "../src/lib/supabase";
 import { colors } from "../src/theme";
 
