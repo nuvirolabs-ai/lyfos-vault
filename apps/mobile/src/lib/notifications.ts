@@ -21,7 +21,10 @@ import { ensureDeviceToken } from "./storage";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
+    // SDK 54 split shouldShowAlert into banner + list; keep alert for back-compat.
     shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: false,
     shouldSetBadge: true
   })

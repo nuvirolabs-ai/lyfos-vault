@@ -1,6 +1,6 @@
 # Lyfos Mobile
 
-React Native + Expo SDK 52. Shares the same Supabase backend +
+React Native + Expo SDK 54. Shares the same Supabase backend +
 release engine as `apps/web`. Same crypto wire format — a holder
 who accepted on web can release on mobile (and vice versa).
 

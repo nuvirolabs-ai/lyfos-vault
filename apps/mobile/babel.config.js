@@ -1,7 +1,8 @@
 module.exports = function (api) {
   api.cache(true);
   return {
-    presets: ["babel-preset-expo"],
-    plugins: ["react-native-reanimated/plugin"]
+    // SDK 54: babel-preset-expo auto-includes react-native-worklets/plugin
+    // (reanimated v4), so no manual reanimated plugin is needed here.
+    presets: ["babel-preset-expo"]
   };
 };

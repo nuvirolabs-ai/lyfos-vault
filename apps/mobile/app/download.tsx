@@ -5,7 +5,9 @@ import React, { useEffect, useState } from "react";
 import { ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import * as FileSystem from "expo-file-system";
+// SDK 54: the classic documentDirectory/writeAsStringAsync API moved to the
+// /legacy entry (the default export is now the new File/Directory API).
+import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
