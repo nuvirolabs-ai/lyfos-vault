@@ -4,7 +4,7 @@
 
 import React, { useEffect } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { Stack, useRouter, useSegments } from "expo-router";
+import { Stack, useRouter, useSegments, useRootNavigationState } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 
 import { AppProvider, useApp } from "../src/AppContext";
@@ -27,6 +27,11 @@ function Routing() {
   const { session, sessionLoaded, storedRecord, unlocked } = useApp();
   const router = useRouter();
   const segments = useSegments();
+  // Becomes truthy only once the root navigator has actually mounted. Calling
+  // router.replace() before that throws "Attempted to navigate before mounting
+  // the Root Layout component", so we gate all redirects on it.
+  const navState = useRootNavigationState();
+  const navReady = Boolean(navState?.key);
 
   // Register push + attach tap handler when signed in
   useEffect(() => {
@@ -36,6 +41,7 @@ function Routing() {
   }, [session?.user?.id]);
 
   useEffect(() => {
+    if (!navReady) return;
     const target = nextRoute({
       sessionLoaded,
       supabaseConfigured: isSupabaseConfigured(),
@@ -44,8 +50,14 @@ function Routing() {
       unlocked,
       first: segments[0] ?? ""
     });
-    if (target) router.replace(target as any);
-  }, [sessionLoaded, session?.user?.id, storedRecord, unlocked, segments[0]]);
+    if (!target) return;
+    // Defer to the next macrotask: even once navState has a key, the navigator
+    // may not be fully committed on the very first tick, which throws
+    // "Attempted to navigate before mounting the Root Layout". A 0ms timeout
+    // lands after the commit and navigates reliably.
+    const id = setTimeout(() => router.replace(target as any), 0);
+    return () => clearTimeout(id);
+  }, [navReady, sessionLoaded, session?.user?.id, storedRecord, unlocked, segments[0]]);
 
   return (
     <Stack

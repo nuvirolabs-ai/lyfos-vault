@@ -78,7 +78,7 @@ function LifeMapPane() {
   const totalProtected = items.length > 0 ? LIFE_AREAS.filter((a) => counts[a.id] > 0).length : 0;
 
   return (
-    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 60 }}>
+    <ScrollView keyboardShouldPersistTaps="always" contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 60 }}>
       <View style={{ alignItems: "center", marginTop: 12 }}>
         <H1 style={{ textAlign: "center" }}>{totalProtected} of {LIFE_AREAS.length} areas protected</H1>
         <Footnote style={{ marginTop: 6, color: colors.text3 }}>
@@ -119,7 +119,7 @@ function LifeMapPane() {
 
 function CapturePane() {
   return (
-    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 60 }}>
+    <ScrollView keyboardShouldPersistTaps="always" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 60 }}>
       <H1>Drop in the mess.</H1>
       <Body style={{ marginTop: 12, color: colors.text2 }}>
         Paste a note or attach proof. We propose a draft; you decide what becomes a record.
@@ -132,7 +132,7 @@ function CapturePane() {
 function ReleasePane() {
   const { session, entitlements } = useApp();
   return (
-    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 60 }}>
+    <ScrollView keyboardShouldPersistTaps="always" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 60 }}>
       {!session ? (
         <Card tone="amber">
           <Footnote style={{ color: colors.amberInk, fontWeight: "600" }}>PLANNING MODE</Footnote>

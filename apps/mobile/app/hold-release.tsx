@@ -39,7 +39,7 @@ export default function HoldReleaseScreen() {
   return (
     <Screen>
       <SafeAreaView style={{ flex: 1 }}>
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 80 }}>
+        <ScrollView keyboardShouldPersistTaps="always" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 80 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
             <LinkText onPress={() => router.back()}>‹ Back</LinkText>
             <Eyebrow>Lyfos · Key holder</Eyebrow>

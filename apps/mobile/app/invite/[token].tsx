@@ -102,7 +102,7 @@ export default function InviteScreen() {
   return (
     <Screen>
       <SafeAreaView style={{ flex: 1 }}>
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20 }}>
+        <ScrollView keyboardShouldPersistTaps="always" contentContainerStyle={{ padding: 20 }}>
           <Eyebrow>Step 2 of 2</Eyebrow>
           <H1 style={{ marginTop: 12 }}>Set up your release key.</H1>
           <Footnote style={{ marginTop: 10 }}>

@@ -53,7 +53,7 @@ export default function CreateVaultScreen() {
     <Screen>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <SafeAreaView style={{ flex: 1 }}>
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 36, flexGrow: 1 }}>
+          <ScrollView keyboardShouldPersistTaps="always" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 36, paddingBottom: 16 }}>
             <Eyebrow>Lyfos · Step {step} of 3</Eyebrow>
             <H1 style={{ marginTop: 14 }}>
               {step === 1 ? "Choose your vault passphrase."
@@ -118,20 +118,23 @@ export default function CreateVaultScreen() {
             )}
 
             {error ? <Card tone="danger" style={{ marginTop: 12 }}><Body style={{ color: "#b42318" }}>{error}</Body></Card> : null}
+          </ScrollView>
 
+          {/* Action buttons live OUTSIDE the ScrollView in a fixed footer so a
+              tap always reaches them — a button inside a ScrollView can have
+              its first tap swallowed to dismiss the soft keyboard. */}
+          <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16 }}>
             <PrimaryButton
               onPress={go}
               busy={busy}
               label={step === 3 ? "Create vault" : "Continue"}
-              style={{ marginTop: 24 }}
             />
-
             {step > 1 && (
               <View style={{ alignItems: "center", marginTop: 16 }}>
                 <LinkText onPress={() => { setError(""); setStep((s) => (s - 1) as any); }}>Back</LinkText>
               </View>
             )}
-          </ScrollView>
+          </View>
         </SafeAreaView>
       </KeyboardAvoidingView>
     </Screen>

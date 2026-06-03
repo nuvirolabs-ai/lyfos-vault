@@ -31,7 +31,7 @@ export default function HomeScreen() {
     return (
       <Screen>
         <SafeAreaView style={{ flex: 1 }}>
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 40, paddingBottom: 80 }}>
+          <ScrollView keyboardShouldPersistTaps="always" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 40, paddingBottom: 80 }}>
             <Eyebrow>Welcome</Eyebrow>
             <H1 style={{ marginTop: 16 }}>Your wealth, in one number.</H1>
             <Body style={{ marginTop: 14, color: colors.text2 }}>
@@ -50,7 +50,7 @@ export default function HomeScreen() {
   return (
     <Screen>
       <SafeAreaView style={{ flex: 1 }}>
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 36, paddingBottom: 100 }}>
+        <ScrollView keyboardShouldPersistTaps="always" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 36, paddingBottom: 100 }}>
           {/* Top bar */}
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <Eyebrow>{monthLabel(currentKey)}</Eyebrow>

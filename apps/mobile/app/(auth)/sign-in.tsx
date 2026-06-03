@@ -41,7 +41,7 @@ export default function SignInScreen() {
     <Screen>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <SafeAreaView style={{ flex: 1 }}>
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 36, flexGrow: 1 }}>
+          <ScrollView keyboardShouldPersistTaps="always" contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 36, flexGrow: 1 }}>
             <Eyebrow>Lyfos</Eyebrow>
             <H1 style={{ marginTop: 14 }}>
               {mode === "sign-up" ? "Create your account." : "Welcome back."}

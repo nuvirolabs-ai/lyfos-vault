@@ -102,7 +102,7 @@ export default function UpdateScreen() {
   return (
     <Screen>
       <SafeAreaView style={{ flex: 1 }}>
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 160 }}>
+        <ScrollView keyboardShouldPersistTaps="always" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 160 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <LinkText onPress={() => router.back()}>‹ Home</LinkText>
             <Eyebrow>{monthLabel(key)}</Eyebrow>
