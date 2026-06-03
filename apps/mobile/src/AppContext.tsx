@@ -181,12 +181,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [session]);
 
   const createVault = useCallback(async (input: { passphrase: string; recoveryPhrase: string; initialVault?: any }) => {
+    const log = (m: string) => { try { console.log("[lyfos:createVault]", m); } catch {} };
     const v = input.initialVault ?? createEmptyVault();
+    log("createVaultRecord start (argon2id ×2)…");
+    const t0 = Date.now();
     const { record, vaultKey } = await createVaultRecord({
       vault: v, passphrase: input.passphrase, recoveryPhrase: input.recoveryPhrase
     });
+    log(`createVaultRecord done in ${Date.now() - t0}ms; persisting…`);
     vaultKeyRef.current = vaultKey;
     await persistDecrypted(record, v);
+    log("persisted ok");
     lastActivityRef.current = Date.now();
   }, [persistDecrypted]);
 

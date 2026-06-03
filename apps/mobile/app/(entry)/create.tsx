@@ -21,27 +21,43 @@ export default function CreateVaultScreen() {
   const [confirmPhrase, setConfirmPhrase] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [dbg, setDbg] = useState("ready");
 
   const words = useMemo(() => phrase.split(" "), [phrase]);
 
+  // Diagnostic logger — prints to the Metro terminal AND shows on screen so
+  // we can see exactly what happens on a real device.
+  function log(msg: string) {
+    // eslint-disable-next-line no-console
+    console.log("[lyfos:create]", msg);
+    setDbg(msg);
+  }
+
   async function go() {
+    log(`tap · step ${step}`);
     setError("");
     if (step === 1) {
-      if (passphrase.length < 12) return setError("At least 12 characters. A memorable phrase is better than a short password.");
-      if (passphrase !== confirmPp) return setError("Passphrases don't match.");
-      setStep(2);
+      if (passphrase.length < 12) { log("step1 reject: passphrase < 12"); return setError("At least 12 characters. A memorable phrase is better than a short password."); }
+      if (passphrase !== confirmPp) { log("step1 reject: mismatch"); return setError("Passphrases don't match."); }
+      log("step1 ok → step2"); setStep(2);
       return;
     }
-    if (step === 2) { setStep(3); return; }
+    if (step === 2) { log("step2 → step3"); setStep(3); return; }
     if (step === 3) {
-      if (normalizeRecoveryKey(confirmPhrase) !== phrase) {
+      const norm = normalizeRecoveryKey(confirmPhrase);
+      log(`step3 compare · typed=${norm.split(" ").length}w expected=${phrase.split(" ").length}w match=${norm === phrase}`);
+      if (norm !== phrase) {
         return setError("That doesn't match. Type the 24 words exactly as shown, with spaces between them.");
       }
       try {
         setBusy(true);
+        log("createVault start (deriving keys…)");
+        const t0 = Date.now();
         await createVault({ passphrase, recoveryPhrase: phrase });
+        log(`createVault done in ${Date.now() - t0}ms → navigating home`);
         router.replace("/(tabs)/home");
       } catch (err: any) {
+        log(`createVault ERROR: ${err?.message || err}`);
         setError(err?.message || "Couldn't create the vault.");
       } finally {
         setBusy(false);
@@ -124,6 +140,7 @@ export default function CreateVaultScreen() {
               tap always reaches them — a button inside a ScrollView can have
               its first tap swallowed to dismiss the soft keyboard. */}
           <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16 }}>
+            <Footnote style={{ textAlign: "center", marginBottom: 8, color: colors.text4 }}>debug: {dbg}</Footnote>
             <PrimaryButton
               onPress={go}
               busy={busy}
