@@ -14,7 +14,10 @@ export function Screen({ children, style }: { children: React.ReactNode; style?:
 }
 
 export function Eyebrow({ children, style, ...rest }: TextComponentProps) {
-  return <Text style={[s.eyebrow, style]} {...rest}>{String(children).toUpperCase()}</Text>;
+  // Children may be an array (interpolated JSX like `Step {n} of 3`); join
+  // instead of String(array) which would insert commas ("Step ,3, of 3").
+  const text = React.Children.toArray(children).join("").toUpperCase();
+  return <Text style={[s.eyebrow, style]} {...rest}>{text}</Text>;
 }
 
 export function H1({ children, style, ...rest }: TextComponentProps) {

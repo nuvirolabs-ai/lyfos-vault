@@ -32,7 +32,7 @@ export default function SettingsScreen() {
   return (
     <Screen>
       <SafeAreaView style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 100 }}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 100 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <LinkText onPress={() => router.back()}>‹ Back</LinkText>
             <Eyebrow>Settings</Eyebrow>

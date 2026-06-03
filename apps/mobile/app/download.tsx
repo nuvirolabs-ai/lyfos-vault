@@ -126,7 +126,7 @@ export default function DownloadScreen() {
   return (
     <Screen>
       <SafeAreaView style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={{ padding: 20 }}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20 }}>
           <Eyebrow>Lyfos · Nominee</Eyebrow>
           <H1 style={{ marginTop: 8 }}>Release download</H1>
 

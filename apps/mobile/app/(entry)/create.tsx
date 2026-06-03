@@ -53,7 +53,7 @@ export default function CreateVaultScreen() {
     <Screen>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <SafeAreaView style={{ flex: 1 }}>
-          <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 36, flexGrow: 1 }}>
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 36, flexGrow: 1 }}>
             <Eyebrow>Lyfos · Step {step} of 3</Eyebrow>
             <H1 style={{ marginTop: 14 }}>
               {step === 1 ? "Choose your vault passphrase."

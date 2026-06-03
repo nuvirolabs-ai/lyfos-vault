@@ -80,7 +80,7 @@ export default function AreaScreen() {
   return (
     <Screen>
       <SafeAreaView style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 120 }}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 120 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <LinkText onPress={() => router.back()}>‹ Vault</LinkText>
             <Eyebrow>{area.label}</Eyebrow>
@@ -136,7 +136,7 @@ function RecordEditor({ record, area, onCancel, onSave, onDelete }: {
   return (
     <Screen>
       <SafeAreaView style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 120 }}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 120 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <LinkText onPress={onCancel}>‹ Back</LinkText>
             <Eyebrow>{record.id ? "Edit record" : "New record"}</Eyebrow>
@@ -148,7 +148,7 @@ function RecordEditor({ record, area, onCancel, onSave, onDelete }: {
               <Input value={draft.title} onChangeText={(t) => setDraft({ ...draft, title: t })} placeholder="HDFC salary account" />
             </Field>
             <Field label="Type">
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+              <ScrollView keyboardShouldPersistTaps="handled" horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
                 {TYPES.filter(([t]) => area.types.includes(t as string)).map(([t, label]) => (
                   <Pressable key={t} onPress={() => setDraft({ ...draft, type: t })}
                     style={{

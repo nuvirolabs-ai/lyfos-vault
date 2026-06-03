@@ -81,7 +81,7 @@ export default function SetupScreen() {
   return (
     <Screen>
       <SafeAreaView style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 120 }}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 120 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <LinkText onPress={() => router.back()}>‹ Back</LinkText>
             <Eyebrow>{isManage ? "Manage accounts" : "Set up balance sheet"}</Eyebrow>
