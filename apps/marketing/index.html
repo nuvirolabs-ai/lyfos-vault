@@ -90,13 +90,8 @@
 
   .ring .node-on { animation:nodepop .55s cubic-bezier(.34,1.56,.64,1) both; transform-box:fill-box; transform-origin:center; }
   @keyframes nodepop { 0%{ transform:scale(.2) } 70%{ transform:scale(1.25) } 100%{ transform:scale(1) } }
-
-  @media (prefers-reduced-motion: reduce) {
-    .reveal { opacity:1 !important; transform:none !important; transition:none; }
-    .device.float, #heroDevice.entered, .hero::before, .secured .sec-shield, .btn-green::after, .ring .node-on { animation:none !important; }
-    .scr-spark path { stroke-dashoffset:0 !important; }
-    html { scroll-behavior:auto; }
-  }
+  /* Note: motion intentionally runs regardless of the OS "reduce motion"
+     setting, at the product owner's request. */
 
   /* hero */
   .hero { text-align:center; padding:80px 0 0; position:relative; }
@@ -442,7 +437,7 @@
   const io=new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target);} }),{threshold:.12,rootMargin:'0px 0px -6% 0px'});
   document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
 
-  const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const REDUCED = false; // motion runs regardless of OS reduce-motion, per request
 
   // count-up the hero net worth
   (function(){
