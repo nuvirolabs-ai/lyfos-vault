@@ -37,10 +37,10 @@ export const ARGON2_PARAMS: Argon2Params = {
 // params are written into each envelope's kdf.params, and both mobile and web
 // read them back on unlock — so vaults stay fully cross-compatible.
 export const ARGON2_PARAMS_MOBILE: Argon2Params = {
-  m: 19456,      // 19 MiB
-  t: 2,
-  p: 1,
-  dkLen: 32
+  m: 8192,       // 8 MiB — tuned so pure-JS Argon2id on Hermes derives in a
+  t: 2,          // couple of seconds (vault create runs it twice) while staying
+  p: 1,          // memory-hard. Production should use a native Argon2id (dev
+  dkLen: 32      // build) and raise this back up.
 };
 
 // ============================================================

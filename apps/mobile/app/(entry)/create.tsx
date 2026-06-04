@@ -21,16 +21,13 @@ export default function CreateVaultScreen() {
   const [confirmPhrase, setConfirmPhrase] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [dbg, setDbg] = useState("ready");
 
   const words = useMemo(() => phrase.split(" "), [phrase]);
 
-  // Diagnostic logger — prints to the Metro terminal AND shows on screen so
-  // we can see exactly what happens on a real device.
+  // Lightweight logger to the Metro terminal for on-device debugging.
   function log(msg: string) {
     // eslint-disable-next-line no-console
     console.log("[lyfos:create]", msg);
-    setDbg(msg);
   }
 
   async function go() {
@@ -135,7 +132,7 @@ export default function CreateVaultScreen() {
 
             {error ? <Card tone="danger" style={{ marginTop: 12 }}><Body style={{ color: "#b42318" }}>{error}</Body></Card> : null}
 
-            <Footnote style={{ textAlign: "center", marginTop: 20, marginBottom: 8, color: colors.text4 }}>debug: {dbg}</Footnote>
+            {busy && <Footnote style={{ textAlign: "center", marginTop: 20, marginBottom: 8, color: colors.text3 }}>Encrypting your vault — this takes a few seconds…</Footnote>}
             <PrimaryButton
               onPress={go}
               busy={busy}
