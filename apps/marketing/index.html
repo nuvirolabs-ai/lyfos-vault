@@ -9,6 +9,10 @@
 <meta property="og:description" content="A zero-knowledge vault built for life recovery. Five people you trust, three to release, a 14-day hold that protects you the whole way." />
 <meta property="og:image" content="/og.png" />
 <meta name="theme-color" content="#f4f4f6" />
+<!-- Waitlist endpoint. Point this at your deployed Supabase function, e.g.
+     https://<project-ref>.functions.supabase.co/waitlist — or a path on your
+     domain that proxies to it. -->
+<meta name="lyfos-waitlist-endpoint" content="https://lyfos.signorvale.com/waitlist" />
 <link rel="icon" type="image/svg+xml" href="/icon.svg" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -454,11 +458,12 @@
       <div class="eyebrow reveal">Founding members</div>
       <h2 class="reveal" style="font-size:clamp(28px,4vw,42px);letter-spacing:-0.03em;font-weight:600;margin-top:14px;">Be one of the first thousand.</h2>
       <p class="lede reveal" style="margin-top:16px;">Founding members lock in founder pricing for life and get a direct line to the people building Lyfos.</p>
-      <form class="signup-row reveal" action="https://lyfos.signorvale.com/waitlist" method="post">
-        <input type="email" name="email" placeholder="you@example.com" required />
-        <button type="submit">Join</button>
+      <form class="signup-row reveal" id="waitlistForm" action="https://lyfos.signorvale.com/waitlist" method="post" novalidate>
+        <input type="email" name="email" id="waitlistEmail" placeholder="you@example.com" autocomplete="email" required />
+        <button type="submit" id="waitlistBtn">Join</button>
       </form>
-      <p class="subnote reveal">No marketing emails. One quiet note when we open the doors. That's the whole deal.</p>
+      <p class="form-note reveal" id="waitlistNote" role="status" aria-live="polite" hidden></p>
+      <p class="subnote reveal" id="waitlistSub">No marketing emails. One quiet note when we open the doors. That's the whole deal.</p>
     </div>
   </section>
 
@@ -559,6 +564,40 @@
     light(false);
     const ringIO = new IntersectionObserver((es) => { es.forEach(e => { if (e.isIntersecting && !lit) { lit = true; setTimeout(() => light(true), 350); } }); }, { threshold: 0.4 });
     ringIO.observe(document.getElementById('ring'));
+  })();
+
+  // founding-members waitlist form
+  (function(){
+    const form = document.getElementById('waitlistForm');
+    if (!form) return;
+    const input = document.getElementById('waitlistEmail');
+    const btn = document.getElementById('waitlistBtn');
+    const note = document.getElementById('waitlistNote');
+    const sub = document.getElementById('waitlistSub');
+    const endpoint = (document.querySelector('meta[name="lyfos-waitlist-endpoint"]') || {}).content || form.action;
+    const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    function show(msg, ok){ note.hidden = false; note.textContent = msg; note.className = 'form-note ' + (ok ? 'ok' : 'err'); }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = (input.value || '').trim();
+      if (!EMAIL_RE.test(email)) { show('Please enter a valid email address.', false); input.focus(); return; }
+      btn.disabled = true; const label = btn.textContent; btn.textContent = 'Joining…';
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email, source: 'marketing-home', referrer: document.referrer || '' })
+        });
+        if (!res.ok) throw new Error('bad status ' + res.status);
+        form.hidden = true; if (sub) sub.hidden = true;
+        show("You're on the list. We'll send one quiet note when we open the doors.", true);
+      } catch (err) {
+        btn.disabled = false; btn.textContent = label;
+        note.hidden = false; note.className = 'form-note err';
+        note.innerHTML = 'Couldn’t reach the server. Email <a href="mailto:hello@lyfos.signorvale.com?subject=Founding%20member" style="color:inherit;text-decoration:underline;">hello@lyfos.signorvale.com</a> and we’ll add you by hand.';
+      }
+    });
   })();
 </script>
 </body>
