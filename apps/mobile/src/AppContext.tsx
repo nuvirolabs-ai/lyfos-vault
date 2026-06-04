@@ -65,6 +65,7 @@ interface AppContextValue {
 
   // Actions
   createVault: (input: { passphrase: string; recoveryPhrase: string; initialVault?: any }) => Promise<void>;
+  enterDemoVault: () => void;
   unlockWithPassphrase: (passphrase: string) => Promise<void>;
   unlockWithRecovery: (phrase: string) => Promise<void>;
   unlockWithBiometricIfReady: () => Promise<boolean>;
@@ -87,6 +88,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [storedRecord, setStoredRecord] = useState<VaultRecord | null>(null);
   const [vault, setVault] = useState<any | null>(null);
   const vaultKeyRef = useRef<Uint8Array | null>(null);
+  const isDemoRef = useRef(false);
   const [autoLockMs, setAutoLockMsState] = useState(300_000);
   const [biometricEnabled, setBiometricEnabledState] = useState(false);
   const [subscription, setSubscription] = useState<any | null>(null);
@@ -195,6 +197,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     lastActivityRef.current = Date.now();
   }, [persistDecrypted]);
 
+  // OUT-OF-BAND: enter a fully in-memory demo vault with NO key derivation and
+  // NO persistence. Lets you explore/use the app instantly, bypassing the heavy
+  // Argon2id step entirely. Changes live only until the app is closed/locked.
+  const enterDemoVault = useCallback(() => {
+    const now = new Date().toISOString();
+    const mkId = () => (globalThis as any).crypto?.randomUUID?.() ?? `demo_${Math.random().toString(36).slice(2)}`;
+    const demo = {
+      ...createEmptyVault(),
+      items: [
+        { id: mkId(), type: "bank_account", title: "HDFC salary account", username: "rahul.sharma", secret: "IFSC HDFC0001234 · A/C 50100123456789", notes: "Primary salary account.", emergencyEligible: true, createdAt: now, updatedAt: now },
+        { id: mkId(), type: "password", title: "Apple ID", username: "rahul@example.com", secret: "correct-horse-battery", notes: "", emergencyEligible: true, createdAt: now, updatedAt: now },
+        { id: mkId(), type: "identity_document", title: "Passport", username: "M1234567", secret: "", notes: "Expires 2031.", emergencyEligible: true, createdAt: now, updatedAt: now }
+      ]
+    };
+    isDemoRef.current = true;
+    vaultKeyRef.current = new Uint8Array(32); // dummy; never used to persist
+    setVault(demo);
+    lastActivityRef.current = Date.now();
+  }, []);
+
   const unlockWithPassphrase = useCallback(async (passphrase: string) => {
     if (!storedRecord) throw new Error("No vault to unlock on this device.");
     const result = await decryptWithPassphrase(storedRecord, passphrase);
@@ -239,6 +261,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       for (let i = 0; i < vaultKeyRef.current.length; i++) vaultKeyRef.current[i] = 0;
       vaultKeyRef.current = null;
     }
+    isDemoRef.current = false;
     setVault(null);
     if (reason && reason !== "manual") {
       // Buffer the audit event for next unlock to record
@@ -247,6 +270,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const save = useCallback(async (mutator: (vault: any) => any, eventLabel?: string) => {
+    // Demo mode: update in memory only, no encryption / persistence.
+    if (isDemoRef.current) {
+      setVault((cur: any) => { const next = mutator(cur); return eventLabel ? appendAuditEvent(next, eventLabel) : next; });
+      lastActivityRef.current = Date.now();
+      return;
+    }
     if (!vault || !vaultKeyRef.current || !storedRecord) throw new Error("Vault is locked.");
     const next = mutator(vault);
     const audited = eventLabel ? appendAuditEvent(next, eventLabel) : next;
@@ -294,7 +323,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     autoLockMs, setAutoLockMs,
     biometricEnabled, setBiometricEnabled,
     subscription, entitlements, refreshSubscription,
-    createVault, unlockWithPassphrase, unlockWithRecovery, unlockWithBiometricIfReady,
+    createVault, enterDemoVault, unlockWithPassphrase, unlockWithRecovery, unlockWithBiometricIfReady,
     lock, save, deleteLocalVault
   }), [
     session, sessionLoaded, signOut,
@@ -302,7 +331,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     autoLockMs, setAutoLockMs,
     biometricEnabled, setBiometricEnabled,
     subscription, entitlements, refreshSubscription,
-    createVault, unlockWithPassphrase, unlockWithRecovery, unlockWithBiometricIfReady,
+    createVault, enterDemoVault, unlockWithPassphrase, unlockWithRecovery, unlockWithBiometricIfReady,
     lock, save, deleteLocalVault
   ]);
 

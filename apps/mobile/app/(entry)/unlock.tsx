@@ -4,13 +4,14 @@
 import React, { useEffect, useState } from "react";
 import { ScrollView, View, KeyboardAvoidingView, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { router } from "expo-router";
 
 import { Screen, Eyebrow, H1, Body, Field, Input, PrimaryButton, SecondaryButton, LinkText, Card } from "../../src/ui";
 import { useApp } from "../../src/AppContext";
 import { biometricUnlockConfigured } from "../../src/lib/biometric";
 
 export default function UnlockScreen() {
-  const { unlockWithPassphrase, unlockWithRecovery, unlockWithBiometricIfReady, biometricEnabled } = useApp();
+  const { unlockWithPassphrase, unlockWithRecovery, unlockWithBiometricIfReady, biometricEnabled, enterDemoVault } = useApp();
   const [mode, setMode] = useState<"passphrase" | "recovery">("passphrase");
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -86,6 +87,12 @@ export default function UnlockScreen() {
             <View style={{ alignItems: "center", marginTop: 28 }}>
               <LinkText onPress={() => { setError(""); setText(""); setMode((m) => m === "passphrase" ? "recovery" : "passphrase"); }}>
                 {mode === "passphrase" ? "Use recovery phrase instead" : "Use passphrase instead"}
+              </LinkText>
+            </View>
+
+            <View style={{ alignItems: "center", marginTop: 24, paddingTop: 16, borderTopWidth: 1, borderTopColor: "rgba(0,0,0,0.08)" }}>
+              <LinkText onPress={() => { enterDemoVault(); router.replace("/(tabs)/home"); }}>
+                Skip — explore a demo vault →
               </LinkText>
             </View>
           </ScrollView>

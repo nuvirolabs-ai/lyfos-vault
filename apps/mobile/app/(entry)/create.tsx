@@ -13,7 +13,7 @@ import { generateRecoveryPhrase, isValidRecoveryPhrase, normalizeRecoveryKey } f
 import { colors, radii } from "../../src/theme";
 
 export default function CreateVaultScreen() {
-  const { createVault } = useApp();
+  const { createVault, enterDemoVault } = useApp();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [passphrase, setPassphrase] = useState("");
   const [confirmPp, setConfirmPp] = useState("");
@@ -146,6 +146,12 @@ export default function CreateVaultScreen() {
                 <LinkText onPress={() => { setError(""); setStep((s) => (s - 1) as any); }}>Back</LinkText>
               </View>
             )}
+
+            <View style={{ alignItems: "center", marginTop: 28, paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.divider }}>
+              <LinkText onPress={() => { log("enterDemoVault"); enterDemoVault(); router.replace("/(tabs)/home"); }}>
+                Skip — explore a demo vault →
+              </LinkText>
+            </View>
           </ScrollView>
         </SafeAreaView>
       </KeyboardAvoidingView>
