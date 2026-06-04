@@ -1,178 +1,565 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Lyfos · A vault your family can actually open.</title>
-<meta name="description" content="Lyfos is a zero-knowledge vault for passwords, IDs, banking and insurance — designed from day one so your nominee can recover everything if you're not there to help." />
+<meta name="description" content="Lyfos is a zero-knowledge vault for passwords, IDs, banking and insurance — built so the people you trust can recover everything if you're not there, and no one before." />
 <meta property="og:title" content="Lyfos · A vault your family can actually open." />
-<meta property="og:description" content="Zero-knowledge vault built for life recovery. 3-of-5 trusted holders, 14-day owner-protection hold, four-channel alerts." />
+<meta property="og:description" content="A zero-knowledge vault built for life recovery. Five people you trust, three to release, a 14-day hold that protects you the whole way." />
 <meta property="og:image" content="/og.png" />
-<meta name="theme-color" content="#fbfbfd" />
-<link rel="stylesheet" href="/style.css" />
+<meta name="theme-color" content="#f4f4f6" />
 <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --sans: "Inter Tight", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --green: #1a9d5a; --green-soft: rgba(26,157,90,0.12);
+    --maxw: 1080px;
+  }
+  html[data-theme="light"] {
+    --bg: #f4f4f6; --surface: #ffffff; --surface-2: #f6f6f8; --surface-3: #ececef;
+    --border: rgba(0,0,0,0.07); --border-2: rgba(0,0,0,0.12);
+    --ink: #1b1b1f; --ink-2: #5b5b63; --ink-3: #8a8a93; --ink-4: #b4b4bb;
+    --green-ink: #0b6b3a;
+    --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 18px 48px rgba(0,0,0,0.06);
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+    --grid: rgba(0,0,0,0.035);
+  }
+  html[data-theme="dark"] {
+    --bg: #0c0c0e; --surface: #161618; --surface-2: #1b1b1e; --surface-3: #232327;
+    --border: rgba(255,255,255,0.08); --border-2: rgba(255,255,255,0.14);
+    --ink: #f4f4f5; --ink-2: #a9a9b2; --ink-3: #76767e; --ink-4: #50505a;
+    --green: #2faa63; --green-soft: rgba(70,217,138,0.13); --green-ink: #7ee2ab;
+    --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 18px 48px rgba(0,0,0,0.45);
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.4);
+    --grid: rgba(255,255,255,0.04);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg); color: var(--ink); font-family: var(--sans);
+    font-size: 17px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale; overflow-x: hidden;
+    transition: background 240ms ease, color 240ms ease;
+  }
+  a { color: inherit; text-decoration: none; }
+  svg { display: block; }
+  ::selection { background: var(--green-soft); }
+
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-3); }
+
+  /* ---------- nav ---------- */
+  nav {
+    position: sticky; top: 0; z-index: 50;
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    background: color-mix(in srgb, var(--bg) 78%, transparent);
+    border-bottom: 1px solid transparent; transition: border-color 200ms ease;
+  }
+  nav.scrolled { border-color: var(--border); }
+  nav .inner { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; height: 64px; display: flex; align-items: center; gap: 22px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 18px; letter-spacing: -0.02em; }
+  .brand .mark { width: 26px; height: 26px; border-radius: 8px; background: var(--green); display: grid; place-items: center; box-shadow: 0 4px 14px var(--green-soft); }
+  .brand .mark svg { width: 15px; height: 15px; color: #fff; }
+  nav ul { list-style: none; display: flex; gap: 24px; margin-left: 14px; }
+  nav ul a { font-size: 14.5px; color: var(--ink-2); transition: color 140ms ease; }
+  nav ul a:hover { color: var(--ink); }
+  nav .right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+  .icon-btn { width: 38px; height: 38px; border-radius: 11px; border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); display: grid; place-items: center; cursor: pointer; transition: all 140ms ease; }
+  .icon-btn:hover { background: var(--surface-2); color: var(--ink); border-color: var(--border-2); }
+  .icon-btn svg { width: 18px; height: 18px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 999px; font-family: var(--sans); font-size: 15px; font-weight: 600; cursor: pointer; border: 1px solid transparent; transition: all 160ms ease; white-space: nowrap; }
+  .btn-primary { background: var(--ink); color: var(--bg); padding: 11px 20px; }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
+  .btn-green { background: var(--green); color: #fff; padding: 15px 26px; font-size: 16px; }
+  .btn-green:hover { transform: translateY(-1px); filter: brightness(1.04); box-shadow: 0 10px 30px var(--green-soft); }
+  .btn-ghost { background: var(--surface); color: var(--ink); border-color: var(--border-2); padding: 15px 26px; font-size: 16px; }
+  .btn-ghost:hover { background: var(--surface-2); transform: translateY(-1px); }
+  nav .btn-primary { padding: 9px 16px; font-size: 14px; }
+  @media (max-width: 720px) { nav ul { display: none; } }
+
+  /* ---------- reveal ---------- */
+  .reveal { opacity: 0; transform: translateY(20px); transition: opacity 700ms cubic-bezier(.16,1,.3,1), transform 700ms cubic-bezier(.16,1,.3,1); }
+  .reveal.in { opacity: 1; transform: none; }
+
+  /* ---------- hero ---------- */
+  .hero { position: relative; padding: 96px 0 72px; text-align: center; }
+  .hero::before {
+    content: ""; position: absolute; inset: -10% -50% 30%; z-index: -1;
+    background: radial-gradient(60% 50% at 50% 0%, var(--green-soft), transparent 70%);
+    opacity: 0.9;
+  }
+  .lockwrap { width: 92px; height: 92px; margin: 0 auto 30px; border-radius: 26px; background: var(--surface); border: 1px solid var(--border); display: grid; place-items: center; box-shadow: var(--shadow); position: relative; }
+  .lockwrap::after { content: ""; position: absolute; inset: 0; border-radius: 26px; box-shadow: 0 0 0 0 var(--green-soft); animation: breathe 3.4s ease-in-out infinite; }
+  @keyframes breathe { 0%,100% { box-shadow: 0 0 0 0 var(--green-soft); } 50% { box-shadow: 0 0 0 14px transparent; } }
+  .lockwrap svg { width: 42px; height: 42px; color: var(--green); }
+  .hero h1 { font-size: clamp(38px, 6.2vw, 70px); line-height: 1.02; letter-spacing: -0.035em; font-weight: 600; max-width: 13ch; margin: 0 auto; }
+  .hero h1 .soft { color: var(--ink-3); }
+  .lede { font-size: clamp(17px, 2.2vw, 21px); color: var(--ink-2); max-width: 56ch; margin: 24px auto 0; line-height: 1.55; }
+  .cta-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-top: 38px; }
+  .subnote { font-size: 13.5px; color: var(--ink-3); margin-top: 22px; }
+  .reassure { display: inline-flex; align-items: center; gap: 8px; margin-top: 34px; padding: 8px 16px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); font-size: 13px; color: var(--ink-2); box-shadow: var(--shadow-sm); }
+  .reassure svg { width: 14px; height: 14px; color: var(--green); }
+
+  /* ---------- section scaffolding ---------- */
+  section.block { padding: 88px 0; }
+  .sec-head { max-width: 60ch; }
+  .sec-head.center { margin: 0 auto; text-align: center; }
+  .sec-head h2 { font-size: clamp(28px, 4vw, 42px); letter-spacing: -0.03em; font-weight: 600; line-height: 1.08; margin-top: 14px; }
+  .sec-head p { color: var(--ink-2); font-size: 18px; margin-top: 16px; }
+
+  /* ---------- reframe ---------- */
+  .reframe { background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .reframe .quote { font-size: clamp(24px, 3.6vw, 38px); letter-spacing: -0.025em; line-height: 1.25; font-weight: 500; max-width: 24ch; }
+  .reframe .quote em { font-style: normal; color: var(--green-ink); }
+  .reframe .by { margin-top: 22px; color: var(--ink-3); font-size: 14.5px; }
+
+  /* ---------- circle of trust ---------- */
+  .trust-grid { display: grid; grid-template-columns: 1.05fr 1fr; gap: 56px; align-items: center; margin-top: 48px; }
+  @media (max-width: 860px) { .trust-grid { grid-template-columns: 1fr; gap: 36px; } }
+  .ring { position: relative; aspect-ratio: 1; max-width: 380px; margin: 0 auto; width: 100%; }
+  .ring svg { width: 100%; height: 100%; overflow: visible; }
+  .node circle { transition: all 500ms cubic-bezier(.16,1,.3,1); }
+  .ring .center { fill: var(--surface); stroke: var(--border-2); }
+  .stepwords { display: flex; flex-direction: column; gap: 14px; margin-top: 26px; }
+  .stepword { display: flex; gap: 14px; align-items: flex-start; padding: 16px 18px; border-radius: 16px; border: 1px solid var(--border); background: var(--surface); box-shadow: var(--shadow-sm); }
+  .stepword .k { flex: none; width: 30px; height: 30px; border-radius: 9px; background: var(--green-soft); color: var(--green-ink); display: grid; place-items: center; font-weight: 600; font-size: 13px; }
+  .stepword h4 { font-size: 16px; font-weight: 600; }
+  .stepword p { font-size: 14.5px; color: var(--ink-2); margin-top: 2px; }
+
+  /* ---------- feature cards ---------- */
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 48px; }
+  @media (max-width: 860px) { .cards { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 560px) { .cards { grid-template-columns: 1fr; } }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 26px; box-shadow: var(--shadow-sm); transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease; }
+  .card:hover { transform: translateY(-3px); box-shadow: var(--shadow); border-color: var(--border-2); }
+  .card .ic { width: 44px; height: 44px; border-radius: 13px; background: var(--green-soft); display: grid; place-items: center; margin-bottom: 18px; }
+  .card .ic svg { width: 22px; height: 22px; color: var(--green); }
+  .card h3 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+  .card p { font-size: 14.5px; color: var(--ink-2); margin-top: 8px; }
+
+  /* ---------- timeline ---------- */
+  .timeline { margin-top: 48px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; position: relative; }
+  @media (max-width: 760px) { .timeline { grid-template-columns: 1fr; } }
+  .tl { position: relative; padding: 0 14px; }
+  .tl .bar { height: 3px; background: var(--border-2); border-radius: 3px; position: relative; margin-bottom: 20px; }
+  .tl.hold .bar { background: var(--green); }
+  .tl .bar::before { content: ""; position: absolute; left: 0; top: -4.5px; width: 12px; height: 12px; border-radius: 50%; background: var(--surface); border: 3px solid var(--border-2); }
+  .tl.hold .bar::before { border-color: var(--green); background: var(--green); }
+  .tl .t { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
+  .tl h4 { font-size: 16px; font-weight: 600; margin-top: 4px; }
+  .tl p { font-size: 14px; color: var(--ink-2); margin-top: 6px; }
+  .abort { margin-top: 40px; display: flex; gap: 16px; align-items: flex-start; padding: 22px 24px; border-radius: 18px; background: var(--green-soft); border: 1px solid color-mix(in srgb, var(--green) 24%, transparent); }
+  .abort svg { width: 24px; height: 24px; color: var(--green-ink); flex: none; margin-top: 2px; }
+  .abort h4 { font-size: 17px; font-weight: 600; color: var(--green-ink); }
+  .abort p { font-size: 15px; color: var(--ink-2); margin-top: 4px; }
+
+  /* ---------- inside the vault ---------- */
+  .areas { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin-top: 44px; }
+  @media (max-width: 760px){ .areas { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 480px){ .areas { grid-template-columns: 1fr; } }
+  .area { display: flex; align-items: center; gap: 14px; padding: 18px 20px; border-radius: 16px; border: 1px solid var(--border); background: var(--surface); }
+  .area .d { width: 9px; height: 9px; border-radius: 50%; background: var(--green); flex: none; }
+  .area .l { font-weight: 600; font-size: 15.5px; }
+  .area .s { font-size: 13px; color: var(--ink-3); }
+
+  /* ---------- promises ---------- */
+  .promises { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 44px; }
+  @media (max-width: 760px){ .promises { grid-template-columns: 1fr; } }
+  .promise { display: flex; gap: 16px; padding: 24px; border-radius: 18px; border: 1px solid var(--border); background: var(--surface); }
+  .promise .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--green); margin-top: 8px; flex: none; box-shadow: 0 0 0 5px var(--green-soft); }
+  .promise h3 { font-size: 17px; font-weight: 600; }
+  .promise p { font-size: 14.5px; color: var(--ink-2); margin-top: 6px; }
+  .promise a { color: var(--green-ink); border-bottom: 1px solid color-mix(in srgb, var(--green) 35%, transparent); }
+
+  /* ---------- practice run ---------- */
+  .practice { background: var(--ink); color: var(--bg); border-radius: 28px; padding: 56px; text-align: center; position: relative; overflow: hidden; }
+  html[data-theme="dark"] .practice { background: var(--surface-2); border: 1px solid var(--border); }
+  .practice::before { content:""; position:absolute; inset:auto -20% -60% -20%; height: 200px; background: radial-gradient(50% 100% at 50% 100%, var(--green-soft), transparent); }
+  .practice h2 { color: var(--bg); font-size: clamp(26px, 4vw, 40px); letter-spacing: -0.03em; font-weight: 600; max-width: 18ch; margin: 0 auto; }
+  html[data-theme="dark"] .practice h2 { color: var(--ink); }
+  .practice p { color: color-mix(in srgb, var(--bg) 70%, transparent); font-size: 18px; max-width: 52ch; margin: 18px auto 0; }
+  html[data-theme="dark"] .practice p { color: var(--ink-2); }
+
+  /* ---------- pricing ---------- */
+  .price-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 44px; }
+  @media (max-width: 700px){ .price-grid { grid-template-columns: 1fr; } }
+  .price { border: 1px solid var(--border); border-radius: 22px; padding: 32px; background: var(--surface); box-shadow: var(--shadow-sm); }
+  .price.feature { border-color: color-mix(in srgb, var(--green) 40%, transparent); box-shadow: var(--shadow); position: relative; }
+  .price .tag { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--green-ink); }
+  .price .amt { font-size: 40px; font-weight: 600; letter-spacing: -0.03em; margin-top: 12px; }
+  .price .amt span { font-size: 16px; color: var(--ink-3); font-weight: 500; }
+  .price ul { list-style: none; margin-top: 22px; display: flex; flex-direction: column; gap: 12px; }
+  .price li { display: flex; gap: 10px; font-size: 15px; color: var(--ink-2); }
+  .price li svg { width: 18px; height: 18px; color: var(--green); flex: none; margin-top: 2px; }
+  .price .btn { width: 100%; margin-top: 26px; }
+
+  /* ---------- signup ---------- */
+  .signup { text-align: center; }
+  .signup-row { display: flex; gap: 10px; max-width: 460px; margin: 32px auto 0; }
+  .signup-row input { flex: 1; height: 54px; border-radius: 14px; border: 1px solid var(--border-2); background: var(--surface); padding: 0 18px; font-size: 16px; font-family: var(--sans); color: var(--ink); outline: none; transition: border-color 140ms ease, box-shadow 140ms ease; }
+  .signup-row input:focus { border-color: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
+  .signup-row button { height: 54px; padding: 0 28px; border-radius: 14px; border: none; background: var(--green); color: #fff; font-size: 16px; font-weight: 600; font-family: var(--sans); cursor: pointer; transition: filter 140ms ease; }
+  .signup-row button:hover { filter: brightness(1.05); }
+  @media (max-width: 480px){ .signup-row { flex-direction: column; } }
+
+  /* ---------- footer ---------- */
+  footer { border-top: 1px solid var(--border); padding: 64px 0 48px; margin-top: 40px; }
+  footer .cols { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 32px; }
+  @media (max-width: 760px){ footer .cols { grid-template-columns: 1fr 1fr; gap: 28px; } }
+  footer h4 { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 14px; }
+  footer ul { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+  footer ul a { font-size: 14.5px; color: var(--ink-2); }
+  footer ul a:hover { color: var(--ink); }
+  footer .blurb { font-size: 14px; color: var(--ink-2); max-width: 300px; margin-top: 12px; }
+  footer .copy { font-size: 12.5px; color: var(--ink-4); margin-top: 22px; }
+</style>
 </head>
 <body>
 
-<nav class="top">
+<nav id="nav">
   <div class="inner">
-    <a class="brand" href="/">Lyfos</a>
+    <a class="brand" href="/">
+      <span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11 V8 a4 4 0 0 1 8 0 v3"/></svg></span>
+      Lyfos
+    </a>
     <ul>
-      <li><a href="/security/">Security</a></li>
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#inside">What's inside</a></li>
+      <li><a href="#promises">Promises</a></li>
       <li><a href="/pricing/">Pricing</a></li>
-      <li><a href="/press/">Press</a></li>
-      <li><a href="/blog/">Blog</a></li>
     </ul>
-    <a class="cta" href="https://lyfos.signorvale.com">Open the app →</a>
+    <div class="right">
+      <button class="icon-btn" id="themeToggle" title="Switch theme" aria-label="Switch theme"></button>
+      <a class="btn btn-primary" href="https://lyfos.signorvale.com">Open the app</a>
+    </div>
   </div>
 </nav>
 
 <main>
 
-<section class="hero">
-  <div class="eyebrow">Lyfos</div>
-  <h1>A vault your family can actually open.</h1>
-  <p class="lede">
-    Your passwords, IDs, banking, insurance, and the keys to all of it —
-    encrypted on your device, designed so that the right people can recover
-    everything after you're gone, and no one before.
-  </p>
-  <div class="cta-row">
-    <a class="btn primary" href="https://lyfos.signorvale.com">Create your vault</a>
-    <a class="btn ghost" href="/security/">How it works</a>
-  </div>
-  <p class="subnote">Free forever for 10 records. Vault from ₹999/year. iOS, Android, web.</p>
-</section>
+  <!-- HERO -->
+  <header class="hero">
+    <div class="wrap">
+      <div class="lockwrap reveal">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11 V8 a4 4 0 0 1 8 0 v3"/><circle cx="12" cy="15.5" r="1.3" fill="currentColor" stroke="none"/></svg>
+      </div>
+      <h1 class="reveal">The things they'd never find. <span class="soft">Kept safe — and findable when it matters.</span></h1>
+      <p class="lede reveal">Your passwords, IDs, bank accounts, insurance, and the keys to all of it — encrypted on your own device. Built from the first line of code so the people you trust can recover everything if you're not there to help. And no one before.</p>
+      <div class="cta-row reveal">
+        <a class="btn btn-green" href="https://lyfos.signorvale.com">Create your vault</a>
+        <a class="btn btn-ghost" href="#how">See how recovery works</a>
+      </div>
+      <div class="reassure reveal">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 L20 6 V12 C 20 17 16 20 12 21 C 8 20 4 17 4 12 V6 Z"/></svg>
+        Zero-knowledge. Your passphrase never leaves your device — not even to us.
+      </div>
+      <p class="subnote reveal">Free forever for your first 10 records · Vault from ₹999/year · iOS, Android & web</p>
+    </div>
+  </header>
 
-<section class="row">
-  <h2>The problem.</h2>
-  <p class="lede">
-    Most people die with a thousand small secrets nobody can find. Bank
-    accounts forgotten. Insurance policies unclaimed. Crypto wallets locked
-    forever. Family lawyers piecing things together for months. None of it
-    has to be that way.
-  </p>
-</section>
+  <!-- REFRAME -->
+  <section class="block reframe">
+    <div class="wrap">
+      <div class="eyebrow reveal">Why we built this</div>
+      <p class="quote reveal">It was never about planning for the end. It's about making sure the people you love <em>aren't left lost</em> in the middle of the hardest week of their lives.</p>
+      <p class="by reveal">Most people leave behind a thousand small secrets no one can find — accounts forgotten, policies unclaimed, wallets locked forever. Lyfos turns that scatter into one calm, recoverable place.</p>
+    </div>
+  </section>
 
-<section class="row">
-  <h2>What Lyfos does differently.</h2>
-  <div class="cards">
-    <div class="card">
-      <div class="num">01</div>
-      <h3>Zero-knowledge by default</h3>
-      <p>Your vault is encrypted on your device with a passphrase only you know. We can't read it. Even if we wanted to, we can't.</p>
+  <!-- HOW: circle of trust -->
+  <section class="block" id="how">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <div class="eyebrow">The circle of trust</div>
+        <h2>Five people you trust. Three to open the door.</h2>
+        <p>No single person — not even your nominee, not even us — can open your vault alone. You choose five trusted key holders. Any three of them, together, can release it to your family when it's truly needed.</p>
+      </div>
+      <div class="trust-grid">
+        <div class="ring reveal" id="ring" aria-hidden="true">
+          <svg viewBox="0 0 320 320">
+            <circle class="center" cx="160" cy="160" r="46" stroke-width="1.5"/>
+            <g id="ringSpokes" stroke="var(--border)" stroke-width="1.5"></g>
+            <g id="ringNodes"></g>
+            <text x="160" y="156" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink-3)" font-family="Inter Tight" letter-spacing="0.1em">VAULT</text>
+            <text x="160" y="176" text-anchor="middle" font-size="22" font-weight="600" fill="var(--ink)" font-family="Inter Tight" id="ringCount">3 / 5</text>
+          </svg>
+        </div>
+        <div class="reveal">
+          <div class="stepwords">
+            <div class="stepword"><div class="k">1</div><div><h4>You pick five</h4><p>People in different homes and cities — so no one event puts them all out of reach.</p></div></div>
+            <div class="stepword"><div class="k">3</div><div><h4>Three must agree</h4><p>Recovery needs a threshold, never one person acting alone. Math, not trust, enforces it (Shamir secret sharing + X25519).</p></div></div>
+            <div class="stepword"><div class="k">∞</div><div><h4>They never see your secrets</h4><p>Holders carry a fragment of a key — never your data. Only your nominee can assemble the recovered vault.</p></div></div>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="card">
-      <div class="num">02</div>
-      <h3>3-of-5 release engine</h3>
-      <p>Choose five people you trust. Three of them — together, not alone — can release your vault to your nominee when the time comes.</p>
-    </div>
-    <div class="card">
-      <div class="num">03</div>
-      <h3>14-day owner-protection hold</h3>
-      <p>If a release ever starts and you're still here, you get alerts on email, SMS, WhatsApp, and push. One tap aborts it. No questions asked.</p>
-    </div>
-    <div class="card">
-      <div class="num">04</div>
-      <h3>A monthly balance sheet</h3>
-      <p>Two minutes on the first of each month. Net worth, accounts, currencies. Your vault is a place you actually visit, not a folder you forget.</p>
-    </div>
-  </div>
-</section>
+  </section>
 
-<section class="row promises">
-  <h2>Our promises.</h2>
-  <div class="promise">
-    <div class="dot"></div>
-    <div>
-      <h3>We will never see your vault.</h3>
-      <p>The architecture makes it impossible. If we ever change that, the change requires a new app version you approve — not a server-side toggle.</p>
+  <!-- TIMELINE: 14 day hold -->
+  <section class="block" style="background: var(--surface-2);">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <div class="eyebrow">A release you control the whole way</div>
+        <h2>If a recovery ever begins, you have fourteen days and one tap.</h2>
+        <p>The release engine is the whole point of Lyfos — so we made it slow, loud, and reversible. Designed to protect you even in the rare case something starts by mistake.</p>
+      </div>
+      <div class="timeline">
+        <div class="tl reveal"><div class="bar"></div><div class="t">Step 1</div><h4>Claim filed</h4><p>Your nominee starts a recovery request with proof.</p></div>
+        <div class="tl reveal"><div class="bar"></div><div class="t">Step 2</div><h4>Reviewed</h4><p>Lyfos verifies the certificate before anything moves.</p></div>
+        <div class="tl reveal"><div class="bar"></div><div class="t">Step 3</div><h4>Shares released</h4><p>Three of five key holders release their fragments.</p></div>
+        <div class="tl hold reveal"><div class="bar"></div><div class="t">Days 1–14</div><h4>Protection hold</h4><p>You're alerted daily on email, SMS, WhatsApp & push.</p></div>
+        <div class="tl reveal"><div class="bar"></div><div class="t">Step 5</div><h4>Recovered</h4><p>Only now can your nominee open the emergency bundle.</p></div>
+      </div>
+      <div class="abort reveal">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+        <div><h4>One tap stops everything.</h4><p>If you're still here and a release starts, every alert carries an Abort button. Tap it once and the vault re-seals — no questions, no delay.</p></div>
+      </div>
     </div>
-  </div>
-  <div class="promise">
-    <div class="dot"></div>
-    <div>
-      <h3>We will never sell your data.</h3>
-      <p>We have no data to sell. Your subscription pays for the service. That's the deal.</p>
-    </div>
-  </div>
-  <div class="promise">
-    <div class="dot"></div>
-    <div>
-      <h3>We will tell you when something goes wrong.</h3>
-      <p>Full disclosure within 72 hours. Public post-mortems. <a href="https://lyfos.signorvale.com/status/">Status page</a> we keep honest.</p>
-    </div>
-  </div>
-  <div class="promise">
-    <div class="dot"></div>
-    <div>
-      <h3>If we disappear, your vault still works.</h3>
-      <p>Lyfos is local-first. You always have a copy. Your recovery phrase decrypts your vault even if the company is gone.</p>
-    </div>
-  </div>
-</section>
+  </section>
 
-<section class="row">
-  <h2>Built around real life events.</h2>
-  <p class="lede">
-    The release engine isn't a feature. It's the whole point. We walked
-    through it end-to-end before we wrote a line of UI.
-  </p>
-  <a class="btn ghost" href="/blog/we-released-a-vault.html">Read our public death-recovery test →</a>
-</section>
+  <!-- WHAT'S INSIDE -->
+  <section class="block" id="inside">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <div class="eyebrow">What's inside</div>
+        <h2>Six quiet places for everything that actually matters.</h2>
+        <p>Lyfos organises your life into areas you'll recognise — not a flat list of files. Each one tells you, at a glance, whether your people would be covered.</p>
+      </div>
+      <div class="areas">
+        <div class="area reveal"><span class="d"></span><div><div class="l">Identity</div><div class="s">IDs, certificates, legal proof</div></div></div>
+        <div class="area reveal"><span class="d"></span><div><div class="l">Money</div><div class="s">Accounts, cards, balances</div></div></div>
+        <div class="area reveal"><span class="d"></span><div><div class="l">Access</div><div class="s">Passwords, PINs, recovery routes</div></div></div>
+        <div class="area reveal"><span class="d"></span><div><div class="l">Insurance</div><div class="s">Policies, claims, nominee evidence</div></div></div>
+        <div class="area reveal"><span class="d"></span><div><div class="l">Documents</div><div class="s">Property, tax, legal records</div></div></div>
+        <div class="area reveal"><span class="d"></span><div><div class="l">Emergency</div><div class="s">The first 72 hours, written down</div></div></div>
+      </div>
+    </div>
+  </section>
 
-<section class="row" style="text-align: center;">
-  <h2>Join the founding members.</h2>
-  <p class="lede" style="margin: 0 auto 32px;">
-    The first 1,000 paid members get founder rates locked for life and direct
-    access to me by email.
-  </p>
-  <form class="signup-row" action="https://lyfos.signorvale.com/waitlist" method="post">
-    <input type="email" name="email" placeholder="you@example.com" required />
-    <button type="submit">Join</button>
-  </form>
-  <p class="subnote" style="margin-top: 16px;">Zero marketing emails. One launch email when we open. That's it.</p>
-</section>
+  <!-- FEATURES -->
+  <section class="block" style="background: var(--surface-2);">
+    <div class="wrap">
+      <div class="sec-head center reveal">
+        <div class="eyebrow">Built thoughtfully</div>
+        <h2>Small decisions, made carefully.</h2>
+      </div>
+      <div class="cards">
+        <div class="card reveal">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+          <h3>Zero-knowledge by default</h3>
+          <p>Encrypted on your device with Argon2id + AES-256. We can't read your vault. Not as a policy — as a fact of the architecture.</p>
+        </div>
+        <div class="card reveal">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0z"/><path d="M12 7v5l3 2"/></svg></div>
+          <h3>A two-minute monthly ritual</h3>
+          <p>On the first of the month, a calm nudge: update your numbers, watch your net worth line move. A vault you visit, not a folder you forget.</p>
+        </div>
+        <div class="card reveal">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg></div>
+          <h3>Practice the recovery</h3>
+          <p>A safe dry-run walks you through exactly what your family would see — step by step — so the real day is never the first time.</p>
+        </div>
+        <div class="card reveal">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v4M3 5h4M6 17v4M4 19h4"/><path d="M13 3l2.5 6.5L22 12l-6.5 2.5L13 21l-2.5-6.5L4 12l6.5-2.5z"/></svg></div>
+          <h3>Capture the mess</h3>
+          <p>Paste a note, snap a document. Lyfos proposes a clean draft; you decide what becomes a record. No blank-page paralysis.</p>
+        </div>
+        <div class="card reveal">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v1H8a5 5 0 0 0-5 5v6a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6a5 5 0 0 0-5-5h-1V5a3 3 0 0 0-3-3z"/><path d="M12 14v3"/></svg></div>
+          <h3>Unlock with your face</h3>
+          <p>Face ID and Touch ID on mobile. Your passphrase derives the key locally — biometrics just make opening it effortless.</p>
+        </div>
+        <div class="card reveal">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></div>
+          <h3>A 24-word lifeline</h3>
+          <p>A standard recovery phrase opens your vault even if you forget your passphrase — and even if Lyfos, one day, no longer exists.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROMISES -->
+  <section class="block" id="promises">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <div class="eyebrow">Our promises</div>
+        <h2>The kind of company you'd trust with this.</h2>
+      </div>
+      <div class="promises">
+        <div class="promise reveal"><div class="dot"></div><div><h3>We will never see your vault.</h3><p>The architecture makes it impossible. If that ever changed, it would take a new app version you choose to install — never a silent server switch.</p></div></div>
+        <div class="promise reveal"><div class="dot"></div><div><h3>We have no data to sell.</h3><p>Your subscription pays for the service. There is no second business model hiding behind it.</p></div></div>
+        <div class="promise reveal"><div class="dot"></div><div><h3>We'll tell you when something breaks.</h3><p>Full disclosure within 72 hours and honest public post-mortems. <a href="https://lyfos.signorvale.com/status/">Our status page</a> stays truthful.</p></div></div>
+        <div class="promise reveal"><div class="dot"></div><div><h3>If we disappear, your vault still opens.</h3><p>Lyfos is local-first. You always hold a copy, and your recovery phrase decrypts it — with or without us.</p></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRACTICE RUN BANNER -->
+  <section class="block">
+    <div class="wrap">
+      <div class="practice reveal">
+        <div class="eyebrow" style="color: var(--green);">We tested it on ourselves first</div>
+        <h2 style="margin-top:14px;">We ran a full death-recovery, start to finish, before writing the UI.</h2>
+        <p>The release engine isn't a marketing feature bolted on at the end — it's the reason Lyfos exists. We walked the entire path a grieving family would walk, and published what we found.</p>
+        <a class="btn btn-green" style="margin-top:28px;" href="/blog/we-released-a-vault.html">Read the public recovery test →</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRICING -->
+  <section class="block" id="pricing" style="background: var(--surface-2);">
+    <div class="wrap">
+      <div class="sec-head center reveal">
+        <div class="eyebrow">Pricing</div>
+        <h2>Honest, and forever-usable.</h2>
+        <p style="margin-left:auto;margin-right:auto;">Start free. Upgrade only when you want the release engine and unlimited records.</p>
+      </div>
+      <div class="price-grid">
+        <div class="price reveal">
+          <div class="tag" style="color:var(--ink-3);">Free</div>
+          <div class="amt">₹0<span> / forever</span></div>
+          <ul>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Up to 10 encrypted records</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Monthly balance sheet</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Local-first, zero-knowledge</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> 24-word recovery phrase</li>
+          </ul>
+          <a class="btn btn-ghost" href="https://lyfos.signorvale.com">Start free</a>
+        </div>
+        <div class="price feature reveal">
+          <div class="tag">Vault · most chosen</div>
+          <div class="amt">₹999<span> / year</span></div>
+          <ul>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Unlimited records & attachments</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> The full release engine (3-of-5)</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> 14-day hold + four-channel alerts</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Encrypted cloud sync across devices</li>
+          </ul>
+          <a class="btn btn-green" href="https://lyfos.signorvale.com">Create your vault</a>
+        </div>
+      </div>
+      <p class="subnote" style="text-align:center;">GST-compliant invoices · Cancel anytime · Your vault stays yours either way.</p>
+    </div>
+  </section>
+
+  <!-- SIGNUP -->
+  <section class="block signup">
+    <div class="wrap">
+      <div class="eyebrow reveal">Founding members</div>
+      <h2 class="reveal" style="font-size:clamp(28px,4vw,42px);letter-spacing:-0.03em;font-weight:600;margin-top:14px;">Be one of the first thousand.</h2>
+      <p class="lede reveal" style="margin-top:16px;">Founding members lock in founder pricing for life and get a direct line to the people building Lyfos.</p>
+      <form class="signup-row reveal" action="https://lyfos.signorvale.com/waitlist" method="post">
+        <input type="email" name="email" placeholder="you@example.com" required />
+        <button type="submit">Join</button>
+      </form>
+      <p class="subnote reveal">No marketing emails. One quiet note when we open the doors. That's the whole deal.</p>
+    </div>
+  </section>
 
 </main>
 
 <footer>
-  <div class="inner">
-    <div>
-      <div class="brand">Lyfos</div>
-      <p style="color: var(--ink2); font-size: 14px; margin: 0; max-width: 320px;">
-        A vault your family can actually open. Built in India, designed for the world.
-      </p>
-      <p class="copy">© 2026 Signor Vale AI Pvt Ltd. Lyfos is a product of Signor Vale.</p>
-    </div>
-    <div>
-      <h4>Product</h4>
-      <ul>
-        <li><a href="https://lyfos.signorvale.com">Open the app</a></li>
-        <li><a href="/pricing/">Pricing</a></li>
-        <li><a href="/security/">Security</a></li>
-        <li><a href="https://lyfos.signorvale.com/status/">Status</a></li>
-      </ul>
-    </div>
-    <div>
-      <h4>Company</h4>
-      <ul>
-        <li><a href="/press/">Press</a></li>
-        <li><a href="/blog/">Blog</a></li>
-        <li><a href="mailto:hello@lyfos.signorvale.com">Contact</a></li>
-      </ul>
-    </div>
-    <div>
-      <h4>Legal</h4>
-      <ul>
-        <li><a href="https://lyfos.signorvale.com/legal/privacy.html">Privacy</a></li>
-        <li><a href="https://lyfos.signorvale.com/legal/terms.html">Terms</a></li>
-        <li><a href="https://lyfos.signorvale.com/legal/sub-processors.html">Sub-processors</a></li>
-        <li><a href="https://lyfos.signorvale.com/security/disclosure">Disclosure</a></li>
-      </ul>
+  <div class="wrap">
+    <div class="cols">
+      <div>
+        <a class="brand" href="/"><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11 V8 a4 4 0 0 1 8 0 v3"/></svg></span>Lyfos</a>
+        <p class="blurb">A vault your family can actually open. Built in India, designed for the world.</p>
+        <p class="copy">© 2026 Signor Vale AI Pvt Ltd. Lyfos is a product of Signor Vale.</p>
+      </div>
+      <div>
+        <h4>Product</h4>
+        <ul>
+          <li><a href="https://lyfos.signorvale.com">Open the app</a></li>
+          <li><a href="/pricing/">Pricing</a></li>
+          <li><a href="/security/">Security</a></li>
+          <li><a href="https://lyfos.signorvale.com/status/">Status</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Company</h4>
+        <ul>
+          <li><a href="/press/">Press</a></li>
+          <li><a href="/blog/">Blog</a></li>
+          <li><a href="mailto:hello@lyfos.signorvale.com">Contact</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Legal</h4>
+        <ul>
+          <li><a href="https://lyfos.signorvale.com/legal/privacy.html">Privacy</a></li>
+          <li><a href="https://lyfos.signorvale.com/legal/terms.html">Terms</a></li>
+          <li><a href="https://lyfos.signorvale.com/legal/sub-processors.html">Sub-processors</a></li>
+        </ul>
+      </div>
     </div>
   </div>
 </footer>
 
+<script>
+  // theme
+  const root = document.documentElement, toggle = document.getElementById('themeToggle');
+  const saved = localStorage.getItem('lyfos-theme'); if (saved) root.setAttribute('data-theme', saved);
+  const sun = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg>';
+  const moon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+  function syncTheme(){ toggle.innerHTML = root.getAttribute('data-theme') === 'dark' ? sun : moon; } syncTheme();
+  toggle.addEventListener('click', () => { const n = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'; root.setAttribute('data-theme', n); localStorage.setItem('lyfos-theme', n); syncTheme(); });
+
+  // nav border on scroll
+  const nav = document.getElementById('nav');
+  const onScroll = () => nav.classList.toggle('scrolled', window.scrollY > 8);
+  onScroll(); window.addEventListener('scroll', onScroll, { passive: true });
+
+  // scroll reveal
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((e, i) => { if (e.isIntersecting) { e.target.style.transitionDelay = Math.min(i * 60, 240) + 'ms'; e.target.classList.add('in'); io.unobserve(e.target); } });
+  }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+  // circle of trust — 5 nodes, 3 active, drawn around the ring
+  (function(){
+    const nodesG = document.getElementById('ringNodes');
+    const spokesG = document.getElementById('ringSpokes');
+    const countEl = document.getElementById('ringCount');
+    if (!nodesG) return;
+    const cx = 160, cy = 160, R = 120, n = 5, active = [0, 2, 3];
+    const els = [];
+    for (let i = 0; i < n; i++) {
+      const a = (-90 + i * (360 / n)) * Math.PI / 180;
+      const x = cx + R * Math.cos(a), y = cy + R * Math.sin(a);
+      const spoke = document.createElementNS('http://www.w3.org/2000/svg','line');
+      spoke.setAttribute('x1', cx); spoke.setAttribute('y1', cy); spoke.setAttribute('x2', x); spoke.setAttribute('y2', y);
+      spokesG.appendChild(spoke);
+      const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+      g.setAttribute('class','node');
+      const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+      c.setAttribute('cx', x); c.setAttribute('cy', y); c.setAttribute('r', 22);
+      c.setAttribute('fill', 'var(--surface)'); c.setAttribute('stroke', 'var(--border-2)'); c.setAttribute('stroke-width','1.5');
+      const p = document.createElementNS('http://www.w3.org/2000/svg','path');
+      p.setAttribute('d', 'M'+(x-7)+' '+(y+3)+' a7 7 0 0 1 14 0 M'+x+' '+(y-3)+' m-4 0 a4 4 0 1 0 8 0 a4 4 0 1 0 -8 0');
+      p.setAttribute('fill','none'); p.setAttribute('stroke','var(--ink-4)'); p.setAttribute('stroke-width','1.6');
+      g.appendChild(c); g.appendChild(p); nodesG.appendChild(g);
+      els.push({ c, p });
+    }
+    let lit = false;
+    function light(on){
+      els.forEach((el, i) => {
+        const isActive = on && active.includes(i);
+        el.c.setAttribute('fill', isActive ? 'var(--green)' : 'var(--surface)');
+        el.c.setAttribute('stroke', isActive ? 'var(--green)' : 'var(--border-2)');
+        el.p.setAttribute('stroke', isActive ? '#fff' : 'var(--ink-4)');
+      });
+      countEl.textContent = on ? '3 / 5' : '0 / 5';
+    }
+    light(false);
+    const ringIO = new IntersectionObserver((es) => { es.forEach(e => { if (e.isIntersecting && !lit) { lit = true; setTimeout(() => light(true), 350); } }); }, { threshold: 0.4 });
+    ringIO.observe(document.getElementById('ring'));
+  })();
+</script>
 </body>
 </html>
