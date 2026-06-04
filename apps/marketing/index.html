@@ -56,8 +56,27 @@
   .btn-ghost { background:transparent; color:var(--ink); border-color:var(--border-2); } .btn-ghost:hover { background:var(--surface); }
   @media (max-width:720px){ nav ul { display:none; } }
 
-  .reveal { opacity:0; transform:translateY(24px); transition:opacity .8s cubic-bezier(.16,1,.3,1), transform .8s cubic-bezier(.16,1,.3,1); }
+  .reveal { opacity:0; transform:translateY(26px) scale(.985); transition:opacity .85s cubic-bezier(.16,1,.3,1), transform .85s cubic-bezier(.16,1,.3,1); }
   .reveal.in { opacity:1; transform:none; }
+
+  /* ---- motion ---- */
+  .device { will-change:transform; }
+  .device.float { animation:floaty 7s ease-in-out infinite; }
+  @keyframes floaty { 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-14px) } }
+  #heroDevice { transition:transform .3s cubic-bezier(.16,1,.3,1); transform-style:preserve-3d; }
+  .hero::before { animation:aura 16s ease-in-out infinite alternate; }
+  @keyframes aura { 0%{ transform:translateX(-5%) scale(1); opacity:.85 } 100%{ transform:translateX(5%) scale(1.12); opacity:1 } }
+  .scr-spark path { stroke-dasharray:620; stroke-dashoffset:620; }
+  .scr-spark path.draw { transition:stroke-dashoffset 1.8s cubic-bezier(.16,1,.3,1); stroke-dashoffset:0; }
+  .secured .sec-shield { animation:shieldpulse 3.4s ease-in-out infinite; }
+  @keyframes shieldpulse { 0%,100%{ box-shadow:0 0 0 0 rgba(70,217,138,.30) } 50%{ box-shadow:0 0 0 14px rgba(70,217,138,0) } }
+  @keyframes ringpop { 0%{ transform:scale(.4); opacity:0 } 70%{ transform:scale(1.12) } 100%{ transform:scale(1); opacity:1 } }
+  @media (prefers-reduced-motion: reduce) {
+    .reveal { opacity:1 !important; transform:none !important; transition:none; }
+    .device.float, .hero::before, .secured .sec-shield, #heroDevice { animation:none !important; }
+    .scr-spark path { stroke-dashoffset:0 !important; }
+    html { scroll-behavior:auto; }
+  }
 
   /* hero */
   .hero { text-align:center; padding:80px 0 0; position:relative; }
@@ -104,6 +123,7 @@
   /* circle of trust ring */
   .ring { width:300px; height:300px; } .ring svg { width:100%; height:100%; overflow:visible; }
   .ring .center { fill:var(--surface); stroke:var(--border-2); }
+  .ring circle, .ring path, .ring line { transition:fill .5s ease, stroke .5s ease, opacity .5s ease; }
 
   /* big statement band */
   .band { padding:120px 0; text-align:center; border-top:1px solid var(--border); }
@@ -194,14 +214,14 @@
     </div>
     <!-- hero device -->
     <div class="wrap" style="margin-top:56px; display:flex; justify-content:center;">
-      <div class="device reveal" style="width:340px;">
+      <div class="device reveal" id="heroDevice" style="width:340px;">
         <div class="island"></div>
         <div class="screen">
           <div class="scr-pad">
             <div class="scr-top"><div class="scr-brand"><span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11 V8 a4 4 0 0 1 8 0 v3"/></svg></span>Lyfos</div><div class="scr-eye">June</div></div>
             <div style="text-align:center; margin-top:8px;">
               <div class="scr-eye">Net worth</div>
-              <div class="scr-hero-num">₹48,20,000</div>
+              <div class="scr-hero-num" id="heroNum" data-target="4820000">₹0</div>
               <div style="display:inline-block; margin-top:6px; padding:3px 10px; border-radius:999px; background:var(--green-soft); color:var(--green-ink); font-size:10px; font-weight:600;">▲ ₹1.2L this month</div>
             </div>
             <svg class="scr-spark" viewBox="0 0 300 46" preserveAspectRatio="none"><path d="M0 38 L40 34 L80 36 L120 26 L160 28 L200 18 L240 20 L300 8" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -218,7 +238,7 @@
   <!-- FEATURE 1: organised by life -->
   <section class="feat wrap" id="organise">
     <div class="feat-vis reveal">
-      <div class="device">
+      <div class="device float">
         <div class="island"></div>
         <div class="screen">
           <div class="scr-pad">
@@ -266,7 +286,7 @@
   <!-- FEATURE 3: release control -->
   <section class="feat wrap" id="release">
     <div class="feat-vis reveal">
-      <div class="device">
+      <div class="device float">
         <div class="island"></div>
         <div class="screen">
           <div class="scr-pad">
@@ -402,6 +422,37 @@
   const io=new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target);} }),{threshold:.12,rootMargin:'0px 0px -6% 0px'});
   document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
 
+  const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // count-up the hero net worth
+  (function(){
+    const el=document.getElementById('heroNum'); if(!el) return;
+    const target=+el.dataset.target;
+    if(REDUCED){ el.textContent='₹'+target.toLocaleString('en-IN'); return; }
+    let started=false;
+    const run=()=>{ if(started) return; started=true; const t0=performance.now(), dur=1500;
+      const tick=now=>{ const p=Math.min(1,(now-t0)/dur), e=1-Math.pow(1-p,3); el.textContent='₹'+Math.round(target*e).toLocaleString('en-IN'); if(p<1) requestAnimationFrame(tick); };
+      requestAnimationFrame(tick); };
+    new IntersectionObserver((es,o)=>es.forEach(x=>{ if(x.isIntersecting){ run(); o.disconnect(); } }),{threshold:.5}).observe(el);
+  })();
+
+  // draw the sparkline when it scrolls in
+  (function(){
+    const p=document.querySelector('.scr-spark path'); if(!p) return;
+    new IntersectionObserver((es,o)=>es.forEach(x=>{ if(x.isIntersecting){ p.classList.add('draw'); o.disconnect(); } }),{threshold:.4}).observe(p);
+  })();
+
+  // hero device: pointer tilt + gentle scroll parallax
+  (function(){
+    const d=document.getElementById('heroDevice'); if(!d||REDUCED) return;
+    let ry=0,rx=0,par=0;
+    const apply=()=>{ d.style.transform=`perspective(1100px) rotateX(${rx}deg) rotateY(${ry}deg) translateY(${par}px)`; };
+    const hero=d.closest('header');
+    hero.addEventListener('pointermove',e=>{ const r=hero.getBoundingClientRect(); const cx=(e.clientX-r.left)/r.width-0.5, cy=(e.clientY-r.top)/r.height-0.5; ry=cx*9; rx=-cy*6; apply(); });
+    hero.addEventListener('pointerleave',()=>{ ry=0; rx=0; apply(); });
+    addEventListener('scroll',()=>{ par=Math.max(-30, Math.min(0, -window.scrollY*0.04)); apply(); },{passive:true});
+  })();
+
   // circle of trust
   (function(){
     const nodesG=document.getElementById('ringNodes'), spokesG=document.getElementById('ringSpokes'), countEl=document.getElementById('ringCount');
@@ -412,11 +463,11 @@
       const c=document.createElementNS('http://www.w3.org/2000/svg','circle'); c.setAttribute('cx',x);c.setAttribute('cy',y);c.setAttribute('r',24); c.setAttribute('fill','var(--surface)');c.setAttribute('stroke','var(--border-2)');c.setAttribute('stroke-width','1.5');
       const p=document.createElementNS('http://www.w3.org/2000/svg','path'); p.setAttribute('d','M'+(x-7)+' '+(y+4)+' a7 7 0 0 1 14 0 M'+x+' '+(y-2)+' m-4 0 a4 4 0 1 0 8 0 a4 4 0 1 0 -8 0'); p.setAttribute('fill','none');p.setAttribute('stroke','var(--ink-4)');p.setAttribute('stroke-width','1.6');
       nodesG.appendChild(c);nodesG.appendChild(p); els.push({c,p}); }
-    let lit=false;
-    function light(on){ els.forEach((el,i)=>{ const A=on&&active.includes(i); el.c.setAttribute('fill',A?'var(--green)':'var(--surface)'); el.c.setAttribute('stroke',A?'var(--green)':'var(--border-2)'); el.p.setAttribute('stroke',A?'#fff':'var(--ink-4)'); }); el_count(on); }
-    function el_count(on){ countEl.textContent = on?'3 / 5':'0 / 5'; }
-    light(false);
-    new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting&&!lit){ lit=true; setTimeout(()=>light(true),350);} }),{threshold:.4}).observe(document.getElementById('ring'));
+    let lit=false, shown=0;
+    function setNode(el,A){ el.c.style.fill=A?'var(--green)':'var(--surface)'; el.c.style.stroke=A?'var(--green)':'var(--border-2)'; el.p.style.stroke=A?'#fff':'var(--ink-4)'; }
+    els.forEach(el=>setNode(el,false)); countEl.textContent='0 / 5';
+    function light(){ active.forEach((idx,k)=>{ setTimeout(()=>{ setNode(els[idx],true); shown++; countEl.textContent=shown+' / 5'; }, 250+k*320); }); }
+    new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting&&!lit){ lit=true; light(); } }),{threshold:.4}).observe(document.getElementById('ring'));
   })();
 
   // waitlist
