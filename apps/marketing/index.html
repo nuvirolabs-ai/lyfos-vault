@@ -56,24 +56,44 @@
   .btn-ghost { background:transparent; color:var(--ink); border-color:var(--border-2); } .btn-ghost:hover { background:var(--surface); }
   @media (max-width:720px){ nav ul { display:none; } }
 
-  .reveal { opacity:0; transform:translateY(26px) scale(.985); transition:opacity .85s cubic-bezier(.16,1,.3,1), transform .85s cubic-bezier(.16,1,.3,1); }
-  .reveal.in { opacity:1; transform:none; }
+  /* ---- motion (bold + obvious) ---- */
+  .reveal { opacity:0; transform:translateY(52px) scale(.94); transition:opacity .9s cubic-bezier(.16,1,.3,1), transform .9s cubic-bezier(.16,1,.3,1); }
+  .reveal.left  { transform:translateX(-70px) scale(.96); }
+  .reveal.right { transform:translateX(70px) scale(.96); }
+  .reveal.pop   { transform:scale(.6); }
+  .reveal.in { opacity:1 !important; transform:none !important; }
 
-  /* ---- motion ---- */
   .device { will-change:transform; }
-  .device.float { animation:floaty 7s ease-in-out infinite; }
-  @keyframes floaty { 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-14px) } }
-  #heroDevice { transition:transform .3s cubic-bezier(.16,1,.3,1); transform-style:preserve-3d; }
-  .hero::before { animation:aura 16s ease-in-out infinite alternate; }
-  @keyframes aura { 0%{ transform:translateX(-5%) scale(1); opacity:.85 } 100%{ transform:translateX(5%) scale(1.12); opacity:1 } }
+  .device.float { animation:floaty 5s ease-in-out infinite; }
+  @keyframes floaty { 0%,100%{ transform:translateY(0) rotate(0deg) } 50%{ transform:translateY(-26px) rotate(-1.2deg) } }
+  #heroDevice { transform-style:preserve-3d; }
+  @media (min-width:860px){
+    .feat .feat-vis.reveal { transform:translateX(-80px) scale(.94); }
+    .feat .feat-txt.reveal { transform:translateX(56px) scale(.97); }
+    .feat.flip .feat-vis.reveal { transform:translateX(80px) scale(.94); }
+    .feat.flip .feat-txt.reveal { transform:translateX(-56px) scale(.97); }
+  }
+
+  .hero::before { animation:aura 9s ease-in-out infinite alternate; }
+  @keyframes aura { 0%{ transform:translateX(-12%) scale(.95); opacity:.6 } 100%{ transform:translateX(12%) scale(1.25); opacity:1 } }
+
   .scr-spark path { stroke-dasharray:620; stroke-dashoffset:620; }
   .scr-spark path.draw { transition:stroke-dashoffset 1.8s cubic-bezier(.16,1,.3,1); stroke-dashoffset:0; }
-  .secured .sec-shield { animation:shieldpulse 3.4s ease-in-out infinite; }
-  @keyframes shieldpulse { 0%,100%{ box-shadow:0 0 0 0 rgba(70,217,138,.30) } 50%{ box-shadow:0 0 0 14px rgba(70,217,138,0) } }
-  @keyframes ringpop { 0%{ transform:scale(.4); opacity:0 } 70%{ transform:scale(1.12) } 100%{ transform:scale(1); opacity:1 } }
+
+  /* shimmer sweep on the primary CTA */
+  .btn-green { position:relative; overflow:hidden; }
+  .btn-green::after { content:""; position:absolute; top:0; left:-150%; width:60%; height:100%; transform:skewX(-20deg); background:linear-gradient(90deg, transparent, rgba(255,255,255,.45), transparent); animation:shine 3.2s ease-in-out 1.5s infinite; }
+  @keyframes shine { 0%{ left:-150% } 55%,100%{ left:150% } }
+
+  .secured .sec-shield { animation:shieldpulse 2.4s ease-in-out infinite; }
+  @keyframes shieldpulse { 0%,100%{ box-shadow:0 0 0 0 rgba(70,217,138,.45); transform:scale(1) } 50%{ box-shadow:0 0 0 22px rgba(70,217,138,0); transform:scale(1.06) } }
+
+  .ring .node-on { animation:nodepop .55s cubic-bezier(.34,1.56,.64,1) both; transform-box:fill-box; transform-origin:center; }
+  @keyframes nodepop { 0%{ transform:scale(.2) } 70%{ transform:scale(1.25) } 100%{ transform:scale(1) } }
+
   @media (prefers-reduced-motion: reduce) {
     .reveal { opacity:1 !important; transform:none !important; transition:none; }
-    .device.float, .hero::before, .secured .sec-shield, #heroDevice { animation:none !important; }
+    .device.float, #heroDevice.entered, .hero::before, .secured .sec-shield, .btn-green::after, .ring .node-on { animation:none !important; }
     .scr-spark path { stroke-dashoffset:0 !important; }
     html { scroll-behavior:auto; }
   }
@@ -442,15 +462,17 @@
     new IntersectionObserver((es,o)=>es.forEach(x=>{ if(x.isIntersecting){ p.classList.add('draw'); o.disconnect(); } }),{threshold:.4}).observe(p);
   })();
 
-  // hero device: pointer tilt + gentle scroll parallax
+  // hero device: continuous float + pointer tilt + scroll parallax (one rAF loop)
   (function(){
     const d=document.getElementById('heroDevice'); if(!d||REDUCED) return;
-    let ry=0,rx=0,par=0;
-    const apply=()=>{ d.style.transform=`perspective(1100px) rotateX(${rx}deg) rotateY(${ry}deg) translateY(${par}px)`; };
+    let tRy=0,tRx=0, ry=0,rx=0, par=0, t0=performance.now();
     const hero=d.closest('header');
-    hero.addEventListener('pointermove',e=>{ const r=hero.getBoundingClientRect(); const cx=(e.clientX-r.left)/r.width-0.5, cy=(e.clientY-r.top)/r.height-0.5; ry=cx*9; rx=-cy*6; apply(); });
-    hero.addEventListener('pointerleave',()=>{ ry=0; rx=0; apply(); });
-    addEventListener('scroll',()=>{ par=Math.max(-30, Math.min(0, -window.scrollY*0.04)); apply(); },{passive:true});
+    hero.addEventListener('pointermove',e=>{ const r=hero.getBoundingClientRect(); tRy=((e.clientX-r.left)/r.width-0.5)*16; tRx=-((e.clientY-r.top)/r.height-0.5)*10; });
+    hero.addEventListener('pointerleave',()=>{ tRy=0; tRx=0; });
+    addEventListener('scroll',()=>{ par=Math.max(-70, -window.scrollY*0.09); },{passive:true});
+    (function loop(now){ ry+=(tRy-ry)*0.08; rx+=(tRx-rx)*0.08; const fl=Math.sin((now-t0)/1100)*13;
+      d.style.transform=`perspective(1100px) rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg) translateY(${(par+fl).toFixed(1)}px)`;
+      requestAnimationFrame(loop); })(t0);
   })();
 
   // circle of trust
@@ -464,7 +486,7 @@
       const p=document.createElementNS('http://www.w3.org/2000/svg','path'); p.setAttribute('d','M'+(x-7)+' '+(y+4)+' a7 7 0 0 1 14 0 M'+x+' '+(y-2)+' m-4 0 a4 4 0 1 0 8 0 a4 4 0 1 0 -8 0'); p.setAttribute('fill','none');p.setAttribute('stroke','var(--ink-4)');p.setAttribute('stroke-width','1.6');
       nodesG.appendChild(c);nodesG.appendChild(p); els.push({c,p}); }
     let lit=false, shown=0;
-    function setNode(el,A){ el.c.style.fill=A?'var(--green)':'var(--surface)'; el.c.style.stroke=A?'var(--green)':'var(--border-2)'; el.p.style.stroke=A?'#fff':'var(--ink-4)'; }
+    function setNode(el,A){ el.c.style.fill=A?'var(--green)':'var(--surface)'; el.c.style.stroke=A?'var(--green)':'var(--border-2)'; el.p.style.stroke=A?'#fff':'var(--ink-4)'; if(A) el.c.classList.add('node-on'); }
     els.forEach(el=>setNode(el,false)); countEl.textContent='0 / 5';
     function light(){ active.forEach((idx,k)=>{ setTimeout(()=>{ setNode(els[idx],true); shown++; countEl.textContent=shown+' / 5'; }, 250+k*320); }); }
     new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting&&!lit){ lit=true; light(); } }),{threshold:.4}).observe(document.getElementById('ring'));
