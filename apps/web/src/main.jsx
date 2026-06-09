@@ -1379,7 +1379,7 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
       <header className="flex h-14 items-center px-6">
         <div className="flex items-center gap-2.5 font-semibold">
           <span className="grid h-6 w-6 place-items-center rounded-md bg-[var(--accent)]">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11 V8 a4 4 0 0 1 8 0 v3" /></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M8.2 11V8.3a3.8 3.8 0 0 1 7.6 0V11" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" /><rect x="5.4" y="10.6" width="13.2" height="9.4" rx="2.7" fill="#fff" /><circle cx="12" cy="14.7" r="1.55" fill="var(--accent)" /><path d="M12 15.7l-1.05 3.5h2.1z" fill="var(--accent)" /></svg>
           </span>
           Lyfos
         </div>
@@ -1387,7 +1387,7 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
 
       <div className="mx-auto flex min-h-[calc(100vh-3.5rem)] max-w-md flex-col items-center px-5 pb-16 pt-6">
         <div className="grid h-16 w-16 place-items-center rounded-[18px] bg-[var(--green-soft)]">
-          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11 V8 a4 4 0 0 1 8 0 v3" /><circle cx="12" cy="15.5" r="1.3" fill="var(--accent)" stroke="none" /></svg>
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none"><path d="M8.2 11V8.3a3.8 3.8 0 0 1 7.6 0V11" stroke="var(--accent)" strokeWidth="2.1" strokeLinecap="round" /><rect x="5.4" y="10.6" width="13.2" height="9.4" rx="2.7" fill="var(--accent)" /><circle cx="12" cy="14.7" r="1.55" fill="var(--green-soft)" /><path d="M12 15.7l-1.05 3.5h2.1z" fill="var(--green-soft)" /></svg>
         </div>
 
         <div className="mt-5 text-center">
@@ -1909,7 +1909,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
       <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-[var(--line)] bg-[var(--surface)] px-4">
         <div className="flex items-center gap-2.5 font-semibold">
           <span className="grid h-6 w-6 place-items-center rounded-md bg-[var(--accent)]">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11 V8 a4 4 0 0 1 8 0 v3" /></svg>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M8.2 11V8.3a3.8 3.8 0 0 1 7.6 0V11" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" /><rect x="5.4" y="10.6" width="13.2" height="9.4" rx="2.7" fill="#fff" /><circle cx="12" cy="14.7" r="1.55" fill="var(--accent)" /><path d="M12 15.7l-1.05 3.5h2.1z" fill="var(--accent)" /></svg>
           </span>
           Lyfos
         </div>

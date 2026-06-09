@@ -1,8 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="116" fill="#07090d"/>
-  <rect x="124" y="188" width="264" height="200" rx="48" fill="#f7f4ef"/>
-  <path d="M178 198v-34c0-46 34-80 78-80s78 34 78 80v34" fill="none" stroke="#f7f4ef" stroke-width="42" stroke-linecap="round"/>
-  <circle cx="256" cy="288" r="31" fill="#07090d"/>
-  <path d="M256 314v42" stroke="#07090d" stroke-width="26" stroke-linecap="round"/>
-  <circle cx="372" cy="134" r="34" fill="#7dd3a8"/>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2cc274"/>
+      <stop offset="1" stop-color="#138a4e"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#tile)"/>
+  <path d="M188 234 V180 a68 68 0 0 1 136 0 V234" fill="none" stroke="#fff" stroke-width="40" stroke-linecap="round"/>
+  <rect x="146" y="232" width="220" height="172" rx="46" fill="#fff"/>
+  <circle cx="256" cy="300" r="27" fill="#138a4e"/>
+  <path d="M256 320 l-19 62 h38 z" fill="#138a4e"/>
 </svg>
