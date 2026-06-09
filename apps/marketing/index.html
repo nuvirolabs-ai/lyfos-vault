@@ -122,6 +122,8 @@
   .hero { text-align:center; padding:140px 0 0; position:relative; }
   /* one quiet glow, nothing more */
   .hero::before { content:""; position:absolute; left:50%; top:-40px; width:min(1000px,120vw); height:560px; transform:translateX(-50%); z-index:-1; pointer-events:none; background:radial-gradient(50% 55% at 50% 30%, var(--green-soft), transparent 72%); }
+  /* the product window dissolves softly into the page, rather than ending on a hard edge */
+  .hero::after { content:""; position:absolute; left:0; right:0; bottom:0; height:200px; z-index:2; pointer-events:none; background:linear-gradient(to bottom, transparent, var(--bg) 82%); }
   .hero h1 { font-size:clamp(52px,8.5vw,112px); line-height:.92; letter-spacing:-.05em; font-weight:600; margin:0 auto; }
   .hero h1 .soft { color:var(--ink-3); }
   .hero .sub { font-size:clamp(16px,1.8vw,20px); color:var(--ink-2); max-width:34ch; margin:26px auto 0; }
@@ -777,7 +779,8 @@
     hero.addEventListener('pointerleave',()=>{ tRy=0; tRx=0; });
     addEventListener('scroll',()=>{ par=Math.max(-34, -window.scrollY*0.05); },{passive:true});
     (function loop(now){ ry+=(tRy-ry)*0.06; rx+=(tRx-rx)*0.06; const fl=Math.sin((now-t0)/1600)*5;
-      d.style.transform=`perspective(1400px) rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg) translateY(${(par+fl).toFixed(1)}px)`;
+      const p=Math.min(1,(now-t0)/950), e=1-Math.pow(1-p,3), sc=(0.975+0.025*e).toFixed(4);
+      d.style.transform=`perspective(1400px) rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg) translateY(${(par+fl).toFixed(1)}px) scale(${sc})`;
       requestAnimationFrame(loop); })(t0);
   })();
 
