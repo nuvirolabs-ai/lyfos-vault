@@ -846,11 +846,14 @@
     const endpoint=(document.querySelector('meta[name="lyfos-waitlist-endpoint"]')||{}).content||form.action;
     const RE=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     function show(m,ok){ note.hidden=false; note.textContent=m; note.className='note '+(ok?'ok':'err'); }
+    // live waitlist count → "N people are already on the waitlist" (only once it's meaningful)
+    (async()=>{ try{ const r=await fetch(endpoint,{method:'GET'}); if(!r.ok) return; const d=await r.json(); const c=Number(d&&d.count)||0; if(c>=25 && sub && !form.hidden){ sub.textContent=c.toLocaleString('en-IN')+' people are already on the waitlist. No spam — one email when your vault is ready.'; } }catch(_){ } })();
     form.addEventListener('submit',async e=>{ e.preventDefault();
       const email=(input.value||'').trim(); if(!RE.test(email)){ show('Please enter a valid email address.',false); input.focus(); return; }
       btn.disabled=true; const l=btn.textContent; btn.textContent='Joining…';
       try{ const r=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email,source:'marketing-home',referrer:document.referrer||''})}); if(!r.ok) throw 0;
-        form.hidden=true; if(sub) sub.hidden=true; show("You're on the list. We'll email your private link in about 10 days — keep an eye on your inbox.",true);
+        const d=await r.json().catch(()=>({})); const pos=Number(d&&d.position)||0; const where=pos?(' You’re #'+pos.toLocaleString('en-IN')+' in line.'):'';
+        form.hidden=true; if(sub) sub.hidden=true; show("You’re on the list."+where+" We’ll email your private link in about 10 days — keep an eye on your inbox.",true);
       }catch(_){ btn.disabled=false; btn.textContent=l; note.hidden=false; note.className='note err'; note.innerHTML='Couldn’t reach the server. Email <a href="mailto:hello@lyfos.signorvale.com" style="color:inherit;text-decoration:underline;">hello@lyfos.signorvale.com</a> and we’ll add you.'; }
     });
   })();

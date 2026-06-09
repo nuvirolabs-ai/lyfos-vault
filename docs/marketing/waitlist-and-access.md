@@ -11,7 +11,7 @@ ever sent in the activation email (never published on the site).
 | Piece | Where | What it does |
 |---|---|---|
 | `waitlist` table | `supabase/migrations/0015_waitlist.sql` + `0016_waitlist_activation.sql` | Stores signups with `status` (`pending` / `activated`), `activated_at`, `note`. RLS fully locked — only service-role functions touch it. |
-| `waitlist` function | `supabase/functions/waitlist/` | Public `POST {email, source}` — inserts a signup (deduped). Called by the marketing form. |
+| `waitlist` function | `supabase/functions/waitlist/` | Public `POST {email, source}` — inserts a signup (deduped), returns the person's `position`, and emails a "you're on the list" confirmation (new non-checklist signups only). Also `GET` → `{ count }` for the live counter on the form. Called by the marketing form. |
 | `waitlist-admin` function | `supabase/functions/waitlist-admin/` | Founder-only (`x-admin-token`). `GET` lists signups; `POST {action:"activate", id|email}` marks activated and emails the private app link via Resend. |
 | Admin page | `apps/marketing/admin/` | Password-protected (the admin token). Lists signups, one-click **Activate & email**. `noindex`. |
 | Marketing form | `apps/marketing/index.html` (`#join`) | All CTAs now point to `#join`; the form POSTs to the `waitlist` function. |
@@ -63,8 +63,15 @@ Commit + push — the landing site auto-deploys.
 4. "Disconnect" clears the token from this browser.
 
 ## Notes
-- The activation email body lives in `waitlist-admin/index.ts` (`activationEmail`).
-  Edit + redeploy to change the copy or the link.
+- The **activation** email body lives in `waitlist-admin/index.ts` (`activationEmail`);
+  the **"you're on the list" confirmation** email lives in `waitlist/index.ts`
+  (`sendConfirmation`). Edit + redeploy to change copy.
+- The confirmation email needs `RESEND_API_KEY` + `FROM_EMAIL` set on the
+  `waitlist` function too (same values as the others). Without them, signups
+  still work — they just don't get the confirmation.
+- The form shows "N people are already on the waitlist" only once the count
+  reaches 25 (so it never looks empty early). Tune the threshold in
+  `apps/marketing/index.html` (the `c >= 25` check).
 - Because RLS has no anon policies, the table can't be read or written by
   anyone except the two service-role functions — even with the anon key.
 - The lead-magnet ("Family Recovery Checklist") form posts to the same
