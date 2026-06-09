@@ -30,13 +30,19 @@
 
 <main>
 
-<section class="hero" style="text-align: left; padding-bottom: 40px;">
+<section class="hero big left" style="text-align: left; padding-bottom: 40px;">
+  <div class="hero-badge" style="margin-left:0;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 L20 6 V12 C 20 17 16 20 12 21 C 8 20 4 17 4 12 V6 Z"/><path d="M9 12 l2 2 l4 -4"/></svg></div>
   <div class="eyebrow">Security</div>
-  <h1 style="text-align: left;">We protect your vault the way it should have been done from the start.</h1>
+  <h1 style="text-align: left;">Built so even we can't open it.</h1>
   <p class="lede" style="text-align: left; margin: 0;">
-    No master keys we hold in reserve. No secret way to decrypt your data.
-    The architecture itself is the promise.
+    No master keys held in reserve. No secret way to decrypt your data. The
+    architecture itself is the promise — here's exactly how it works.
   </p>
+  <div class="hero-stats">
+    <div class="hero-stat"><b>Argon2id</b><span>Memory-hard key derivation</span></div>
+    <div class="hero-stat"><b>AES-256-GCM</b><span>On-device vault encryption</span></div>
+    <div class="hero-stat"><b>3-of-5</b><span>Shamir threshold recovery</span></div>
+  </div>
 </section>
 
 <section class="row">

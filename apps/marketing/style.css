@@ -63,9 +63,23 @@ nav.top .cta:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
 main { max-width: var(--maxw); margin: 0 auto; padding: 72px 24px 48px; }
 
 /* Hero */
-.eyebrow { font-size: 12px; text-transform: uppercase; letter-spacing: 0.18em; color: var(--ink3); font-weight: 600; }
+.eyebrow { font-size: 12px; text-transform: uppercase; letter-spacing: 0.18em; color: var(--green-ink); font-weight: 600; }
 .hero { text-align: center; padding: 32px 0 64px; }
 .hero h1 { font-size: clamp(36px, 5.6vw, 60px); line-height: 1.04; letter-spacing: -0.035em; margin: 18px auto 22px; max-width: 18ch; font-weight: 600; }
+
+/* Bold page-hero treatment (security, pricing, …) */
+.hero.big { position: relative; padding-top: 40px; }
+.hero.big::before { content: ""; position: absolute; inset: -30% -30% 45%; z-index: -1; background: radial-gradient(48% 60% at 50% 0%, var(--green-soft), transparent 70%); }
+.hero.big.left::before { background: radial-gradient(46% 60% at 22% 0%, var(--green-soft), transparent 70%); }
+.hero.big h1 { font-size: clamp(40px, 6.2vw, 70px); }
+.hero-badge { width: 74px; height: 74px; border-radius: 22px; background: var(--green-soft); border: 1px solid color-mix(in srgb, var(--green) 25%, transparent); display: grid; place-items: center; margin: 0 auto 26px; box-shadow: var(--shadow-sm); }
+.hero.left .hero-badge { margin-left: 0; }
+.hero-badge svg { width: 34px; height: 34px; color: var(--green); }
+.hero-stats { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-top: 34px; }
+.hero.left .hero-stats { justify-content: flex-start; }
+.hero-stat { padding: 14px 20px; border: 1px solid var(--divider); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-sm); text-align: left; }
+.hero-stat b { display: block; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+.hero-stat span { font-size: 12.5px; color: var(--ink3); }
 .hero p.lede { font-size: clamp(17px, 2.2vw, 21px); line-height: 1.5; color: var(--ink2); max-width: 58ch; margin: 0 auto 36px; }
 .cta-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 26px; border-radius: 999px; font-size: 15px; font-weight: 600; border: 1px solid transparent; cursor: pointer; font-family: var(--sans); transition: all 160ms ease; }

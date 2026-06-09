@@ -744,7 +744,10 @@
       const email=(input.value||'').trim(); if(!RE.test(email)){ note.hidden=false; note.className='note err'; note.textContent='Please enter a valid email address.'; input.focus(); return; }
       btn.disabled=true; const l=btn.textContent; btn.textContent='Sending…';
       try{ await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email,source:'checklist',referrer:document.referrer||''})}); }catch(_){}
-      form.hidden=true; note.hidden=false; note.className='note ok'; note.textContent='On its way — check your inbox in a minute.';
+      // Deliver immediately: open the PDF + show a permanent download link.
+      try{ window.open('/family-recovery-checklist.pdf','_blank'); }catch(_){}
+      form.hidden=true; note.hidden=false; note.className='note ok';
+      note.innerHTML='Here it is — <a href="/family-recovery-checklist.pdf" download style="color:inherit;text-decoration:underline;">download the checklist (PDF)</a>. We saved your email for the launch note too.';
     });
   })();
 
