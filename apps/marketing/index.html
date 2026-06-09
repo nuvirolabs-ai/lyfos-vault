@@ -118,37 +118,20 @@
   /* Note: motion intentionally runs regardless of the OS "reduce motion"
      setting, at the product owner's request. */
 
-  /* hero */
-  .hero { text-align:center; padding:124px 0 64px; position:relative; overflow:hidden; }
-  /* living mesh-gradient aura */
-  .hero-bg { position:absolute; inset:-12% -12% 24%; z-index:-2; pointer-events:none; }
-  .hero-bg b { position:absolute; display:block; border-radius:50%; filter:blur(72px); opacity:.5; mix-blend-mode:multiply; }
-  html[data-theme="dark"] .hero-bg b { opacity:.42; mix-blend-mode:screen; }
-  .hero-bg .b1 { width:440px; height:440px; left:6%;  top:-40px; background:radial-gradient(circle,#2fd27e,transparent 70%); animation:blob1 18s ease-in-out infinite; }
-  .hero-bg .b2 { width:400px; height:400px; right:4%; top:30px;  background:radial-gradient(circle,#13b06a,transparent 70%); animation:blob2 22s ease-in-out infinite; }
-  .hero-bg .b3 { width:480px; height:480px; left:34%; top:110px; background:radial-gradient(circle,#86efb9,transparent 70%); animation:blob3 26s ease-in-out infinite; }
-  /* faint concentric rings behind the headline */
-  .hero-rings { position:absolute; left:50%; top:46%; transform:translate(-50%,-50%); z-index:-1; width:760px; height:760px; max-width:120vw; opacity:.5; pointer-events:none; }
-  .hero-rings span { position:absolute; inset:0; margin:auto; border:1px solid var(--border); border-radius:50%; }
-  .hero-rings span:nth-child(1){ width:280px; height:280px; } .hero-rings span:nth-child(2){ width:480px; height:480px; } .hero-rings span:nth-child(3){ width:700px; height:700px; }
-  .hero h1 { font-size:clamp(54px,9vw,116px); line-height:.92; letter-spacing:-.05em; font-weight:600; margin:0 auto; position:relative; z-index:3; }
+  /* hero — clean, product-forward, lots of air */
+  .hero { text-align:center; padding:140px 0 0; position:relative; }
+  /* one quiet glow, nothing more */
+  .hero::before { content:""; position:absolute; left:50%; top:-40px; width:min(1000px,120vw); height:560px; transform:translateX(-50%); z-index:-1; pointer-events:none; background:radial-gradient(50% 55% at 50% 30%, var(--green-soft), transparent 72%); }
+  .hero h1 { font-size:clamp(52px,8.5vw,112px); line-height:.92; letter-spacing:-.05em; font-weight:600; margin:0 auto; }
   .hero h1 .soft { color:var(--ink-3); }
-  .hero .sub { font-size:clamp(16px,1.8vw,19px); color:var(--ink-2); max-width:34ch; margin:26px auto 0; position:relative; z-index:3; }
-  .cta-row { display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-top:38px; position:relative; z-index:3; }
-  .tiny { font-size:13px; color:var(--ink-4); margin-top:20px; letter-spacing:.01em; position:relative; z-index:3; }
-  /* floating concept chips — what the vault holds */
-  .hero-chip { position:absolute; z-index:2; display:flex; align-items:center; gap:7px; padding:9px 15px; border-radius:999px; background:color-mix(in srgb,var(--surface) 72%,transparent); border:1px solid var(--border); box-shadow:var(--shadow-sm); font-size:13px; font-weight:500; color:var(--ink); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); white-space:nowrap; }
-  .hero-chip svg { width:15px; height:15px; color:var(--green); }
-  .hero-chip .lk { width:6px; height:6px; border-radius:50%; background:var(--green); }
-  .hero-chip.c1 { top:21%; left:7%;  animation:chipfloat 6s   ease-in-out infinite; }
-  .hero-chip.c2 { top:34%; right:6%; animation:chipfloat 7s   ease-in-out .5s infinite; }
-  .hero-chip.c3 { top:55%; left:11%; animation:chipfloat 6.5s ease-in-out 1s infinite; }
-  .hero-chip.c4 { top:64%; right:9%; animation:chipfloat 7.5s ease-in-out .3s infinite; }
-  .hero-chip.c5 { top:14%; right:21%;animation:chipfloat 8s   ease-in-out 1.2s infinite; }
-  .hero-chip.c6 { top:47%; left:1%;  animation:chipfloat 6.8s ease-in-out .8s infinite; }
-  @media (max-width:980px){ .hero-chip.c5, .hero-chip.c6 { display:none; } }
-  @media (max-width:760px){ .hero-chip { display:none; } }
-  @media (max-width:560px){ .hero { padding-top:88px; } }
+  .hero .sub { font-size:clamp(16px,1.8vw,20px); color:var(--ink-2); max-width:34ch; margin:26px auto 0; }
+  .cta-row { display:flex; gap:14px; justify-content:center; flex-wrap:wrap; margin-top:40px; }
+  .tiny { font-size:13px; color:var(--ink-4); margin-top:20px; letter-spacing:.01em; }
+  /* the single product shot — the hero object */
+  .hero-shot { margin-top:80px; display:flex; justify-content:center; padding:0 24px; }
+  .hero-shot .browser { box-shadow:0 2px 6px rgba(0,0,0,.04), 0 50px 100px -28px rgba(0,0,0,.30); }
+  html[data-theme="dark"] .hero-shot .browser { box-shadow:0 0 0 1px rgba(255,255,255,.04), 0 50px 120px -30px rgba(0,0,0,.8), 0 0 90px -20px rgba(47,170,99,.25); }
+  @media (max-width:560px){ .hero { padding-top:92px; } .hero-shot { margin-top:56px; } }
 
   /* device mockup */
   .device { width:300px; aspect-ratio:295/600; background:linear-gradient(160deg,#2a2a2e,#0d0d0f); border-radius:46px; padding:11px; box-shadow:var(--shadow); position:relative; flex:none; }
@@ -344,8 +327,6 @@
   html[data-motion="off"] .reveal { opacity:1 !important; transform:none !important; transition:none !important; }
   html[data-motion="off"] .device.float,
   html[data-motion="off"] .browser.float,
-  html[data-motion="off"] .hero-bg b,
-  html[data-motion="off"] .hero-chip,
   html[data-motion="off"] .secured .sec-shield,
   html[data-motion="off"] .btn-green::after,
   html[data-motion="off"] .ring .node-on,
@@ -375,15 +356,6 @@
 
   <!-- HERO -->
   <header class="hero">
-    <div class="hero-bg" aria-hidden="true"><b class="b1"></b><b class="b2"></b><b class="b3"></b></div>
-    <div class="hero-rings" aria-hidden="true"><span></span><span></span><span></span></div>
-    <!-- the things a vault holds -->
-    <span class="hero-chip c1" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 7a4 4 0 1 0-3.9 5H14v2h2v2h3v-3l-3-3z"/></svg>Passwords</span>
-    <span class="hero-chip c2" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10 12 4l9 6M5 10v9h14v-9M9 19v-5h6v5"/></svg>Bank &amp; money</span>
-    <span class="hero-chip c3" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="9" r="2.4"/><path d="M8 16c.6-2 2-3 4-3s3.4 1 4 3"/></svg>Passport &amp; IDs</span>
-    <span class="hero-chip c4" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 20 6V12C20 17 16 20 12 21 8 20 4 17 4 12V6Z"/><path d="M9 12l2 2 4-4"/></svg>Insurance</span>
-    <span class="hero-chip c5" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"/><path d="M8 9h7M8 13h7M8 17h4"/></svg>Will &amp; legal</span>
-    <span class="hero-chip c6" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M11 12 19 4M16 4h3v3M14 9l2 2"/></svg>Recovery key</span>
     <div class="wrap">
       <h1 class="reveal">Yours.<br><span class="soft">Then theirs.</span></h1>
       <p class="sub reveal">The vault your family can actually open.</p>
@@ -393,9 +365,9 @@
       </div>
       <p class="tiny reveal">Free · in your browser · nothing to install</p>
     </div>
-    <!-- hero: the web app -->
-    <div class="wrap" style="margin-top:52px; display:flex; justify-content:center;">
-      <div class="browser reveal" id="heroDevice" style="max-width:660px;">
+    <!-- one beautiful product shot -->
+    <div class="hero-shot reveal">
+      <div class="browser" id="heroDevice" style="max-width:720px;">
         <div class="chrome"><div class="tl"><i></i><i></i><i></i></div><div class="urlbar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11 V8 a4 4 0 0 1 8 0 v3"/></svg>app.lyfos.com/home</div></div>
         <div class="wapp">
           <div class="wapp-topbar">
@@ -801,11 +773,11 @@
     const d=document.getElementById('heroDevice'); if(!d||REDUCED) return;
     let tRy=0,tRx=0, ry=0,rx=0, par=0, t0=performance.now();
     const hero=d.closest('header');
-    hero.addEventListener('pointermove',e=>{ const r=hero.getBoundingClientRect(); tRy=((e.clientX-r.left)/r.width-0.5)*16; tRx=-((e.clientY-r.top)/r.height-0.5)*10; });
+    hero.addEventListener('pointermove',e=>{ const r=hero.getBoundingClientRect(); tRy=((e.clientX-r.left)/r.width-0.5)*5; tRx=-((e.clientY-r.top)/r.height-0.5)*3.5; });
     hero.addEventListener('pointerleave',()=>{ tRy=0; tRx=0; });
-    addEventListener('scroll',()=>{ par=Math.max(-70, -window.scrollY*0.09); },{passive:true});
-    (function loop(now){ ry+=(tRy-ry)*0.08; rx+=(tRx-rx)*0.08; const fl=Math.sin((now-t0)/1100)*13;
-      d.style.transform=`perspective(1100px) rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg) translateY(${(par+fl).toFixed(1)}px)`;
+    addEventListener('scroll',()=>{ par=Math.max(-34, -window.scrollY*0.05); },{passive:true});
+    (function loop(now){ ry+=(tRy-ry)*0.06; rx+=(tRx-rx)*0.06; const fl=Math.sin((now-t0)/1600)*5;
+      d.style.transform=`perspective(1400px) rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg) translateY(${(par+fl).toFixed(1)}px)`;
       requestAnimationFrame(loop); })(t0);
   })();
 
