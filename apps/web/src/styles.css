@@ -588,3 +588,20 @@ button:disabled {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ============================================================
+   Guided "next action" pulse — gently draws the eye to ONE
+   button at a time (the next step a new user should take).
+   ============================================================ */
+@keyframes lyfos-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(26, 157, 90, 0); }
+  50%      { box-shadow: 0 0 0 5px rgba(26, 157, 90, 0.16); }
+}
+.tour-pulse {
+  background-color: var(--green-soft) !important;
+  color: var(--ink) !important;
+  animation: lyfos-pulse 1.9s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour-pulse { animation: none; }
+}

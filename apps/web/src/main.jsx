@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { RELEASE_POLICY } from "@os-one/vault-model";
 import {
@@ -1665,9 +1665,9 @@ function AllRecords({ vault, onOpenArea }) {
   );
 }
 
-function RailItem({ active, onClick, icon, label, count, dot }) {
+function RailItem({ active, onClick, icon, label, count, dot, dataTour, pulse }) {
   return (
-    <button onClick={onClick} className={cx("flex w-full items-center gap-3 rounded-[10px] px-2.5 py-2 text-[14px] transition", active ? "bg-[var(--green-soft)] font-medium text-[var(--ink)]" : "text-[var(--ink-2)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]")}>
+    <button data-tour={dataTour} onClick={onClick} className={cx("flex w-full items-center gap-3 rounded-[10px] px-2.5 py-2 text-[14px] transition", active ? "bg-[var(--green-soft)] font-medium text-[var(--ink)]" : "text-[var(--ink-2)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]", pulse && "tour-pulse")}>
       {dot ? <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} /> : (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={active ? "var(--accent)" : "var(--ink-3)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d={icon} /></svg>
       )}
@@ -1873,6 +1873,89 @@ function SettingsPage({ vault, onExport, onReset, onLoadDemo, session, onShowAut
   );
 }
 
+const ONBOARDING_KEY = "lyfos-onboarded-v1";
+
+const TOUR_STEPS = [
+  { target: null, title: "Welcome to your vault", body: "Everything you keep here is encrypted on this device the moment you save it. We can never read it — only you, and the people you choose." },
+  { target: "add", title: "Add what matters", body: "Start here. Save passwords, accounts, documents and IDs. Each one is sealed the instant it’s stored." },
+  { target: "trust", title: "Your circle of trust", body: "Name the people who could recover this vault if something happened to you — you stay in control the entire time." },
+  { target: "seal", title: "Seal it anytime", body: "Stepping away? Tap Seal to lock everything instantly. That’s the whole tour — go explore." }
+];
+
+/**
+ * Apple-style coachmark tour: dims the page, spotlights one element at a time,
+ * and walks a first-time user through 3–5 steps with Next/Back. Anchors to
+ * elements via [data-tour="…"]; when an anchor isn't on screen (e.g. the rail
+ * is hidden on mobile) the step simply centers with no spotlight.
+ */
+function OnboardingTour({ steps, onDone }) {
+  const [i, setI] = useState(0);
+  const [rect, setRect] = useState(null);
+  const step = steps[i];
+  const last = i === steps.length - 1;
+
+  useLayoutEffect(() => {
+    function measure() {
+      const el = step.target ? document.querySelector(`[data-tour="${step.target}"]`) : null;
+      if (!el) { setRect(null); return; }
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) { setRect(null); return; }
+      setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+    }
+    measure();
+    const id = setTimeout(measure, 60); // settle after layout/scroll
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => { clearTimeout(id); window.removeEventListener("resize", measure); window.removeEventListener("scroll", measure, true); };
+  }, [i, step]);
+
+  // Card placement: beside/under the spotlight, else screen-centered.
+  const pad = 8;
+  let cardStyle;
+  if (rect) {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const below = rect.top + rect.height + 14;
+    const placeBelow = below + 190 < vh;
+    const top = placeBelow ? below : Math.max(16, rect.top - 14 - 190);
+    let left = rect.left + rect.width / 2 - 160;
+    left = Math.max(16, Math.min(left, vw - 320 - 16));
+    cardStyle = { top, left };
+  } else {
+    cardStyle = { top: "50%", left: "50%", transform: "translate(-50%, -50%)" };
+  }
+
+  return (
+    <div className="fixed inset-0 z-[120]">
+      {/* dim + spotlight (box-shadow cuts the hole); full-screen catcher blocks the app */}
+      {rect ? (
+        <div className="pointer-events-none fixed rounded-[14px] ring-2 ring-white/70 transition-all duration-300 ease-out"
+             style={{ top: rect.top - pad, left: rect.left - pad, width: rect.width + pad * 2, height: rect.height + pad * 2, boxShadow: "0 0 0 9999px rgba(8,12,16,0.62)" }} />
+      ) : (
+        <div className="fixed inset-0" style={{ background: "rgba(8,12,16,0.62)" }} />
+      )}
+      <div className="fixed inset-0" onClick={(e) => e.stopPropagation()} />
+
+      {/* coachmark card */}
+      <div className="fixed w-[320px] max-w-[calc(100vw-32px)] rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5 shadow-[0_24px_60px_-12px_rgba(0,0,0,0.45)]" style={cardStyle}>
+        <div className="flex items-center gap-1.5">
+          {steps.map((_, idx) => (
+            <span key={idx} className="h-1.5 rounded-full transition-all" style={{ width: idx === i ? 18 : 6, background: idx === i ? "var(--accent)" : "var(--line-2)" }} />
+          ))}
+        </div>
+        <h3 className="mt-4 text-[18px] font-semibold tracking-tight text-[var(--ink)]">{step.title}</h3>
+        <p className="mt-1.5 text-[13.5px] leading-relaxed text-[var(--ink-2)]">{step.body}</p>
+        <div className="mt-5 flex items-center justify-between">
+          <button onClick={onDone} className="text-[12.5px] font-medium text-[var(--ink-4)] transition hover:text-[var(--ink-2)]">Skip</button>
+          <div className="flex items-center gap-2">
+            {i > 0 && <button onClick={() => setI(i - 1)} className="rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-3.5 py-1.5 text-[13px] font-semibold text-[var(--ink-2)] transition hover:text-[var(--ink)]">Back</button>}
+            <button onClick={() => (last ? onDone() : setI(i + 1))} className="rounded-full bg-[var(--accent)] px-4 py-1.5 text-[13px] font-semibold text-white transition hover:opacity-90">{last ? "Start exploring" : "Next"}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange, onSave, onLock, backupHealth, backupSizeWarning, onExport, onReplaceRecoveryKey, onReset, session, onShowAuthScreen, onSignOut, subscription, entitlements, onSubscriptionChange }) {
   const [screen, setScreen] = useState("home");
   useEffect(() => {
@@ -1896,6 +1979,23 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
   const selectedArea = AREAS.find((a) => a.id === areaId) ?? AREAS[0];
   const initials = (session?.user?.email?.[0] ?? "L").toUpperCase();
 
+  // First-run coachmark tour
+  const [showTour, setShowTour] = useState(() => {
+    try { return !localStorage.getItem(ONBOARDING_KEY); } catch { return false; }
+  });
+  function finishTour() {
+    try { localStorage.setItem(ONBOARDING_KEY, "1"); } catch { /* ignore */ }
+    setShowTour(false);
+  }
+
+  // Guided "next action" — pulse exactly one button, in setup order, until done.
+  const hasRecords = vault.items.length > 0;
+  const hasBalance = (vault.balanceSheet?.accounts?.length ?? 0) > 0;
+  const holdersFilled = (vault.releaseSettings?.keyHolders ?? []).filter((h) => h.trim()).length;
+  const hasRelease = Boolean(vault.releaseSettings?.mainNominee?.trim()) && holdersFilled >= RELEASE_POLICY.requiredKeys;
+  const nextAction = !hasRecords ? "capture" : !hasBalance ? "money" : !hasRelease ? "release" : null;
+  const hint = (id) => !showTour && nextAction === id && screen !== id;
+
   const railWorkspace = [
     { id: "home", label: "Home", icon: "M4 11 L12 4 L20 11 M6 9.5 V20 H18 V9.5" },
     { id: "records", label: "All records", icon: "M4 4 h16 v16 H4 Z M4 9 H20", count: vault.items.length },
@@ -1916,7 +2016,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
         <GlobalSearch vault={vault} onOpenArea={openArea} onOpenRecord={openRecord} onNavigate={setScreen} />
         <div className="ml-auto flex items-center gap-2.5">
           <NotificationBell vault={vault} backupHealth={backupHealth} onNavigate={setScreen} onOpenSettings={() => setScreen("settings")} />
-          <button onClick={() => onLock("Manual lock")} className="rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-3.5 py-1.5 text-[12.5px] font-semibold text-[var(--ink-2)] transition hover:text-[var(--ink)]">Seal</button>
+          <button data-tour="seal" onClick={() => onLock("Manual lock")} className="rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-3.5 py-1.5 text-[12.5px] font-semibold text-[var(--ink-2)] transition hover:text-[var(--ink)]">Seal</button>
           <span className="grid h-8 w-8 place-items-center rounded-full bg-[var(--accent)] text-[13px] font-semibold text-white">{initials}</span>
         </div>
       </header>
@@ -1926,7 +2026,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
         <aside className="hidden w-60 shrink-0 border-r border-[var(--line)] px-3 py-5 lg:block" style={{ minHeight: "calc(100vh - 3.5rem)" }}>
           <div className="px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">Workspace</div>
           <div className="mt-1.5 space-y-0.5">
-            {railWorkspace.map((n) => <RailItem key={n.id} active={screen === n.id} onClick={() => setScreen(n.id)} icon={n.icon} label={n.label} count={n.count} />)}
+            {railWorkspace.map((n) => <RailItem key={n.id} active={screen === n.id} onClick={() => setScreen(n.id)} icon={n.icon} label={n.label} count={n.count} dataTour={n.id === "release" ? "trust" : undefined} pulse={hint(n.id)} />)}
           </div>
           <div className="mt-6 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">Life areas</div>
           <div className="mt-1.5 space-y-0.5">
@@ -1934,7 +2034,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
           </div>
           <div className="mt-6 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">You</div>
           <div className="mt-1.5 space-y-0.5">
-            <RailItem active={screen === "capture"} onClick={() => setScreen("capture")} icon="M12 5 V19 M5 12 H19" label="Add a record" />
+            <RailItem active={screen === "capture"} onClick={() => setScreen("capture")} icon="M12 5 V19 M5 12 H19" label="Add a record" dataTour="add" pulse={hint("capture")} />
             <RailItem active={screen === "settings"} onClick={() => setScreen("settings")} icon="M12 9 a3 3 0 1 0 0 6 a3 3 0 0 0 0-6 Z M12 2 v3 M12 19 v3 M5 5 l2 2 M17 17 l2 2 M2 12 h3 M19 12 h3 M5 19 l2-2 M17 7 l2-2" label="Settings" />
           </div>
         </aside>
@@ -1944,7 +2044,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
           {/* Mobile nav */}
           <div className="mb-5 flex gap-2 overflow-x-auto lg:hidden">
             {railWorkspace.map((n) => (
-              <button key={n.id} onClick={() => setScreen(n.id)} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", screen === n.id ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]")}>{n.label}</button>
+              <button key={n.id} onClick={() => setScreen(n.id)} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", screen === n.id ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]", hint(n.id) && "tour-pulse")}>{n.label}</button>
             ))}
           </div>
 
@@ -1982,6 +2082,8 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
           </div>
         </section>
       </div>
+
+      {showTour && screen === "home" && <OnboardingTour steps={TOUR_STEPS} onDone={finishTour} />}
     </main>
   );
 }
