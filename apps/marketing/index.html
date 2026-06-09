@@ -96,11 +96,11 @@
     .feat.flip .feat-txt.reveal { transform:translateX(-56px) scale(.97); }
   }
 
-  @keyframes blob1 { 0%,100%{ transform:translate(0,0) scale(1) } 50%{ transform:translate(46px,34px) scale(1.16) } }
-  @keyframes blob2 { 0%,100%{ transform:translate(0,0) scale(1) } 50%{ transform:translate(-54px,22px) scale(1.1) } }
-  @keyframes blob3 { 0%,100%{ transform:translate(0,0) scale(1) } 50%{ transform:translate(34px,-32px) scale(1.22) } }
-  @keyframes chipfloat { 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-15px) } }
-  @keyframes spinslow { to { transform:rotate(360deg) } }
+  /* the hero lock: reveals, the shackle clicks shut, a quiet "secured" pulse */
+  @keyframes lockReveal { from { opacity:0; transform:scale(.86) } to { opacity:1; transform:scale(1) } }
+  @keyframes shackleDrop { 0% { transform:translateY(-13px) } 62% { transform:translateY(2.5px) } 82% { transform:translateY(-1px) } 100% { transform:translateY(0) } }
+  @keyframes securedPulse { 0% { transform:scale(.5); opacity:0 } 26% { opacity:.55 } 100% { transform:scale(1.55); opacity:0 } }
+  @keyframes lockGlow { 0%,100% { filter:drop-shadow(0 12px 26px rgba(18,160,90,.26)) } 50% { filter:drop-shadow(0 14px 34px rgba(18,160,90,.42)) } }
 
   .scr-spark path { stroke-dasharray:620; stroke-dashoffset:620; }
   .scr-spark path.draw { transition:stroke-dashoffset 1.8s cubic-bezier(.16,1,.3,1); stroke-dashoffset:0; }
@@ -119,11 +119,24 @@
      setting, at the product owner's request. */
 
   /* hero — clean, product-forward, lots of air */
-  .hero { text-align:center; padding:140px 0 0; position:relative; }
+  .hero { text-align:center; padding:104px 0 0; position:relative; }
   /* one quiet glow, nothing more */
   .hero::before { content:""; position:absolute; left:50%; top:-40px; width:min(1000px,120vw); height:560px; transform:translateX(-50%); z-index:-1; pointer-events:none; background:radial-gradient(50% 55% at 50% 30%, var(--green-soft), transparent 72%); }
   /* the product window dissolves softly into the page, rather than ending on a hard edge */
   .hero::after { content:""; position:absolute; left:0; right:0; bottom:0; height:200px; z-index:2; pointer-events:none; background:linear-gradient(to bottom, transparent, var(--bg) 82%); }
+  /* hero lock emblem — also the brand mark */
+  .hero-lock { display:flex; justify-content:center; margin:0 auto 30px; width:fit-content; cursor:default; }
+  .hero-lock svg { width:88px; height:88px; overflow:visible; filter:drop-shadow(0 12px 26px rgba(18,160,90,.26)); animation:lockGlow 5.5s ease-in-out infinite; }
+  .hero-lock .lock-body { fill:url(#lockGrad); }
+  .hero-lock .lock-sheen { fill:#fff; opacity:.16; }
+  .hero-lock .lock-shackle { fill:none; stroke:#15a25a; stroke-width:9; stroke-linecap:round; }
+  .hero-lock .lock-key { fill:var(--surface); }
+  html[data-theme="dark"] .hero-lock .lock-key { fill:#0b1d14; }
+  .lock-shackle, .lock-pulse { transform-box:fill-box; transform-origin:center; }
+  .lock-pulse { fill:none; stroke:var(--green); stroke-width:3; opacity:0; }
+  .hero-lock.play .lock-shackle { animation:shackleDrop .85s cubic-bezier(.34,1.5,.5,1) .4s both; }
+  .hero-lock.play .lock-pulse { animation:securedPulse 1s ease-out 1.05s; }
+  @media (max-width:560px){ .hero-lock svg { width:72px; height:72px; } .hero-lock { margin-bottom:22px; } }
   .hero h1 { font-size:clamp(52px,8.5vw,112px); line-height:.92; letter-spacing:-.05em; font-weight:600; margin:0 auto; }
   .hero h1 .soft { color:var(--ink-3); }
   .hero .sub { font-size:clamp(16px,1.8vw,20px); color:var(--ink-2); max-width:34ch; margin:26px auto 0; }
@@ -359,6 +372,22 @@
   <!-- HERO -->
   <header class="hero">
     <div class="wrap">
+      <div class="hero-lock" id="heroLock" role="img" aria-label="Lyfos — locked and secure" title="Locked.">
+        <svg viewBox="0 0 120 120">
+          <defs>
+            <linearGradient id="lockGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#4ade8e"/>
+              <stop offset="1" stop-color="#16a45f"/>
+            </linearGradient>
+          </defs>
+          <circle class="lock-pulse" cx="60" cy="76" r="42"/>
+          <path class="lock-shackle" d="M42 58 V44 a18 18 0 0 1 36 0 V58"/>
+          <rect class="lock-body" x="30" y="56" width="60" height="48" rx="15"/>
+          <path class="lock-sheen" d="M30 71 v-0 a15 15 0 0 1 15 -15 h30 a15 15 0 0 1 15 15 v3 a60 30 0 0 0 -60 0 z"/>
+          <circle class="lock-key" cx="60" cy="76" r="6.5"/>
+          <path class="lock-key" d="M60 80 l-3.4 13 h6.8 z"/>
+        </svg>
+      </div>
       <h1 class="reveal">Yours.<br><span class="soft">Then theirs.</span></h1>
       <p class="sub reveal">The vault your family can actually open.</p>
       <div class="cta-row reveal">
@@ -768,6 +797,14 @@
   (function(){
     const p=document.querySelector('.scr-spark path'); if(!p) return;
     new IntersectionObserver((es,o)=>es.forEach(x=>{ if(x.isIntersecting){ p.classList.add('draw'); o.disconnect(); } }),{threshold:.4}).observe(p);
+  })();
+
+  // hero lock: clicks shut on load, and again on hover
+  (function(){
+    const lock=document.getElementById('heroLock'); if(!lock||REDUCED) return;
+    const play=()=>{ lock.classList.remove('play'); void lock.offsetWidth; lock.classList.add('play'); };
+    requestAnimationFrame(play);
+    lock.addEventListener('pointerenter', play);
   })();
 
   // hero device: continuous float + pointer tilt + scroll parallax (one rAF loop)
