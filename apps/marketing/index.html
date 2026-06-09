@@ -16,7 +16,7 @@
      Plausible account exists for the domain; harmless 404 otherwise. -->
 <script defer data-domain="lyfos.com" src="https://plausible.io/js/script.js"></script>
 <!-- Set motion preference before paint: follow the OS by default, allow override. -->
-<script>(function(){try{var m=localStorage.getItem('lyfos-motion');if(!m)m=matchMedia('(prefers-reduced-motion: reduce)').matches?'off':'on';document.documentElement.setAttribute('data-motion',m);}catch(e){document.documentElement.setAttribute('data-motion','on');}})();</script>
+<script>(function(){try{var m=localStorage.getItem('lyfos-motion')||'on';document.documentElement.setAttribute('data-motion',m);}catch(e){document.documentElement.setAttribute('data-motion','on');}})();</script>
 <script type="application/ld+json">
 {
   "@context":"https://schema.org",
