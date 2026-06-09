@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Lyfos · Waitlist admin</title>
+<link rel="icon" type="image/svg+xml" href="/icon.svg" />
+<style>
+  :root { --bg:#f4f4f6; --surface:#fff; --surface-2:#f7f7f9; --ink:#1d1d1f; --ink-2:#43464b; --ink-3:#75787e; --ink-4:#9a9da3; --line:#0000000f; --line-2:#0000001f; --green:#1a9d5a; --green-soft:#e8f6ee; --amber:#c88719; --rose:#c0335e; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif; background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:860px; margin:0 auto; padding:32px 20px 80px; }
+  header { display:flex; align-items:center; gap:11px; margin-bottom:6px; }
+  .mark { width:30px; height:30px; border-radius:9px; background:var(--green); display:grid; place-items:center; }
+  h1 { font-size:22px; font-weight:600; letter-spacing:-.02em; margin:0; }
+  .sub { color:var(--ink-3); font-size:13.5px; margin:2px 0 26px 41px; }
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:22px; box-shadow:0 1px 3px #0000000a; }
+  label { display:block; font-size:12px; font-weight:600; color:var(--ink-3); margin:14px 0 6px; text-transform:uppercase; letter-spacing:.06em; }
+  input { width:100%; height:46px; border:1px solid var(--line-2); border-radius:11px; padding:0 14px; font-size:15px; background:var(--surface); color:var(--ink); outline:none; }
+  input:focus { border-color:var(--green); box-shadow:0 0 0 4px var(--green-soft); }
+  .btn { height:46px; padding:0 20px; border:none; border-radius:11px; background:var(--green); color:#fff; font-size:14.5px; font-weight:600; cursor:pointer; }
+  .btn:disabled { opacity:.55; cursor:default; }
+  .btn.ghost { background:var(--surface); color:var(--ink-2); border:1px solid var(--line-2); }
+  .btn.sm { height:34px; padding:0 14px; font-size:13px; border-radius:9px; }
+  .row { display:flex; align-items:center; gap:10px; }
+  .tabs { display:flex; gap:8px; margin:0 0 16px; }
+  .tab { height:34px; padding:0 14px; border-radius:999px; border:1px solid var(--line-2); background:var(--surface); color:var(--ink-2); font-size:13px; font-weight:600; cursor:pointer; }
+  .tab.on { background:var(--ink); color:#fff; border-color:var(--ink); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th { text-align:left; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-4); padding:0 10px 10px; }
+  td { padding:12px 10px; border-top:1px solid var(--line); vertical-align:middle; }
+  .email { font-weight:600; }
+  .meta { color:var(--ink-3); font-size:12.5px; }
+  .pill { display:inline-block; font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; }
+  .pill.pending { background:#fff4e0; color:var(--amber); }
+  .pill.activated { background:var(--green-soft); color:var(--green); }
+  .pill.elig { background:var(--green-soft); color:var(--green); margin-left:6px; }
+  .pill.wait { background:#eef0f2; color:var(--ink-3); margin-left:6px; }
+  .note { margin-top:14px; font-size:13.5px; }
+  .note.err { color:var(--rose); }
+  .note.ok { color:var(--green); }
+  .muted { color:var(--ink-4); font-size:12.5px; }
+  .top-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; flex-wrap:wrap; }
+  .count { font-size:13px; color:var(--ink-3); }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="mark"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M8.2 11V8.3a3.8 3.8 0 0 1 7.6 0V11" stroke="#fff" stroke-width="2.1" stroke-linecap="round"/><rect x="5.4" y="10.6" width="13.2" height="9.4" rx="2.7" fill="#fff"/><circle cx="12" cy="14.7" r="1.55" fill="#1a9d5a"/><path d="M12 15.7l-1.05 3.5h2.1z" fill="#1a9d5a"/></svg></span>
+    <h1>Waitlist admin</h1>
+  </header>
+  <p class="sub">Grant access to founding members. Activating sends them their private app link by email.</p>
+
+  <!-- Setup / login -->
+  <div class="card" id="setup">
+    <p style="margin:0 0 4px;font-weight:600;">Connect</p>
+    <p class="muted" style="margin:0;">One-time. Stored only in this browser.</p>
+    <label for="base">Supabase functions base URL</label>
+    <input id="base" placeholder="https://YOUR-PROJECT.supabase.co/functions/v1" autocomplete="off" />
+    <label for="token">Admin token</label>
+    <input id="token" type="password" placeholder="WAITLIST_ADMIN_TOKEN" autocomplete="off" />
+    <div class="row" style="margin-top:18px;">
+      <button class="btn" id="connectBtn">Connect</button>
+      <span class="note" id="setupNote"></span>
+    </div>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dash" class="hidden">
+    <div class="top-actions">
+      <div class="tabs">
+        <button class="tab on" data-status="pending">Pending</button>
+        <button class="tab" data-status="activated">Activated</button>
+        <button class="tab" data-status="all">All</button>
+      </div>
+      <div class="row">
+        <span class="count" id="count"></span>
+        <button class="btn ghost sm" id="refreshBtn">Refresh</button>
+        <button class="btn ghost sm" id="logoutBtn">Disconnect</button>
+      </div>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Email</th><th>Joined</th><th>Source</th><th>Status</th><th></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <p class="note" id="dashNote"></p>
+    </div>
+    <p class="muted" style="margin-top:14px;">The “eligible” tag appears after 10 days — it’s just a guide. You can activate anyone, anytime.</p>
+  </div>
+</div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const LS = { base: "lyfos-admin-base", token: "lyfos-admin-token" };
+  let base = localStorage.getItem(LS.base) || "";
+  let token = localStorage.getItem(LS.token) || "";
+  let status = "pending";
+
+  function api(path, opts = {}) {
+    return fetch(base.replace(/\/$/, "") + "/waitlist-admin" + path, {
+      ...opts,
+      headers: { "content-type": "application/json", "x-admin-token": token, ...(opts.headers || {}) },
+    });
+  }
+
+  function daysAgo(iso) { return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000); }
+
+  function showDash(on) { $("dash").classList.toggle("hidden", !on); $("setup").classList.toggle("hidden", on); }
+
+  async function load() {
+    $("dashNote").textContent = ""; $("dashNote").className = "note";
+    $("rows").innerHTML = `<tr><td colspan="5" class="muted">Loading…</td></tr>`;
+    try {
+      const r = await api("?status=" + status);
+      if (r.status === 401) throw new Error("Wrong admin token.");
+      if (!r.ok) throw new Error("Server error (" + r.status + ").");
+      const { rows } = await r.json();
+      $("count").textContent = rows.length + (status === "all" ? " total" : " " + status);
+      if (!rows.length) { $("rows").innerHTML = `<tr><td colspan="5" class="muted">Nobody here yet.</td></tr>`; return; }
+      $("rows").innerHTML = rows.map(rowHtml).join("");
+      bindActivate();
+    } catch (e) {
+      $("rows").innerHTML = "";
+      $("dashNote").className = "note err"; $("dashNote").textContent = e.message;
+    }
+  }
+
+  function rowHtml(r) {
+    const d = daysAgo(r.created_at);
+    const elig = r.status === "pending"
+      ? (d >= 10 ? `<span class="pill elig">eligible</span>` : `<span class="pill wait">${10 - d}d left</span>`)
+      : "";
+    const statusPill = `<span class="pill ${r.status}">${r.status}</span>${elig}`;
+    const action = r.status === "pending"
+      ? `<button class="btn sm" data-activate="${r.id}" data-email="${encodeURIComponent(r.email)}">Activate &amp; email</button>`
+      : `<span class="meta">${r.activated_at ? "sent " + daysAgo(r.activated_at) + "d ago" : "activated"}</span>`;
+    return `<tr data-id="${r.id}">
+      <td class="email">${esc(r.email)}</td>
+      <td class="meta">${d === 0 ? "today" : d + "d ago"}</td>
+      <td class="meta">${esc(r.source || "—")}</td>
+      <td>${statusPill}</td>
+      <td style="text-align:right;">${action}</td>
+    </tr>`;
+  }
+
+  function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+  function bindActivate() {
+    document.querySelectorAll("[data-activate]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-activate");
+        const email = decodeURIComponent(btn.getAttribute("data-email"));
+        if (!confirm("Activate " + email + " and email them their app link?")) return;
+        btn.disabled = true; btn.textContent = "Activating…";
+        try {
+          const r = await api("", { method: "POST", body: JSON.stringify({ action: "activate", id }) });
+          const j = await r.json();
+          if (!r.ok || !j.ok) throw new Error(j.error || "Failed.");
+          $("dashNote").className = "note ok";
+          $("dashNote").textContent = j.emailed ? `Activated ${email} — email sent.` : `Activated ${email}, but email was not sent (check RESEND_API_KEY).`;
+          load();
+        } catch (e) {
+          btn.disabled = false; btn.textContent = "Activate & email";
+          $("dashNote").className = "note err"; $("dashNote").textContent = e.message;
+        }
+      });
+    });
+  }
+
+  // Setup
+  $("connectBtn").addEventListener("click", async () => {
+    base = $("base").value.trim(); token = $("token").value.trim();
+    if (!base || !token) { $("setupNote").className = "note err"; $("setupNote").textContent = "Both fields are required."; return; }
+    $("setupNote").className = "note"; $("setupNote").textContent = "Checking…";
+    try {
+      const r = await api("?status=pending");
+      if (r.status === 401) throw new Error("Wrong admin token.");
+      if (!r.ok) throw new Error("Couldn’t reach the function (" + r.status + "). Check the base URL.");
+      localStorage.setItem(LS.base, base); localStorage.setItem(LS.token, token);
+      showDash(true); load();
+    } catch (e) { $("setupNote").className = "note err"; $("setupNote").textContent = e.message; }
+  });
+
+  $("logoutBtn").addEventListener("click", () => { localStorage.removeItem(LS.token); token = ""; showDash(false); });
+  $("refreshBtn").addEventListener("click", load);
+  document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach((x) => x.classList.remove("on"));
+    t.classList.add("on"); status = t.getAttribute("data-status"); load();
+  }));
+
+  // Auto-enter if we already have creds
+  if (base && token) { $("base").value = base; showDash(true); load(); }
+})();
+</script>
+</body>
+</html>
