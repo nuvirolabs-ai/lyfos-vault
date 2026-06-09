@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Trust Center · Lyfos</title>
+<meta name="description" content="How Lyfos earns the trust to hold your most sensitive records: zero-knowledge architecture, our threat model, data residency, audit status, and what happens if we disappear." />
+<meta property="og:title" content="Lyfos Trust Center" />
+<meta property="og:description" content="Zero-knowledge architecture, threat model, data residency, audit status, and responsible disclosure." />
+<meta property="og:image" content="/og.png" />
+<link rel="canonical" href="https://lyfos.com/trust/" />
+<link rel="stylesheet" href="/style.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="/theme.js"></script>
+<link rel="icon" type="image/svg+xml" href="/icon.svg" />
+</head>
+<body>
+
+<nav class="top"><div class="inner">
+  <a class="brand" href="/">Lyfos</a>
+  <ul>
+    <li><a href="/trust/">Trust</a></li>
+    <li><a href="/security/">Security</a></li>
+    <li><a href="/pricing/">Pricing</a></li>
+    <li><a href="/blog/">Blog</a></li>
+  </ul>
+  <a class="cta" href="https://lyfos.signorvale.com">Open the app →</a>
+</div></nav>
+
+<main>
+  <section class="hero" style="text-align:left;padding-bottom:40px;">
+    <div class="eyebrow">Trust Center</div>
+    <h1 style="text-align:left;max-width:16ch;">Trust you can verify, not just read.</h1>
+    <p class="lede" style="text-align:left;margin:0;">You're about to hand us the keys to your whole life. Here's exactly how the architecture — not our good intentions — keeps them yours.</p>
+  </section>
+
+  <section class="row">
+    <h2>The one promise everything rests on.</h2>
+    <p class="lede">Your vault is encrypted on your device with a key derived from a passphrase only you know. What reaches our servers is ciphertext. We cannot read it, reset it, or hand it over — because we never hold the key.</p>
+    <div class="cards">
+      <div class="card"><div class="num">Key derivation</div><h3>Argon2id</h3><p>Memory-hard derivation (64&nbsp;MiB on web) turns your passphrase into a key that's expensive to brute-force.</p></div>
+      <div class="card"><div class="num">Vault encryption</div><h3>AES-256-GCM</h3><p>Authenticated encryption of the entire vault payload, performed locally before anything syncs.</p></div>
+      <div class="card"><div class="num">Recovery sharing</div><h3>X25519 + Shamir</h3><p>Release keys are split into 5 shares; any 3 reconstruct — sealed to each holder with X25519.</p></div>
+    </div>
+  </section>
+
+  <section class="row">
+    <h2>Our threat model — in plain words.</h2>
+    <table>
+      <thead><tr><th>We protect you from</th><th>How</th></tr></thead>
+      <tbody>
+        <tr><td>A breach of our servers</td><td>Attackers get ciphertext only. No master key exists on our side to steal.</td></tr>
+        <tr><td>A rogue employee or subpoena</td><td>We can't decrypt your vault. There's nothing to silently hand over.</td></tr>
+        <tr><td>A single trusted person going rogue</td><td>Recovery needs 3 of 5 independent holders — no one can act alone.</td></tr>
+        <tr><td>A wrongful or accidental release</td><td>A 14-day hold with daily multi-channel alerts; one tap aborts and re-seals.</td></tr>
+        <tr><td>The company disappearing</td><td>Local-first storage + your 24-word phrase open the vault without us.</td></tr>
+      </tbody>
+    </table>
+    <p class="lede" style="margin-top:28px;">What we <em>don't</em> defend against: a device fully compromised by malware while your vault is unlocked, or a passphrase you share with someone. Zero-knowledge protects the vault at rest — not a screen someone is looking over.</p>
+  </section>
+
+  <section class="row">
+    <h2>Where things stand — honestly.</h2>
+    <div class="promises">
+      <div class="promise"><div class="dot" style="background:var(--amber-ink);box-shadow:0 0 0 5px rgba(200,135,25,.15)"></div><div><h3>Independent security audit — scheduled.</h3><p>An external, third-party audit of the crypto and release engine is being commissioned ahead of general availability. We'll publish the report here in full — findings and fixes — when it completes. We won't claim "audited" until it is.</p></div></div>
+      <div class="promise"><div class="dot"></div><div><h3>Breach disclosure within 72 hours.</h3><p>If something goes wrong, you'll hear it from us — fast, in plain language, with a public post-mortem. See our <a href="https://lyfos.signorvale.com/status/">status page</a>.</p></div></div>
+      <div class="promise"><div class="dot"></div><div><h3>Responsible disclosure.</h3><p>Found a vulnerability? Our <a href="https://lyfos.signorvale.com/.well-known/security.txt">security.txt</a> tells you how to reach us. We respond, we credit, we fix.</p></div></div>
+      <div class="promise"><div class="dot"></div><div><h3>Sub-processors, listed.</h3><p>Every third party that touches encrypted data is named on our <a href="https://lyfos.signorvale.com/legal/sub-processors.html">sub-processors page</a>. No silent additions.</p></div></div>
+    </div>
+  </section>
+
+  <section class="row">
+    <h2>If Lyfos vanished tomorrow.</h2>
+    <p class="lede">It's the question every "digital legacy" service avoids. Ours: your vault is stored locally first, and your 24-word recovery phrase is a standard BIP39 phrase. You — or your nominee — can decrypt your records with that phrase and the released key shares, with or without our servers, our app, or our company. You are never locked in, and never locked out.</p>
+    <a class="btn ghost" href="/security/">Read the full security architecture →</a>
+  </section>
+
+  <section class="row" style="text-align:center;">
+    <h2>Built to be doubted.</h2>
+    <p class="lede" style="margin:0 auto 28px;">Don't take our word for it — that's the point. Read the model, watch the recovery test, and ask us anything.</p>
+    <div class="cta-row">
+      <a class="btn primary" href="https://lyfos.signorvale.com">Create your vault</a>
+      <a class="btn ghost" href="/blog/we-released-a-vault.html">See the public recovery test →</a>
+    </div>
+  </section>
+</main>
+
+<footer><div class="inner">
+  <div>
+    <div class="brand">Lyfos</div>
+    <p class="blurb">A vault your family can actually open. Built in India, designed for the world.</p>
+    <p class="copy">© 2026 Signor Vale AI Pvt Ltd.</p>
+  </div>
+  <div><h4>Product</h4><ul><li><a href="https://lyfos.signorvale.com">Open the app</a></li><li><a href="/pricing/">Pricing</a></li><li><a href="/security/">Security</a></li><li><a href="/trust/">Trust Center</a></li></ul></div>
+  <div><h4>Company</h4><ul><li><a href="/press/">Press</a></li><li><a href="/blog/">Blog</a></li><li><a href="mailto:hello@lyfos.signorvale.com">Contact</a></li></ul></div>
+  <div><h4>Legal</h4><ul><li><a href="https://lyfos.signorvale.com/legal/privacy.html">Privacy</a></li><li><a href="https://lyfos.signorvale.com/legal/terms.html">Terms</a></li><li><a href="https://lyfos.signorvale.com/legal/sub-processors.html">Sub-processors</a></li></ul></div>
+</div></footer>
+
+</body>
+</html>

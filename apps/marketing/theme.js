@@ -11,6 +11,15 @@
   try { saved = localStorage.getItem('lyfos-theme'); } catch (e) {}
   root.setAttribute('data-theme', saved || root.getAttribute('data-theme') || 'light');
 
+  // 1b. Privacy-respecting analytics (no cookies). Activates once a Plausible
+  //     account exists for the domain; harmless otherwise.
+  if (!document.querySelector('script[data-domain]')) {
+    var pl = document.createElement('script');
+    pl.defer = true; pl.setAttribute('data-domain', 'lyfos.com');
+    pl.src = 'https://plausible.io/js/script.js';
+    document.head.appendChild(pl);
+  }
+
   function enhance() {
     var nav = document.querySelector('nav.top');
     var inner = nav && nav.querySelector('.inner');
