@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://lyfos.com/sitemap.xml
+Sitemap: https://lyfoslanding.signorvale.com/sitemap.xml

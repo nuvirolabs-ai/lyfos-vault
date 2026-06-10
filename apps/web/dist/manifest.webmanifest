@@ -1,11 +1,11 @@
 {
-  "name": "OS-One Vault",
-  "short_name": "OS-One",
-  "description": "Local-first encrypted life vault for sensitive records and documents.",
+  "name": "Lyfos",
+  "short_name": "Lyfos",
+  "description": "A zero-knowledge vault for everything that matters — recoverable by the people you trust, never by us.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#07090d",
-  "theme_color": "#07090d",
+  "background_color": "#0e1311",
+  "theme_color": "#0e1311",
   "icons": [
     {
       "src": "/icon.svg",
