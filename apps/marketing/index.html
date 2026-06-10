@@ -223,6 +223,30 @@
   .wapp-main .scr-hero-num { font-size:32px; }
   .wapp-main .scr-spark { height:54px; }
   .wapp-pill { display:inline-block; margin-top:6px; padding:3px 10px; border-radius:999px; background:var(--green-soft); color:var(--green-ink); font-size:10px; font-weight:600; }
+  /* richer mockup components — distinct screens */
+  .wapp-area { width:100%; height:104px; display:block; }
+  .wapp-bar { height:7px; border-radius:999px; background:var(--surface-3); overflow:hidden; }
+  .wapp-bar i { display:block; height:100%; border-radius:999px; background:linear-gradient(90deg,var(--green),#3fce82); }
+  .wapp-field { border:1px solid var(--border); border-radius:11px; padding:8px 12px; background:var(--surface-2); }
+  .wapp-field .fl { font-size:9px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-4); }
+  .wapp-field .fv { font-size:13px; color:var(--ink); margin-top:2px; font-weight:500; }
+  .wapp-pills { display:flex; gap:6px; flex-wrap:wrap; }
+  .wapp-tp { font-size:11px; font-weight:600; padding:5px 11px; border-radius:999px; border:1px solid var(--border); color:var(--ink-2); }
+  .wapp-tp.on { background:var(--green-soft); color:var(--green-ink); border-color:transparent; }
+  .wapp-cta { padding:10px; border-radius:11px; background:var(--green); color:#fff; text-align:center; font-size:13px; font-weight:600; }
+  .wapp-lock { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:600; color:var(--green-ink); background:var(--green-soft); padding:5px 10px; border-radius:999px; }
+  .wapp-lock svg { width:12px; height:12px; }
+  .wapp-check { display:flex; align-items:center; gap:10px; font-size:12.5px; color:var(--ink); padding:9px 0; border-bottom:1px solid var(--border); }
+  .wapp-check .ck { width:18px; height:18px; border-radius:50%; background:var(--green); display:grid; place-items:center; flex:none; }
+  .wapp-check .ck svg { width:11px; height:11px; color:#fff; }
+  .wapp-check .cs { margin-left:auto; font-size:11px; color:var(--ink-3); }
+  .wapp-avatars { display:flex; }
+  .wapp-avatars span { width:26px; height:26px; border-radius:50%; display:grid; place-items:center; font-size:10.5px; font-weight:600; color:#fff; border:2px solid var(--surface); margin-left:-7px; }
+  .wapp-avatars span:first-child { margin-left:0; }
+  .wapp-acct { display:flex; align-items:center; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--border); font-size:12.5px; }
+  .wapp-acct .nm { color:var(--ink-2); font-weight:500; display:flex; align-items:center; gap:8px; }
+  .wapp-acct .am { color:var(--ink); font-weight:600; font-variant-numeric:tabular-nums; }
+  .wapp-acct .ad { width:8px; height:8px; border-radius:2px; }
 
   /* alternating feature sections */
   .feat { display:grid; grid-template-columns:1fr 1fr; gap:64px; align-items:center; padding:96px 0; }
@@ -447,7 +471,11 @@
             <div class="scr-eye">Net worth · June</div>
             <div class="scr-hero-num" id="heroNum" data-target="4820000">₹0</div>
             <div class="wapp-pill">▲ ₹1.2L this month</div>
-            <svg class="scr-spark" viewBox="0 0 300 54" preserveAspectRatio="none"><path d="M0 46 L50 40 L100 42 L150 30 L200 32 L250 18 L300 8" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <svg class="scr-spark" viewBox="0 0 300 54" preserveAspectRatio="none">
+              <defs><linearGradient id="heroGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1a9d5a" stop-opacity=".26"/><stop offset="1" stop-color="#1a9d5a" stop-opacity="0"/></linearGradient></defs>
+              <path d="M0 46 L50 40 L100 42 L150 30 L200 32 L250 18 L300 8 L300 54 L0 54 Z" fill="url(#heroGrad)"/>
+              <path class="spark-line" d="M0 46 L50 40 L100 42 L150 30 L200 32 L250 18 L300 8" fill="none" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
             <div style="margin-top:8px;display:flex;flex-direction:column;gap:8px;">
               <div class="scr-row"><div class="l"><span class="dot" style="background:var(--green)"></span>Identity</div><div class="c">Protected</div></div>
               <div class="scr-row"><div class="l"><span class="dot" style="background:var(--green)"></span>Money</div><div class="c">Protected</div></div>
@@ -477,58 +505,75 @@
       <p class="lead reveal">Add what matters, organise it by life, name the people you trust — right in your browser.</p>
       <div class="demo-stage reveal">
         <div class="frames" id="demoFrames">
-          <!-- screen 1: home -->
-          <div class="browser show" data-cap="Your net worth and life areas, at a glance." data-url="app.lyfos.com/home">
-            <div class="chrome"><div class="tl"><i></i><i></i><i></i></div><div class="urlbar">app.lyfos.com/home</div></div>
+          <!-- screen 1: add a record (capture) -->
+          <div class="browser show" data-cap="Add what matters in seconds — sealed the moment you save it." data-url="app.lyfos.com/add">
+            <div class="chrome"><div class="tl"><i></i><i></i><i></i></div><div class="urlbar">app.lyfos.com/add</div></div>
             <div class="wapp" style="grid-template-columns:1fr;">
-              <div class="wapp-topbar"><div class="wapp-brand"><span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>Lyfos</div><span class="scr-eye" style="margin-left:auto;">Home</span></div>
+              <div class="wapp-topbar"><div class="wapp-brand"><span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>Lyfos</div><span class="scr-eye" style="margin-left:auto;">New record</span></div>
+              <div class="wapp-main" style="display:flex;flex-direction:column;gap:11px;">
+                <div class="wapp-pills"><span class="wapp-tp on">Bank</span><span class="wapp-tp">Password</span><span class="wapp-tp">ID</span><span class="wapp-tp">Insurance</span></div>
+                <div class="wapp-field"><div class="fl">Label</div><div class="fv">HDFC Salary Account</div></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px;">
+                  <div class="wapp-field"><div class="fl">Account no.</div><div class="fv">•••• •••• 4821</div></div>
+                  <div class="wapp-field"><div class="fl">IFSC</div><div class="fv">HDFC0001234</div></div>
+                </div>
+                <div class="wapp-field"><div class="fl">For your family</div><div class="fv">Locker key is in the study drawer.</div></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;">
+                  <span class="wapp-lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Encrypted on save</span>
+                  <span style="font-size:11px;color:var(--ink-4);">Auto-filed to Money</span>
+                </div>
+                <div class="wapp-cta">Save to vault</div>
+              </div>
+            </div>
+          </div>
+          <!-- screen 2: balance sheet -->
+          <div class="browser" data-cap="Watch your net worth climb, month over month." data-url="app.lyfos.com/balance">
+            <div class="chrome"><div class="tl"><i></i><i></i><i></i></div><div class="urlbar">app.lyfos.com/balance</div></div>
+            <div class="wapp" style="grid-template-columns:1fr;">
+              <div class="wapp-topbar"><div class="wapp-brand"><span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>Lyfos</div><span class="scr-eye" style="margin-left:auto;">Balance sheet</span></div>
               <div class="wapp-main">
-                <div class="scr-eye">Net worth · June</div>
-                <div class="scr-hero-num" style="font-size:30px;">₹48,20,000</div>
-                <div class="wapp-pill">▲ ₹1.2L this month</div>
-                <svg class="scr-spark" viewBox="0 0 300 54" preserveAspectRatio="none"><path d="M0 46 L60 38 L120 30 L180 28 L240 16 L300 8" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="stroke-dasharray:none;stroke-dashoffset:0;"/></svg>
-                <div style="margin-top:8px;display:flex;flex-direction:column;gap:8px;">
-                  <div class="scr-row"><div class="l"><span class="dot" style="background:var(--green)"></span>Identity</div><div class="c">Protected</div></div>
-                  <div class="scr-row"><div class="l"><span class="dot" style="background:#c88719"></span>Access</div><div class="c">Needs a look</div></div>
+                <div class="scr-eye">Net worth · last 6 months</div>
+                <div style="display:flex;align-items:baseline;gap:10px;"><div class="scr-hero-num" style="font-size:28px;">₹48,20,000</div><span class="wapp-pill" style="margin-top:0;">▲ 14% this year</span></div>
+                <svg class="wapp-area" viewBox="0 0 300 104" preserveAspectRatio="none">
+                  <defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1a9d5a" stop-opacity=".30"/><stop offset="1" stop-color="#1a9d5a" stop-opacity="0"/></linearGradient></defs>
+                  <path d="M0 80 L50 72 L100 76 L150 54 L200 50 L250 30 L300 18 L300 104 L0 104 Z" fill="url(#areaGrad)"/>
+                  <path d="M0 80 L50 72 L100 76 L150 54 L200 50 L250 30 L300 18" fill="none" stroke="#1a9d5a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <div style="margin-top:8px;"><div class="wapp-bar"><i style="width:92%"></i></div><div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--ink-3);"><span>Goal · ₹50L by 2027</span><span style="color:var(--green-ink);font-weight:600;">92%</span></div></div>
+                <div style="margin-top:10px;">
+                  <div class="wapp-acct"><span class="nm"><span class="ad" style="background:#1a9d5a"></span>HDFC · Savings</span><span class="am">₹3,20,000</span></div>
+                  <div class="wapp-acct"><span class="nm"><span class="ad" style="background:#4a7dff"></span>Zerodha · Stocks</span><span class="am">₹18,60,000</span></div>
+                  <div class="wapp-acct" style="border-bottom:none;"><span class="nm"><span class="ad" style="background:#c88719"></span>PPF</span><span class="am">₹9,40,000</span></div>
                 </div>
               </div>
             </div>
           </div>
-          <!-- screen 2: all records / vault -->
-          <div class="browser" data-cap="Six life areas — each shows if your people are covered." data-url="app.lyfos.com/records">
-            <div class="chrome"><div class="tl"><i></i><i></i><i></i></div><div class="urlbar">app.lyfos.com/records</div></div>
+          <!-- screen 3: recovery preview -->
+          <div class="browser" data-cap="See exactly what your family would receive — before anything happens." data-url="app.lyfos.com/recovery">
+            <div class="chrome"><div class="tl"><i></i><i></i><i></i></div><div class="urlbar">app.lyfos.com/recovery</div></div>
             <div class="wapp" style="grid-template-columns:1fr;">
-              <div class="wapp-topbar"><div class="wapp-brand"><span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>Lyfos</div><span class="scr-eye" style="margin-left:auto;">All records · 6 areas</span></div>
+              <div class="wapp-topbar"><div class="wapp-brand"><span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>Lyfos</div><span class="scr-eye" style="margin-left:auto;">Recovery preview</span></div>
               <div class="wapp-main">
-                <div class="scr-grid" style="grid-template-columns:1fr 1fr 1fr;">
-                  <div class="scr-cell"><span class="dot"></span><div class="t">Identity</div><div class="s">3 records</div></div>
-                  <div class="scr-cell"><span class="dot"></span><div class="t">Money</div><div class="s">5 records</div></div>
-                  <div class="scr-cell"><span class="dot"></span><div class="t">Access</div><div class="s">8 records</div></div>
-                  <div class="scr-cell"><span class="dot"></span><div class="t">Insurance</div><div class="s">2 records</div></div>
-                  <div class="scr-cell"><span class="dot"></span><div class="t">Documents</div><div class="s">4 records</div></div>
-                  <div class="scr-cell"><span class="dot" style="background:var(--ink-4)"></span><div class="t" style="color:var(--ink-3)">Emergency</div><div class="s" style="color:var(--ink-3)">Empty</div></div>
+                <div style="padding:12px 13px;border-radius:12px;background:var(--green-soft);">
+                  <div style="font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--green-ink);">If released, Priya receives</div>
+                  <div style="font-size:12.5px;margin-top:3px;color:var(--ink-2);">A clear, ordered bundle — nothing missing, nothing exposed early.</div>
                 </div>
-              </div>
-            </div>
-          </div>
-          <!-- screen 3: release -->
-          <div class="browser" data-cap="A release you control — 14 days, one click to stop." data-url="app.lyfos.com/circle">
-            <div class="chrome"><div class="tl"><i></i><i></i><i></i></div><div class="urlbar">app.lyfos.com/circle</div></div>
-            <div class="wapp" style="grid-template-columns:1fr;">
-              <div class="wapp-topbar"><div class="wapp-brand"><span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>Lyfos</div><span class="scr-eye" style="margin-left:auto;">Circle of trust · Day 3 / 14</span></div>
-              <div class="wapp-main">
-                <div style="padding:14px;border-radius:13px;background:var(--green-soft);border:1px solid color-mix(in srgb,var(--green) 24%,transparent);"><div style="font-size:10px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--green-ink);">Protection hold</div><div style="font-size:13px;margin-top:4px;color:var(--ink-2);">A recovery has begun. You're being alerted on every channel.</div></div>
-                <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;">
-                  <div class="scr-row"><div class="l">📧&nbsp; Email</div><div class="c">Sent daily</div></div>
-                  <div class="scr-row"><div class="l">💬&nbsp; WhatsApp</div><div class="c">Sent daily</div></div>
+                <div style="margin-top:8px;">
+                  <div class="wapp-check"><span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>Identity &amp; legal<span class="cs">3 records</span></div>
+                  <div class="wapp-check"><span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>Money &amp; accounts<span class="cs">5 records</span></div>
+                  <div class="wapp-check"><span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>Insurance<span class="cs">2 records</span></div>
+                  <div class="wapp-check" style="border-bottom:none;"><span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>First-72-hours note<span class="cs">1 note</span></div>
                 </div>
-                <div style="margin-top:14px;padding:12px;border-radius:12px;background:var(--ink);color:var(--bg);text-align:center;font-size:13px;font-weight:600;">Stop this — it's me</div>
+                <div style="display:flex;align-items:center;gap:10px;margin-top:12px;">
+                  <div class="wapp-avatars"><span style="background:#1a9d5a">R</span><span style="background:#4a7dff">A</span><span style="background:#c88719">M</span><span style="background:#9a5cff">S</span><span style="background:var(--ink-4)">+1</span></div>
+                  <span style="font-size:11.5px;color:var(--ink-3);">3 of 5 confirmed · 14-day hold, reversible</span>
+                </div>
               </div>
             </div>
           </div>
         </div>
         <div class="demo-dots" id="demoDots"></div>
-        <div class="demo-cap" id="demoCap">Your net worth and life areas, at a glance.</div>
+        <div class="demo-cap" id="demoCap">Add what matters in seconds — sealed the moment you save it.</div>
       </div>
       <p class="tiny reveal" style="color:var(--ink-4);margin-top:18px;">Web-app mockups shown — a full product walk-through video is on the way.</p>
     </div>
@@ -609,6 +654,8 @@
             <div style="padding:13px;border-radius:12px;background:var(--green-soft);border:1px solid color-mix(in srgb,var(--green) 24%,transparent);">
               <div style="font-size:9.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--green-ink);">Protection hold</div>
               <div style="font-size:12.5px;margin-top:4px;color:var(--ink-2);">A recovery has begun. You're being alerted on every channel.</div>
+              <div class="wapp-bar" style="margin-top:9px;"><i style="width:21%"></i></div>
+              <div style="display:flex;justify-content:space-between;margin-top:5px;font-size:10px;color:var(--green-ink);font-weight:600;"><span>Day 3 of 14</span><span>11 days to stop it</span></div>
             </div>
             <div class="scr-row"><div class="l">📧&nbsp; Email</div><div class="c">Sent daily</div></div>
             <div class="scr-row"><div class="l">💬&nbsp; WhatsApp</div><div class="c">Sent daily</div></div>
@@ -824,7 +871,7 @@
 
   // draw the sparkline when it scrolls in
   (function(){
-    const p=document.querySelector('.scr-spark path'); if(!p) return;
+    const p=document.querySelector('.scr-spark path.spark-line'); if(!p) return;
     new IntersectionObserver((es,o)=>es.forEach(x=>{ if(x.isIntersecting){ p.classList.add('draw'); o.disconnect(); } }),{threshold:.4}).observe(p);
   })();
 
