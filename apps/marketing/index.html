@@ -26,7 +26,10 @@
      Plausible account exists for the domain; harmless 404 otherwise. -->
 <script defer data-domain="lyfoslanding.signorvale.com" src="https://plausible.io/js/script.js"></script>
 <!-- Set motion preference before paint: follow the OS by default, allow override. -->
-<script>(function(){try{var m=localStorage.getItem('lyfos-motion')||'on';document.documentElement.setAttribute('data-motion',m);}catch(e){document.documentElement.setAttribute('data-motion','on');}})();</script>
+<script>(function(){try{var m=localStorage.getItem('lyfos-motion')||'on';document.documentElement.setAttribute('data-motion',m);}catch(e){document.documentElement.setAttribute('data-motion','on');}
+/* Always open at the hero — never restore the visitor's last scroll position. */
+try{ if('scrollRestoration' in history) history.scrollRestoration='manual'; }catch(e){}
+addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0); }catch(e){} });})();</script>
 <script type="application/ld+json">
 {
   "@context":"https://schema.org",
@@ -150,7 +153,8 @@
   /* hero — clean, product-forward, lots of air */
   .hero { text-align:center; padding:104px 0 0; position:relative; }
   /* one quiet glow, nothing more */
-  .hero::before { content:""; position:absolute; left:50%; top:-40px; width:min(1000px,120vw); height:560px; transform:translateX(-50%); z-index:-1; pointer-events:none; background:radial-gradient(50% 55% at 50% 30%, var(--green-soft), transparent 72%); }
+  .hero::before { content:""; position:absolute; left:50%; top:-40px; width:min(1000px,100%); height:560px; transform:translateX(-50%); z-index:-1; pointer-events:none; background:radial-gradient(50% 55% at 50% 30%, var(--green-soft), transparent 72%); }
+  .hero { overflow-x:clip; }
   /* the product window dissolves softly into the page, rather than ending on a hard edge */
   .hero::after { content:""; position:absolute; left:0; right:0; bottom:0; height:200px; z-index:2; pointer-events:none; background:linear-gradient(to bottom, transparent, var(--bg) 82%); }
   /* hero lock emblem — also the brand mark */
@@ -264,7 +268,15 @@
   .feat-txt h2 { font-size:clamp(30px,4.4vw,52px); line-height:1.04; letter-spacing:-.035em; font-weight:600; }
   .feat-txt p { font-size:clamp(17px,2vw,20px); color:var(--ink-2); margin-top:18px; max-width:34ch; }
   .feat-txt .eyebrow { margin-bottom:16px; display:block; }
-  @media (max-width:860px){ .feat { grid-template-columns:1fr; gap:40px; padding:64px 0; text-align:center; } .feat.flip .feat-vis { order:0; } .feat-txt p { margin-left:auto; margin-right:auto; } }
+  @media (max-width:860px){ .feat { grid-template-columns:1fr; gap:40px; padding:64px 24px; text-align:center; } .feat.flip .feat-vis { order:0; } .feat-txt p { margin-left:auto; margin-right:auto; } .feat-vis { display:flex; justify-content:center; } }
+  /* Mobile: keep the product-window mockups inside the screen (they don't shrink as flex items by default) */
+  @media (max-width:640px){
+    .browser { width:100% !important; min-width:0; max-width:440px !important; }
+    .wapp { grid-template-columns:1fr !important; }
+    .wapp-rail { display:none; }
+    .hero-shot { padding:0 16px; }
+    .demo .frames { height:auto; min-height:430px; }
+  }
 
   /* circle of trust ring */
   .ring { width:300px; height:300px; } .ring svg { width:100%; height:100%; overflow:visible; }
