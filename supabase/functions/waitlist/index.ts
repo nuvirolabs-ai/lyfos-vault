@@ -21,6 +21,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const RESEND_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 const FROM_EMAIL = Deno.env.get("FROM_EMAIL") ?? "Lyfos <hello@lyfos.signorvale.com>";
+const APP_URL = Deno.env.get("APP_URL") ?? "https://lyfos.signorvale.com";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -42,29 +43,31 @@ async function waitlistCount(sb: any): Promise<number> {
   return count ?? 0;
 }
 
-async function sendConfirmation(to: string, position: number): Promise<void> {
+async function sendConfirmation(to: string, _position: number): Promise<void> {
   if (!RESEND_KEY) return; // best-effort
   const text =
 `Hi,
 
-You're on the Lyfos waitlist — you're #${position} in line.
+Thanks for joining the Lyfos founding members — welcome.
 
-We're opening access in small batches so every founding member gets looked after properly. When it's your turn, we'll email you a private link to create your vault — usually within about 10 days.
+Good news: Lyfos is in open beta, so you don't have to wait. You can create your vault right now, free, in your browser:
 
-A quick reminder of what you're getting:
+  ${APP_URL}
+
+What you're getting:
 
   • A vault that's encrypted on your device. We can never read it — only you, and the people you choose.
   • The ability to name people who could recover everything for your family, on your terms.
   • Founder pricing, locked for life, for joining early.
 
-Nothing else from us until your access is ready. Reply any time — I read every email.
+From here on you'll only hear from me with the occasional founder note — no spam. Reply any time; I read every email.
 
 — Founder, Lyfos`;
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${RESEND_KEY}`, "content-type": "application/json" },
-      body: JSON.stringify({ from: FROM_EMAIL, to, subject: "You're on the Lyfos waitlist", text }),
+      body: JSON.stringify({ from: FROM_EMAIL, to, subject: "Welcome to Lyfos — your vault's ready", text }),
     });
     if (!res.ok) console.error("[waitlist] confirmation email failed:", res.status, await res.text());
   } catch (e) {

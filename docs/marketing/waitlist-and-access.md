@@ -1,10 +1,18 @@
-# Waitlist & gated access
+# Waitlist & access
 
-Instead of linking straight into the product, the marketing site now collects a
-**waitlist**. The founder grants access in batches from an admin page; each
-activation emails the person their **private** app link. The product itself is
-**soft-gated** — it stays open to anyone who has the link, but the link is only
-ever sent in the activation email (never published on the site).
+> **Current model: OPEN BETA.** Access is no longer gated. Every CTA on the
+> marketing site links straight into the app (labelled "Beta"), and anyone can
+> create a vault. The email form in `#join` is now an **optional founder-updates
+> list**, not a gate — joining sends a friendly "welcome, your vault's ready"
+> email (with the app link) instead of "you're #N in line".
+>
+> The pieces below still exist and work — the table just collects founder-member
+> emails now, and the **admin page / activation flow is optional** (use it if you
+> ever want to personally email a batch of signups). Nothing here gates the app.
+
+The marketing site collects optional founding-member emails. The founder can
+still email signups from the admin page; each "activation" emails the person
+their app link. The product is open — the link is published on the site.
 
 ## Pieces
 

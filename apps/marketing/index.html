@@ -65,6 +65,7 @@
   nav.scrolled { border-color:var(--border); }
   nav .inner { max-width:var(--maxw); margin:0 auto; height:60px; display:flex; align-items:center; gap:20px; padding:0 24px; }
   .brand { display:flex; align-items:center; gap:9px; font-weight:600; font-size:17px; letter-spacing:-.02em; }
+  .beta-pill { display:inline-flex; align-items:center; height:18px; padding:0 7px; border-radius:999px; background:var(--green-soft); color:var(--green-ink); font-size:10px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; margin-left:1px; }
   .brand .mark { width:25px; height:25px; border-radius:8px; background:var(--green); display:grid; place-items:center; box-shadow:0 4px 14px var(--green-soft); }
   .brand .mark svg { width:14px; height:14px; color:#fff; }
   nav ul { list-style:none; display:flex; gap:22px; margin-left:12px; }
@@ -377,7 +378,7 @@
 
 <nav id="nav">
   <div class="inner">
-    <a class="brand" href="/"><span class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M8.2 11V8.3a3.8 3.8 0 0 1 7.6 0V11" stroke="#fff" stroke-width="2.1" stroke-linecap="round"/><rect x="5.4" y="10.6" width="13.2" height="9.4" rx="2.7" fill="#fff"/><circle cx="12" cy="14.7" r="1.55" fill="#1a9d5a"/><path d="M12 15.7l-1.05 3.5h2.1z" fill="#1a9d5a"/></svg></span>Lyfos</a>
+    <a class="brand" href="/"><span class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M8.2 11V8.3a3.8 3.8 0 0 1 7.6 0V11" stroke="#fff" stroke-width="2.1" stroke-linecap="round"/><rect x="5.4" y="10.6" width="13.2" height="9.4" rx="2.7" fill="#fff"/><circle cx="12" cy="14.7" r="1.55" fill="#1a9d5a"/><path d="M12 15.7l-1.05 3.5h2.1z" fill="#1a9d5a"/></svg></span>Lyfos<span class="beta-pill">Beta</span></a>
     <ul>
       <li><a href="#trust">How it works</a></li>
       <li><a href="#pricing">Pricing</a></li>
@@ -385,7 +386,7 @@
     </ul>
     <div class="right">
       <button class="icon-btn" id="themeToggle" aria-label="Switch theme" title="Switch theme"></button>
-      <a class="btn btn-dark btn-sm" href="#join">Join the waitlist</a>
+      <a class="btn btn-dark btn-sm" href="https://lyfos.signorvale.com">Open the app</a>
     </div>
   </div>
 </nav>
@@ -414,10 +415,10 @@
       <h1 class="hero-in" style="animation-delay:.95s">Yours.<br><span class="soft">Then theirs.</span></h1>
       <p class="sub hero-in" style="animation-delay:1.08s">The vault your family can actually open.</p>
       <div class="cta-row hero-in" style="animation-delay:1.22s">
-        <a class="btn btn-green btn-lg" href="#join">Join the waitlist</a>
+        <a class="btn btn-green btn-lg" href="https://lyfos.signorvale.com">Create your vault</a>
         <a class="btn btn-ghost btn-lg" href="#trust">See how it works</a>
       </div>
-      <p class="tiny hero-in" style="animation-delay:1.36s">Early access, in batches · we email your private link within ~10 days</p>
+      <p class="tiny hero-in" style="animation-delay:1.36s">Free while in beta · works in your browser · nothing to install</p>
     </div>
     <!-- one beautiful product shot -->
     <div class="hero-shot reveal">
@@ -722,7 +723,7 @@
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Monthly balance sheet</li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> 24-word recovery phrase</li>
           </ul>
-          <a class="btn btn-ghost btn-lg" href="#join">Join the waitlist</a>
+          <a class="btn btn-ghost btn-lg" href="https://lyfos.signorvale.com">Start free</a>
         </div>
         <div class="price feature reveal">
           <div class="tag">Vault · ₹999/year</div>
@@ -732,25 +733,30 @@
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> The full release engine</li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Encrypted sync across devices</li>
           </ul>
-          <a class="btn btn-green btn-lg" href="#join">Join the waitlist</a>
+          <a class="btn btn-green btn-lg" href="https://lyfos.signorvale.com">Create your vault</a>
         </div>
       </div>
       <p class="tiny reveal" style="margin-top:22px;">Family plan (up to 5 people) ₹2,499/year · <a href="/pricing/" style="color:var(--green-ink);border-bottom:1px solid color-mix(in srgb,var(--green) 35%,transparent);">compare all plans →</a> · GST invoices · cancel anytime</p>
     </div>
   </section>
 
-  <!-- WAITLIST + LEAD MAGNET -->
+  <!-- START NOW + FOUNDING MEMBERS -->
   <section class="signup" id="join">
     <div class="wrap">
-      <span class="eyebrow reveal" style="display:block;">Founding members · Early access</span>
-      <h2 class="reveal" style="margin-top:12px;">Join the waitlist.</h2>
-      <p class="reveal">We’re opening Lyfos in small batches so every founding member gets looked after properly. Leave your email and we’ll send your private link — usually within about 10 days. Founder pricing, locked for life.</p>
-      <form class="signup-row reveal" id="waitlistForm" novalidate>
+      <span class="eyebrow reveal" style="display:block;">Open beta · Founding members</span>
+      <h2 class="reveal" style="margin-top:12px;">Start your vault now.</h2>
+      <p class="reveal">Lyfos is in open beta — free, in your browser, nothing to install. Create your vault whenever you like. Founder pricing, locked for life, for everyone who joins early.</p>
+      <div class="cta-row reveal" style="justify-content:center;margin-top:30px;">
+        <a class="btn btn-green btn-lg" href="https://lyfos.signorvale.com">Create your vault</a>
+        <a class="btn btn-ghost btn-lg" href="/security/">How we keep it safe</a>
+      </div>
+      <p class="tiny reveal" style="margin-top:18px;">Want occasional founder updates instead? Leave your email — no spam, ever.</p>
+      <form class="signup-row reveal" id="waitlistForm" novalidate style="margin-top:14px;">
         <input type="email" name="email" id="waitlistEmail" placeholder="you@example.com" autocomplete="email" required />
-        <button type="submit" id="waitlistBtn">Join the waitlist</button>
+        <button type="submit" id="waitlistBtn">Keep me posted</button>
       </form>
       <p class="note reveal" id="waitlistNote" role="status" aria-live="polite" hidden></p>
-      <p class="tiny reveal" id="waitlistSub">No spam. One email when your vault is ready, and nothing else.</p>
+      <p class="tiny reveal" id="waitlistSub">Founder notes now and then. That’s it.</p>
 
       <div class="stores reveal" style="margin-top:30px;">
         <span class="store-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg><span><small>Early access</small><b>Works in your browser</b></span></span>
@@ -868,14 +874,13 @@
     const endpoint=(document.querySelector('meta[name="lyfos-waitlist-endpoint"]')||{}).content||form.action;
     const RE=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     function show(m,ok){ note.hidden=false; note.textContent=m; note.className='note '+(ok?'ok':'err'); }
-    // live waitlist count → "N people are already on the waitlist" (only once it's meaningful)
-    (async()=>{ try{ const r=await fetch(endpoint,{method:'GET'}); if(!r.ok) return; const d=await r.json(); const c=Number(d&&d.count)||0; if(c>=25 && sub && !form.hidden){ sub.textContent=c.toLocaleString('en-IN')+' people are already on the waitlist. No spam — one email when your vault is ready.'; } }catch(_){ } })();
+    // live count → "N founding members already" (only once it's meaningful)
+    (async()=>{ try{ const r=await fetch(endpoint,{method:'GET'}); if(!r.ok) return; const d=await r.json(); const c=Number(d&&d.count)||0; if(c>=25 && sub && !form.hidden){ sub.textContent=c.toLocaleString('en-IN')+' founding members and counting. Founder notes only — no spam.'; } }catch(_){ } })();
     form.addEventListener('submit',async e=>{ e.preventDefault();
       const email=(input.value||'').trim(); if(!RE.test(email)){ show('Please enter a valid email address.',false); input.focus(); return; }
       btn.disabled=true; const l=btn.textContent; btn.textContent='Joining…';
       try{ const r=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email,source:'marketing-home',referrer:document.referrer||''})}); if(!r.ok) throw 0;
-        const d=await r.json().catch(()=>({})); const pos=Number(d&&d.position)||0; const where=pos?(' You’re #'+pos.toLocaleString('en-IN')+' in line.'):'';
-        form.hidden=true; if(sub) sub.hidden=true; show("You’re on the list."+where+" We’ll email your private link in about 10 days — keep an eye on your inbox.",true);
+        form.hidden=true; if(sub) sub.hidden=true; show("You’re in. We’ll send the occasional founder note — and nothing else. Meanwhile, your vault’s ready whenever you are.",true);
       }catch(_){ btn.disabled=false; btn.textContent=l; note.hidden=false; note.className='note err'; note.innerHTML='Couldn’t reach the server. Email <a href="mailto:hello@lyfos.signorvale.com" style="color:inherit;text-decoration:underline;">hello@lyfos.signorvale.com</a> and we’ll add you.'; }
     });
   })();
