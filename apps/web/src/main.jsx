@@ -352,6 +352,11 @@ async function loadDemoVaultModule() {
   return mod.buildDemoVault({ EMPTY_ITEM, monthKey });
 }
 
+// Demo data stays out of the normal experience — it only surfaces with ?demo=1.
+function demoEnabled() {
+  try { return new URLSearchParams(window.location.search).get("demo") === "1"; } catch { return false; }
+}
+
 // Real production helper — builds a small text attachment around captured input.
 function buildTextAttachment(name, text) {
   return {
@@ -1457,7 +1462,7 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
               {busy ? (hasVault ? "Unlocking…" : "Creating…") : hasVault ? "Unlock vault" : "Create vault"}
             </button>
 
-            {!hasVault && (
+            {!hasVault && demoEnabled() && (
               <button type="button" onClick={createSampleVault} disabled={busy} className="mt-2.5 h-[50px] w-full rounded-xl border border-[var(--line-2)] bg-[var(--surface)] text-[15px] font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-2)] disabled:cursor-wait disabled:opacity-50">
                 Try with sample records
               </button>
@@ -1531,7 +1536,7 @@ function greeting() {
   return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
 }
 
-function HomeDashboard({ vault, onNavigate, onOpenArea, backupHealth }) {
+function HomeDashboard({ vault, onNavigate, onOpenArea, backupHealth, onPreviewRecovery }) {
   const items = vault.items ?? [];
   const total = items.length;
   const now = Date.now();
@@ -1548,6 +1553,18 @@ function HomeDashboard({ vault, onNavigate, onOpenArea, backupHealth }) {
         <h1 className="text-[28px] font-semibold tracking-tight text-[var(--ink)]">{greeting()}</h1>
         <p className="mt-1 text-[14px] text-[var(--ink-2)]">{attention.length ? "A few things could use a moment. Everything else is taken care of." : "Everything is in order. Here's where things stand today."}</p>
       </div>
+
+      {/* The promise, previewable — the dry run is the product's aha moment */}
+      <button data-tour="dryrun" onClick={onPreviewRecovery} className="mb-7 flex w-full items-center gap-4 rounded-2xl border border-[var(--line)] bg-[var(--surface)] px-6 py-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition hover:bg-[var(--surface-2)]">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[var(--green-soft)]">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" /><circle cx="12" cy="12" r="2.6" /></svg>
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[14px] font-semibold text-[var(--ink)]">See exactly what your family would receive</span>
+          <span className="mt-0.5 block text-[12.5px] text-[var(--ink-3)]">A practice run of the recovery — nothing is sent, nothing changes.</span>
+        </span>
+        <span className="shrink-0 text-[13px] font-medium text-[var(--accent)]">Preview →</span>
+      </button>
 
       {/* Records overview */}
       <div className="mb-7 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
@@ -1859,8 +1876,8 @@ function SettingsPage({ vault, onExport, onReset, onLoadDemo, session, onShowAut
       <Label>Your vault</Label>
       <Card>
         <Row title="Backup encrypted vault" hint="Download an encrypted file you can restore from any device."><Ghost onClick={onExport}>Backup</Ghost></Row>
-        <Row title="Export balance sheet as CSV" hint="Plaintext spreadsheet of every month's values. Store it carefully."><Ghost onClick={downloadCsv}>Export CSV</Ghost></Row>
-        <Row title="Load demo data" hint="Replace your vault with realistic sample data for testing." last><Ghost onClick={onLoadDemo}>Load demo</Ghost></Row>
+        <Row title="Export balance sheet as CSV" hint="Plaintext spreadsheet of every month's values. Store it carefully." last={!demoEnabled()}><Ghost onClick={downloadCsv}>Export CSV</Ghost></Row>
+        {demoEnabled() && <Row title="Load demo data" hint="Replace your vault with realistic sample data for testing." last><Ghost onClick={onLoadDemo}>Load demo</Ghost></Row>}
       </Card>
 
       <Label tone="danger">Danger zone</Label>
@@ -1879,6 +1896,7 @@ const TOUR_STEPS = [
   { target: null, title: "Welcome to your vault", body: "Everything you keep here is encrypted on this device the moment you save it. We can never read it — only you, and the people you choose." },
   { target: "add", title: "Add what matters", body: "Start here. Save passwords, accounts, documents and IDs. Each one is sealed the instant it’s stored." },
   { target: "trust", title: "Your circle of trust", body: "Name the people who could recover this vault if something happened to you — you stay in control the entire time." },
+  { target: "dryrun", title: "Preview the promise", body: "One click shows exactly what your family would receive — a practice run, before anything ever happens." },
   { target: "seal", title: "Seal it anytime", body: "Stepping away? Tap Seal to lock everything instantly. That’s the whole tour — go explore." }
 ];
 
@@ -1988,6 +2006,16 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
     setShowTour(false);
   }
 
+  // One-shot flag: Home's "see what your family would receive" opens the
+  // recovery practice run directly on the release screen.
+  const [releaseAutoPreview, setReleaseAutoPreview] = useState(false);
+  useEffect(() => { if (screen !== "release") setReleaseAutoPreview(false); }, [screen]);
+
+  // Sync-by-default: nudge until the vault is protected by encrypted sync.
+  // "Later" hides it for this unlock only — data loss is too costly to forget.
+  const [syncNudgeDismissed, setSyncNudgeDismissed] = useState(false);
+  const syncNudgeVisible = isSupabaseConfigured() && !session && !syncNudgeDismissed && !showTour && screen === "home";
+
   // Guided "next action" — pulse exactly one button, in setup order, until done.
   const hasRecords = vault.items.length > 0;
   const hasBalance = (vault.balanceSheet?.accounts?.length ?? 0) > 0;
@@ -2049,18 +2077,30 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
           </div>
 
           {notice && <div className="mb-5 rounded-2xl border border-[#34c759]/20 bg-[#34c759]/10 px-5 py-4 text-sm font-semibold text-[var(--green-ink)]">{notice}</div>}
+          {syncNudgeVisible && (
+            <div className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border border-[var(--amber-soft,#f3e2c4)] bg-[var(--amber-soft,#fdf4e3)] px-5 py-4">
+              <div className="min-w-0 flex-1">
+                <p className="text-[13.5px] font-semibold text-[var(--amber-ink,#7a4b00)]">This vault lives only in this browser.</p>
+                <p className="mt-0.5 text-[12.5px] text-[var(--amber-ink,#7a4b00)]/85">Clearing browser data would erase it. Turn on encrypted sync — we only ever store ciphertext.</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2.5">
+                <button onClick={onShowAuthScreen} className="rounded-full bg-[var(--accent)] px-4 py-1.5 text-[12.5px] font-semibold text-white transition hover:opacity-90">Turn on sync</button>
+                <button onClick={() => setSyncNudgeDismissed(true)} className="text-[11.5px] font-medium text-[var(--amber-ink,#7a4b00)]/70 hover:underline">Later</button>
+              </div>
+            </div>
+          )}
           {backupSizeWarning?.level !== "none" && <BackupSizeNotice warning={backupSizeWarning} />}
           {session && screen === "release" && <ActiveReleaseBanner onNavigateRelease={() => setScreen("release")} />}
 
           <div className={cx("mx-auto flex gap-8", screen === "home" ? "max-w-[1140px] items-start" : "max-w-3xl")}>
             <div className="min-w-0 flex-1">
-              {screen === "home"    && <HomeDashboard vault={vault} onNavigate={setScreen} onOpenArea={openArea} backupHealth={backupHealth} />}
+              {screen === "home"    && <HomeDashboard vault={vault} onNavigate={setScreen} onOpenArea={openArea} backupHealth={backupHealth} onPreviewRecovery={() => { setReleaseAutoPreview(true); setScreen("release"); }} />}
               {screen === "records" && <AllRecords vault={vault} onOpenArea={openArea} />}
               {screen === "money"   && <HomeScreen vault={vault} onSave={onSave} onNavigate={setScreen} backupHealth={backupHealth} onExport={onExport} />}
               {screen === "setup"   && <SetupScreen vault={vault} onSave={onSave} onNavigate={setScreen} />}
               {screen === "update"  && <UpdateScreen vault={vault} onSave={onSave} onNavigate={setScreen} />}
               {screen === "capture" && <CaptureScreen vault={vault} onSave={onSave} onNavigate={(s) => setScreen(s === "life" ? "home" : s)} />}
-              {screen === "release" && <ReleaseScreen vault={vault} onSave={onSave} session={session} vaultKey={vaultKey} entitlements={entitlements} />}
+              {screen === "release" && <ReleaseScreen vault={vault} onSave={onSave} session={session} vaultKey={vaultKey} entitlements={entitlements} autoPreview={releaseAutoPreview} />}
               {screen === "area"    && <CategoryWorkspace vault={vault} area={selectedArea} initialRecordId={pendingRecordId} onSave={onSave} onCapture={() => setScreen("capture")} onClose={() => setScreen("home")} entitlements={entitlements} onOpenSettings={() => setScreen("settings")} />}
             {screen === "settings" && <SettingsPage vault={vault} onExport={onExport} onReset={onReset} onLoadDemo={loadDemoData} session={session} onShowAuthScreen={onShowAuthScreen} onSignOut={onSignOut} subscription={subscription} entitlements={entitlements} onSubscriptionChange={onSubscriptionChange} autoLockMs={autoLockMs} onAutoLockChange={onAutoLockChange} />}
 
@@ -4648,8 +4688,8 @@ function RecoveryPreview({ vault, settings, onClose }) {
   );
 }
 
-function ReleaseScreen({ vault, onSave, session, vaultKey, entitlements }) {
-  const [previewOpen, setPreviewOpen] = useState(false);
+function ReleaseScreen({ vault, onSave, session, vaultKey, entitlements, autoPreview }) {
+  const [previewOpen, setPreviewOpen] = useState(Boolean(autoPreview));
   const [settings, setSettings] = useState(vault.releaseSettings);
   const [activeKeys, setActiveKeys] = useState(() => settings.keyHolders.map((holder, index) => holder.trim() ? index : null).filter((index) => index !== null).slice(0, RELEASE_POLICY.requiredKeys));
   const [releaseStep, setReleaseStep] = useState(1);
@@ -5301,12 +5341,18 @@ function KeyHolderRow({ holder, onRevoke }) {
 
       {holder.status === "pending" && inviteUrl && (
         <div className="mt-3">
-          <button
-            onClick={() => setShowUrl((v) => !v)}
-            className="text-[11px] font-medium text-[var(--ink-3)] underline-offset-2 hover:text-[var(--ink)] hover:underline"
-          >
-            {showUrl ? "Hide invite link" : "Show invite link"}
-          </button>
+          <div className="flex items-center gap-3">
+            <a href={holderWhatsAppUrl(inviteUrl)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full bg-[#25d366] px-3 py-1 text-[11px] font-semibold text-white">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.3 14.2c-.2.6-1.2 1.2-1.7 1.2-.4.1-1 .1-1.6-.1a13 13 0 0 1-1.5-.5c-2.6-1.1-4.3-3.7-4.4-3.9-.1-.2-1-1.4-1-2.6s.6-1.8.9-2.1c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.4l.9 2.1c.1.2.1.4 0 .6l-.4.6-.4.5c-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.4 1.5.3.1.5.1.6-.1l.8-.9c.2-.2.4-.2.6-.1l2 .9c.2.1.4.2.4.3v.8z"/></svg>
+              Remind on WhatsApp
+            </a>
+            <button
+              onClick={() => setShowUrl((v) => !v)}
+              className="text-[11px] font-medium text-[var(--ink-3)] underline-offset-2 hover:text-[var(--ink)] hover:underline"
+            >
+              {showUrl ? "Hide invite link" : "Show invite link"}
+            </button>
+          </div>
           {showUrl && (
             <div className="mt-2 break-all rounded-md bg-[var(--surface-2)] px-3 py-2 font-mono text-[11px] text-[#3a3a3c]">{inviteUrl}</div>
           )}
@@ -5389,6 +5435,11 @@ function InviteForm({ busy, onCancel, onSubmit }) {
   );
 }
 
+function holderWhatsAppUrl(inviteUrl) {
+  const msg = `I'm naming you as one of my trusted key-holders on Lyfos — the people who could help my family recover everything if something ever happened to me. It takes two minutes to accept, and you never see anything while I'm fine.\n\n${inviteUrl}`;
+  return `https://wa.me/?text=${encodeURIComponent(msg)}`;
+}
+
 function InviteFeedback({ feedback, onClose }) {
   async function copyLink() {
     try { await navigator.clipboard.writeText(feedback.inviteUrl); } catch {}
@@ -5402,7 +5453,13 @@ function InviteFeedback({ feedback, onClose }) {
             We tried to email them automatically. If the email doesn't arrive, share this link directly — they need to open it on their own device:
           </p>
           <div className="mt-2 break-all rounded-md bg-[var(--surface-3)] px-3 py-2 font-mono text-[11px]">{feedback.inviteUrl}</div>
-          <button onClick={copyLink} className="mt-2 text-[11px] font-medium text-[var(--green-ink)] underline-offset-2 hover:underline">Copy link</button>
+          <div className="mt-2.5 flex items-center gap-3">
+            <a href={holderWhatsAppUrl(feedback.inviteUrl)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full bg-[#25d366] px-3.5 py-1.5 text-[11.5px] font-semibold text-white">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.3 14.2c-.2.6-1.2 1.2-1.7 1.2-.4.1-1 .1-1.6-.1a13 13 0 0 1-1.5-.5c-2.6-1.1-4.3-3.7-4.4-3.9-.1-.2-1-1.4-1-2.6s.6-1.8.9-2.1c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.4l.9 2.1c.1.2.1.4 0 .6l-.4.6-.4.5c-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.4 1.5.3.1.5.1.6-.1l.8-.9c.2-.2.4-.2.6-.1l2 .9c.2.1.4.2.4.3v.8z"/></svg>
+              Share on WhatsApp
+            </a>
+            <button onClick={copyLink} className="text-[11px] font-medium text-[var(--green-ink)] underline-offset-2 hover:underline">Copy link</button>
+          </div>
         </div>
         <button onClick={onClose} className="shrink-0 text-[11px] text-[var(--ink-3)] hover:text-[var(--ink)]">Close</button>
       </div>

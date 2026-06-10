@@ -6,13 +6,13 @@
 > list**, not a gate — joining sends a friendly "welcome, your vault's ready"
 > email (with the app link) instead of "you're #N in line".
 >
-> The pieces below still exist and work — the table just collects founder-member
-> emails now, and the **admin page / activation flow is optional** (use it if you
-> ever want to personally email a batch of signups). Nothing here gates the app.
+> The **admin page (`apps/marketing/admin/`) and the `waitlist-admin` Edge
+> Function were removed** when the product opened up — they were vestiges of the
+> gated model. The `waitlist` table + function remain as the founder-updates
+> capture. To email signups, query the table from the Supabase dashboard.
 
-The marketing site collects optional founding-member emails. The founder can
-still email signups from the admin page; each "activation" emails the person
-their app link. The product is open — the link is published on the site.
+The marketing site collects optional founding-member emails via the `waitlist`
+Edge Function. The product is open — the app link is published on the site.
 
 ## Pieces
 

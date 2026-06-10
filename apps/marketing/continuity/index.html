@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>The Continuity Charter · Lyfos</title>
+<meta name="description" content="What happens to your vault if Lyfos shuts down: your export always works, the client goes open-source, releases in flight complete. The charter, in writing." />
+<link rel="stylesheet" href="/style.css" />
+<link rel="canonical" href="https://lyfoslanding.signorvale.com/continuity/" />
+<meta property="og:image" content="https://lyfoslanding.signorvale.com/og.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:image" content="https://lyfoslanding.signorvale.com/og.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="/theme.js"></script>
+<link rel="icon" type="image/svg+xml" href="/icon.svg" />
+<script defer data-domain="lyfoslanding.signorvale.com" src="https://plausible.io/js/script.js"></script>
+<script>try{if('scrollRestoration' in history)history.scrollRestoration='manual';addEventListener('load',function(){if(!location.hash)window.scrollTo(0,0);});}catch(e){}</script>
+</head>
+<body>
+
+<nav class="top">
+  <div class="inner">
+    <a class="brand" href="/"><span class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M8.2 11V8.3a3.8 3.8 0 0 1 7.6 0V11" stroke="#fff" stroke-width="2.1" stroke-linecap="round"/><rect x="5.4" y="10.6" width="13.2" height="9.4" rx="2.7" fill="#fff"/><circle cx="12" cy="14.7" r="1.55" fill="#1a9d5a"/><path d="M12 15.7l-1.05 3.5h2.1z" fill="#1a9d5a"/></svg></span>Lyfos<span class="beta-pill">Beta</span></a>
+    <ul>
+      <li><a href="/security/">Security</a></li>
+      <li><a href="/pricing/">Pricing</a></li>
+      <li><a href="/press/">Press</a></li>
+      <li><a href="/blog/">Blog</a></li>
+    </ul>
+    <a class="cta" href="https://lyfos.signorvale.com">Open the app →</a>
+  </div>
+</nav>
+
+<main>
+
+<section class="hero big left" style="text-align: left; padding-bottom: 40px;">
+  <div class="hero-badge" style="margin-left:0;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 L20 6 V12 C 20 17 16 20 12 21 C 8 20 4 17 4 12 V6 Z"/><path d="M9 12 l2 2 l4 -4"/></svg></div>
+  <div class="eyebrow">The Continuity Charter</div>
+  <h1 style="text-align: left;">If we ever shut down, you lose nothing.</h1>
+  <p class="lede" style="text-align: left; margin: 0;">
+    You're trusting Lyfos with things that must outlive any company — including this one.
+    So here is the question nobody likes to ask, answered in writing:
+    <strong>what happens to your vault if Lyfos dies before you do?</strong>
+  </p>
+  <div class="hero-stats">
+    <div class="hero-stat"><b>Always</b><span>Your export works, forever</span></div>
+    <div class="hero-stat"><b>90 days</b><span>Minimum wind-down notice</span></div>
+    <div class="hero-stat"><b>Open</b><span>Formats &amp; client source</span></div>
+  </div>
+</section>
+
+<section class="row">
+  <h2>The five commitments.</h2>
+  <ol style="font-size: 17px; line-height: 1.65; color: var(--ink); max-width: 720px;">
+    <li><strong>Your vault never depends on our servers to be read.</strong> It is encrypted on your device and stored on your device. Even with every Lyfos server gone, your vault opens with your passphrase — today, in ten years, always.</li>
+    <li><strong>Your export always works.</strong> One click downloads your full encrypted record in a documented format. The decryption recipe (Argon2id → AES-256-GCM, parameters included in the file) is published, so any competent engineer — or future tool — can open it with your passphrase, without us.</li>
+    <li><strong>If we wind down, you get at least 90 days' notice</strong> on email and in the product, with step-by-step migration instructions. No silent shutdowns, no surprise data deletion.</li>
+    <li><strong>The client goes open-source.</strong> If Lyfos ceases operating, the vault client's source code is released publicly so the community can keep it running. We are preparing the crypto client for public release ahead of 1.0 — verifiability should not depend on our survival.</li>
+    <li><strong>Releases in flight complete.</strong> Any recovery already past its 14-day hold completes before anything is turned off. A family mid-recovery is the last thing we would ever abandon.</li>
+  </ol>
+</section>
+
+<section class="row">
+  <h2>Why we can promise this.</h2>
+  <p class="lede">
+    Most companies can't make these promises because their product stops working without their servers.
+    Lyfos was built local-first on purpose: the encryption happens on your device, the keys never leave you,
+    and the cloud only ever holds ciphertext. Continuity isn't a policy we adopted — it falls out of the architecture.
+    The same design that means <a href="/security/">we can't read your vault</a> also means we can't take it with us.
+  </p>
+</section>
+
+<section class="row">
+  <h2>What this charter is not.</h2>
+  <p class="lede">
+    It's not a guarantee that Lyfos-the-service runs forever — no honest company can promise that.
+    It's a guarantee that <strong>your data's fate is decoupled from ours</strong>: whatever happens to us,
+    your records stay yours, readable, and recoverable by the people you chose.
+  </p>
+  <p class="lede" style="margin-top:14px;">
+    Questions, or a scenario we haven't covered? Email
+    <a href="mailto:hello@lyfos.signorvale.com"><strong>hello@lyfos.signorvale.com</strong></a> — we'll answer it and add it here.
+  </p>
+</section>
+
+</main>
+
+<footer>
+  <div class="inner">
+    <div><div class="brand">Lyfos</div><p class="copy">© 2026 Signor Vale AI Pvt Ltd.</p></div>
+    <div><h4>Product</h4><ul><li><a href="https://lyfos.signorvale.com">Open the app</a></li><li><a href="/pricing/">Pricing</a></li><li><a href="/security/">Security</a></li></ul></div>
+    <div><h4>Company</h4><ul><li><a href="/continuity/">Continuity</a></li><li><a href="/press/">Press</a></li><li><a href="/blog/">Blog</a></li></ul></div>
+    <div><h4>Legal</h4><ul><li><a href="https://lyfos.signorvale.com/legal/privacy.html">Privacy</a></li><li><a href="https://lyfos.signorvale.com/legal/terms.html">Terms</a></li></ul></div>
+  </div>
+</footer>
+</body>
+</html>
