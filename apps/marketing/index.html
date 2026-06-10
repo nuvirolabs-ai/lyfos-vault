@@ -102,6 +102,24 @@
   @keyframes shackleDrop { 0% { transform:translateY(-13px) } 62% { transform:translateY(2.5px) } 82% { transform:translateY(-1px) } 100% { transform:translateY(0) } }
   @keyframes securedPulse { 0% { transform:scale(.5); opacity:0 } 26% { opacity:.55 } 100% { transform:scale(1.55); opacity:0 } }
   @keyframes lockGlow { 0%,100% { filter:drop-shadow(0 12px 26px rgba(18,160,90,.26)) } 50% { filter:drop-shadow(0 14px 34px rgba(18,160,90,.42)) } }
+  /* Cinematic intro: the vault starts big & centered, then rises to its resting
+     spot while the text floats in and the shackle pops (unlock). */
+  @keyframes heroLockIntro {
+    0%   { opacity:0; transform:translateY(33vh) scale(2.25); }
+    12%  { opacity:1; transform:translateY(33vh) scale(2.25); }
+    30%  { opacity:1; transform:translateY(33vh) scale(2.25); }
+    100% { opacity:1; transform:translateY(0) scale(1); }
+  }
+  @keyframes shackleUnlock {
+    0%   { transform:translateY(0); }
+    34%  { transform:translateY(-13px); }   /* pops open — unlocked */
+    68%  { transform:translateY(-13px); }   /* held open */
+    100% { transform:translateY(0); }        /* re-seats as it docks */
+  }
+  @keyframes heroTextIn {
+    0%   { opacity:0; transform:translateY(42px) scale(.985); }
+    100% { opacity:1; transform:none; }
+  }
 
   .scr-spark path { stroke-dasharray:620; stroke-dashoffset:620; }
   .scr-spark path.draw { transition:stroke-dashoffset 1.8s cubic-bezier(.16,1,.3,1); stroke-dashoffset:0; }
@@ -126,7 +144,7 @@
   /* the product window dissolves softly into the page, rather than ending on a hard edge */
   .hero::after { content:""; position:absolute; left:0; right:0; bottom:0; height:200px; z-index:2; pointer-events:none; background:linear-gradient(to bottom, transparent, var(--bg) 82%); }
   /* hero lock emblem — also the brand mark */
-  .hero-lock { display:flex; justify-content:center; margin:0 auto 30px; width:fit-content; cursor:default; }
+  .hero-lock { display:flex; justify-content:center; margin:0 auto 30px; width:fit-content; cursor:default; will-change:transform; animation:heroLockIntro 2.2s cubic-bezier(.5,0,.16,1) both; }
   .hero-lock svg { width:88px; height:88px; overflow:visible; filter:drop-shadow(0 12px 26px rgba(18,160,90,.26)); animation:lockGlow 5.5s ease-in-out infinite; }
   .hero-lock .lock-body { fill:url(#lockGrad); }
   .hero-lock .lock-sheen { fill:#fff; opacity:.16; }
@@ -135,9 +153,13 @@
   html[data-theme="dark"] .hero-lock .lock-key { fill:#0b1d14; }
   .lock-shackle, .lock-pulse { transform-box:fill-box; transform-origin:center; }
   .lock-pulse { fill:none; stroke:var(--green); stroke-width:3; opacity:0; }
-  .hero-lock.play .lock-shackle { animation:shackleDrop .85s cubic-bezier(.34,1.5,.5,1) .4s both; }
-  .hero-lock.play .lock-pulse { animation:securedPulse 1s ease-out 1.05s; }
+  /* shackle pops open (unlock) ~as the vault rises, then re-seats; replays on hover */
+  .hero-lock.play .lock-shackle { animation:shackleUnlock 1.15s cubic-bezier(.4,0,.2,1) .55s both; }
+  .hero-lock.play .lock-pulse { animation:securedPulse 1s ease-out 1.5s; }
+  /* hero text floats in (from below/front) after the vault starts rising */
+  .hero-in { animation:heroTextIn .85s cubic-bezier(.2,.7,.2,1) both; }
   @media (max-width:560px){ .hero-lock svg { width:72px; height:72px; } .hero-lock { margin-bottom:22px; } }
+  html[data-motion="off"] .hero-lock, html[data-motion="off"] .hero-in, html[data-motion="off"] .hero-lock .lock-shackle { animation:none !important; opacity:1 !important; transform:none !important; }
   .hero h1 { font-size:clamp(52px,8.5vw,112px); line-height:.92; letter-spacing:-.05em; font-weight:600; margin:0 auto; }
   .hero h1 .soft { color:var(--ink-3); }
   .hero .sub { font-size:clamp(16px,1.8vw,20px); color:var(--ink-2); max-width:34ch; margin:26px auto 0; }
@@ -389,13 +411,13 @@
           <path class="lock-key" d="M60 80 l-3.4 13 h6.8 z"/>
         </svg>
       </div>
-      <h1 class="reveal">Yours.<br><span class="soft">Then theirs.</span></h1>
-      <p class="sub reveal">The vault your family can actually open.</p>
-      <div class="cta-row reveal">
+      <h1 class="hero-in" style="animation-delay:.95s">Yours.<br><span class="soft">Then theirs.</span></h1>
+      <p class="sub hero-in" style="animation-delay:1.08s">The vault your family can actually open.</p>
+      <div class="cta-row hero-in" style="animation-delay:1.22s">
         <a class="btn btn-green btn-lg" href="#join">Join the waitlist</a>
         <a class="btn btn-ghost btn-lg" href="#trust">See how it works</a>
       </div>
-      <p class="tiny reveal">Early access, in batches · we email your private link within ~10 days</p>
+      <p class="tiny hero-in" style="animation-delay:1.36s">Early access, in batches · we email your private link within ~10 days</p>
     </div>
     <!-- one beautiful product shot -->
     <div class="hero-shot reveal">
