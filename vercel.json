@@ -3,5 +3,8 @@
   "installCommand": "npm install --workspace=@os-one/web --include-workspace-root --no-audit --no-fund",
   "buildCommand": "npm run build --workspace=@os-one/web",
   "outputDirectory": "apps/web/dist",
-  "framework": null
+  "framework": null,
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }

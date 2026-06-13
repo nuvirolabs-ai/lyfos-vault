@@ -618,8 +618,11 @@ function timeAgo(iso) {
 function deriveNotifications(vault, backupHealth) {
   const out = [];
   const attention = deriveAttention(vault);
-  if (attention.length) {
-    out.push({ key: "att", tone: "amber", unread: true, text: `${attention.length} record${attention.length > 1 ? "s" : ""} need a look`, time: "now", action: "life", actionLabel: "Review" });
+  // Only genuine record-level items count as "records need a look" — empty-area
+  // and nominee prompts are setup, surfaced separately, and must not inflate this.
+  const recordAttn = attention.filter((a) => /^(exp|stale|incomplete)-/.test(a.key)).length;
+  if (recordAttn > 0) {
+    out.push({ key: "att", tone: "amber", unread: true, text: `${recordAttn} record${recordAttn > 1 ? "s" : ""} need a look`, time: "now", action: "life", actionLabel: "Review" });
   }
   const reminder = getBackupReminderCopy(backupHealth ?? {});
   if (reminder.level && reminder.level !== "none") {
@@ -1310,6 +1313,44 @@ function App() {
   );
 }
 
+// Passphrase strength — for a zero-knowledge vault a weak phrase is the whole
+// attack surface, so we give honest, immediate feedback (not a hard gate beyond
+// the 12-char minimum).
+function scorePassphrase(p) {
+  const s = p || "";
+  if (!s) return { score: 0, label: "", color: "var(--line-2)", hint: "" };
+  let n = 0;
+  if (s.length >= 12) n++;
+  if (s.length >= 16) n++;
+  if (s.length >= 24 || /\s/.test(s.trim())) n++;            // length or multi-word
+  if (/[0-9]/.test(s) && /[a-zA-Z]/.test(s)) n++;
+  if (/[^a-zA-Z0-9]/.test(s)) n++;
+  const score = Math.min(4, n);
+  const meta = [
+    { label: "Too short", color: "#d70015", hint: "Use at least 12 characters." },
+    { label: "Weak", color: "#d70015", hint: "Add length — a memorable phrase of a few words is strongest." },
+    { label: "Okay", color: "#c88719", hint: "Better. A few unrelated words beats symbols." },
+    { label: "Strong", color: "#1a9d5a", hint: "Strong — easy to remember, hard to guess." },
+    { label: "Excellent", color: "#1a9d5a", hint: "Excellent passphrase." }
+  ];
+  return { score, ...meta[score] };
+}
+
+function PassStrength({ passphrase }) {
+  const { score, label, color, hint } = scorePassphrase(passphrase);
+  if (!passphrase) return null;
+  return (
+    <div className="mt-2">
+      <div className="flex gap-1">
+        {[0, 1, 2, 3].map((i) => (
+          <span key={i} className="h-1 flex-1 rounded-full transition-colors" style={{ background: i < score ? color : "var(--line-2)" }} />
+        ))}
+      </div>
+      <p className="mt-1.5 text-[12px]" style={{ color }}>{label} · <span className="text-[var(--ink-3)]">{hint}</span></p>
+    </div>
+  );
+}
+
 function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlockFailed, onImported, onRestoreConfirmed, backupHealth, onBackupHealthChange, onReset }) {
   const [passphrase, setPassphrase] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -1441,6 +1482,7 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
                   autoComplete="new-password"
                   placeholder="Confirm passphrase"
                 />
+                <PassStrength passphrase={passphrase} />
                 <div className="mt-4">
                   <RecoveryKeyPanel
                     recoveryKey={recoveryKey}
@@ -1550,9 +1592,23 @@ function HomeDashboard({ vault, onNavigate, onOpenArea, backupHealth, onPreviewR
   return (
     <div>
       <div className="mb-7">
-        <h1 className="text-[28px] font-semibold tracking-tight text-[var(--ink)]">{greeting()}</h1>
-        <p className="mt-1 text-[14px] text-[var(--ink-2)]">{attention.length ? "A few things could use a moment. Everything else is taken care of." : "Everything is in order. Here's where things stand today."}</p>
+        <h1 className="text-[28px] font-semibold tracking-tight text-[var(--ink)]">{total === 0 ? "Welcome to your vault" : greeting()}</h1>
+        <p className="mt-1 text-[14px] text-[var(--ink-2)]">{total === 0 ? "Let's add the first few things that matter. It only takes a minute." : attention.length ? "A few things could use a moment. Everything else is taken care of." : "Everything is in order. Here's where things stand today."}</p>
       </div>
+
+      {/* First-run quick start — the most important next action on an empty vault */}
+      {total === 0 && (
+        <div className="mb-7 rounded-2xl border border-[var(--accent)]/30 bg-[var(--green-soft)] p-6">
+          <p className="text-[15px] font-semibold text-[var(--ink)]">Add your first record</p>
+          <p className="mt-1 text-[13px] text-[var(--ink-2)]">Start with whatever's on your mind — it's encrypted on this device the moment you save it.</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {[["Password", "password"], ["Bank account", "bank"], ["ID / passport", "identity"], ["Insurance", "insurance"]].map(([label]) => (
+              <button key={label} onClick={() => onNavigate("capture")} className="rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--ink-2)] transition hover:text-[var(--ink)]">{label}</button>
+            ))}
+          </div>
+          <button onClick={() => onNavigate("capture")} className="mt-4 rounded-full bg-[var(--accent)] px-5 py-2 text-[13.5px] font-semibold text-white transition hover:opacity-90">Add a record →</button>
+        </div>
+      )}
 
       {/* The promise, previewable — the dry run is the product's aha moment */}
       <button data-tour="dryrun" onClick={onPreviewRecovery} className="mb-7 flex w-full items-center gap-4 rounded-2xl border border-[var(--line)] bg-[var(--surface)] px-6 py-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition hover:bg-[var(--surface-2)]">
@@ -2069,12 +2125,18 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
 
         {/* Content */}
         <section className="min-w-0 flex-1 px-5 py-8 lg:px-10">
-          {/* Mobile nav */}
-          <div className="mb-5 flex gap-2 overflow-x-auto lg:hidden">
+          {/* Mobile nav — must include Add a record + Settings (no rail on phones) */}
+          <div className="mb-5 flex gap-2 overflow-x-auto pb-1 lg:hidden">
             {railWorkspace.map((n) => (
               <button key={n.id} onClick={() => setScreen(n.id)} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", screen === n.id ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]", hint(n.id) && "tour-pulse")}>{n.label}</button>
             ))}
+            <button onClick={() => setScreen("capture")} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", screen === "capture" ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]", hint("capture") && "tour-pulse")}>+ Add</button>
+            <button onClick={() => setScreen("settings")} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", screen === "settings" ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]")}>Settings</button>
           </div>
+          {/* Mobile: a persistent "add" affordance for the most common action */}
+          <button onClick={() => setScreen("capture")} aria-label="Add a record" className="fixed bottom-5 right-5 z-30 grid h-14 w-14 place-items-center rounded-full bg-[var(--accent)] text-white shadow-[0_8px_24px_rgba(0,0,0,0.22)] lg:hidden">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5 V19 M5 12 H19" /></svg>
+          </button>
 
           {notice && <div className="mb-5 rounded-2xl border border-[#34c759]/20 bg-[#34c759]/10 px-5 py-4 text-sm font-semibold text-[var(--green-ink)]">{notice}</div>}
           {syncNudgeVisible && (
@@ -2107,6 +2169,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
               <footer className="mt-14 flex flex-wrap items-center justify-between gap-4 border-t border-[var(--line)] py-6 text-[11px] font-medium text-[var(--ink-4)]">
                 <span>Lyfos · Beta · Locally encrypted on this device.</span>
                 <div className="flex items-center gap-4">
+                  <a href="mailto:hello@lyfos.signorvale.com?subject=Lyfos%20help" className="hover:text-[var(--ink)]">Help</a>
                   <a href="/legal/beta-disclaimer.html" className="hover:text-[var(--ink)]">Beta disclaimer</a>
                   <a href="/legal/privacy.html" className="hover:text-[var(--ink)]">Privacy</a>
                   <a href="/legal/terms.html" className="hover:text-[var(--ink)]">Terms</a>
@@ -4384,7 +4447,7 @@ function AttachmentGrid({ attachments, onDelete, onReplace, onExtract, tone = "l
 }
 
 function CaptureScreen({ vault, onSave, onNavigate }) {
-  const [messyText, setMessyText] = useState("HDFC bank account ending 5678, IFSC HDFC0001234, balance Rs 845000, netbanking password Demo@2026, nominee Priya.");
+  const [messyText, setMessyText] = useState("");
   const [drafts, setDrafts] = useState([]);
   const [selectedDraftIndex, setSelectedDraftIndex] = useState(0);
   const [manual, setManual] = useState({ ...EMPTY_ITEM, title: "", type: "important_document" });
@@ -5522,15 +5585,43 @@ function keyHolderLabel(holder, index) {
 
 function RecoveryKeyPanel({ recoveryKey, recoveryConfirm, onGenerate, onConfirmChange }) {
   const isBip39 = recoveryKey && /\s/.test(recoveryKey);
-  const words = isBip39 ? recoveryKey.split(/\s+/).filter(Boolean) : [];
+  const words = useMemo(() => (isBip39 ? recoveryKey.split(/\s+/).filter(Boolean) : []), [recoveryKey, isBip39]);
+  const [copied, setCopied] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [answers, setAnswers] = useState(["", "", ""]);
+  const [legacy, setLegacy] = useState("");
+
+  // Three random word positions to confirm — proves the phrase was recorded,
+  // without forcing all 24 words to be re-typed.
+  const challenge = useMemo(() => {
+    if (!isBip39 || words.length < 6) return [];
+    const idx = new Set();
+    while (idx.size < 3) idx.add(Math.floor(Math.random() * words.length));
+    return [...idx].sort((a, b) => a - b);
+  }, [recoveryKey, isBip39, words.length]);
+
+  // Reset when a new phrase is generated.
+  useEffect(() => { setAnswers(["", "", ""]); setLegacy(""); setSaved(false); onConfirmChange(""); }, [recoveryKey]);
+
+  // Mark confirmed (set recoveryConfirm = the full key) only when the saved box
+  // is checked AND the three challenged words match.
+  useEffect(() => {
+    if (!recoveryKey) return;
+    if (!isBip39) { onConfirmChange(legacy.trim() ? legacy : ""); return; }
+    const ok = saved && challenge.every((pos, i) => answers[i].trim().toLowerCase() === words[pos].toLowerCase());
+    onConfirmChange(ok ? recoveryKey : "");
+  }, [answers, saved, legacy, recoveryKey]);
 
   async function copy() {
     if (!recoveryKey) return;
-    try {
-      await navigator.clipboard.writeText(recoveryKey);
-    } catch {
-      // some browsers block clipboard outside HTTPS or focus; fail silently
-    }
+    try { await navigator.clipboard.writeText(recoveryKey); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* ignore */ }
+  }
+  function download() {
+    if (!recoveryKey) return;
+    const body = `Lyfos recovery phrase\n\nKeep this somewhere only you can reach — on paper is best.\nAnyone with this phrase can open your vault.\n\n${recoveryKey}\n`;
+    const url = URL.createObjectURL(new Blob([body], { type: "text/plain" }));
+    const a = document.createElement("a"); a.href = url; a.download = "lyfos-recovery-phrase.txt"; a.click();
+    URL.revokeObjectURL(url); setSaved(true);
   }
 
   return (
@@ -5540,7 +5631,7 @@ function RecoveryKeyPanel({ recoveryKey, recoveryConfirm, onGenerate, onConfirmC
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">Recovery phrase</p>
           <p className="mt-1.5 text-[13px] leading-[1.55] text-[var(--ink-2)]">
             {recoveryKey
-              ? "Write these 24 words on paper. Lyfos cannot show them again."
+              ? "Save these 24 words somewhere safe. They're the only way back if you forget your passphrase — Lyfos can't show them again."
               : "A 24-word phrase, separate from your vault phrase. The only way back if you forget the vault phrase."}
           </p>
         </div>
@@ -5570,42 +5661,49 @@ function RecoveryKeyPanel({ recoveryKey, recoveryConfirm, onGenerate, onConfirmC
             </div>
           )}
 
-          <div className="mt-3 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={copy}
-              className="text-[11px] font-medium text-[var(--ink-2)] underline-offset-4 hover:text-[var(--ink)] hover:underline"
-            >
-              Copy to clipboard
-            </button>
-            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--ink-4)]">
-              Store offline · paper, safe
-            </span>
+          <div className="mt-3 flex items-center gap-3">
+            <button type="button" onClick={copy} className="rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-3.5 py-1.5 text-[12px] font-semibold text-[var(--ink-2)] transition hover:text-[var(--ink)]">{copied ? "Copied ✓" : "Copy"}</button>
+            <button type="button" onClick={download} className="rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-3.5 py-1.5 text-[12px] font-semibold text-[var(--ink-2)] transition hover:text-[var(--ink)]">Download .txt</button>
+            <span className="ml-auto text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--ink-4)]">Store offline</span>
           </div>
 
-          <label className="mt-4 block">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">
-              Confirm by re-typing
-            </span>
-            {isBip39 ? (
-              <textarea
-                rows={3}
-                className="mt-2 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] leading-6 text-[var(--ink)] outline-none transition placeholder:text-[var(--ink-4)] focus:border-[var(--ink)]"
-                value={recoveryConfirm}
-                onChange={(event) => onConfirmChange(event.target.value)}
-                placeholder="Type the 24 words separated by spaces"
-                autoComplete="off"
-                spellCheck="false"
-              />
-            ) : (
+          {isBip39 ? (
+            <div className="mt-4">
+              <label className="flex items-start gap-2.5">
+                <input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent)]" />
+                <span className="text-[12.5px] text-[var(--ink-2)]">I've saved my recovery phrase somewhere safe.</span>
+              </label>
+              {saved && (
+                <div className="mt-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">Quick check — type these words</p>
+                  <div className="mt-2 grid grid-cols-3 gap-2">
+                    {challenge.map((pos, i) => (
+                      <label key={pos} className="block">
+                        <span className="text-[10px] font-medium text-[var(--ink-4)]">Word #{pos + 1}</span>
+                        <input
+                          value={answers[i]}
+                          onChange={(e) => setAnswers((a) => { const n = [...a]; n[i] = e.target.value; return n; })}
+                          className="mt-1 h-9 w-full rounded-lg border border-[var(--line-2)] bg-[var(--surface)] px-2.5 text-[13px] text-[var(--ink)] outline-none transition focus:border-[var(--accent)]"
+                          autoComplete="off" spellCheck="false"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  {recoveryConfirm === recoveryKey && <p className="mt-2 text-[12px] font-medium text-[var(--green-ink)]">Confirmed ✓</p>}
+                </div>
+              )}
+            </div>
+          ) : (
+            <label className="mt-4 block">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">Confirm by re-typing</span>
               <input
                 className="mt-2 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] text-[var(--ink)] outline-none transition placeholder:text-[var(--ink-4)] focus:border-[var(--ink)]"
-                value={recoveryConfirm}
-                onChange={(event) => onConfirmChange(event.target.value)}
+                value={legacy}
+                onChange={(event) => setLegacy(event.target.value)}
                 placeholder="OS1A-…"
               />
-            )}
-          </label>
+            </label>
+          )}
         </div>
       )}
     </div>
@@ -5766,7 +5864,7 @@ function BackupVerificationPanel({ currentRecord, backupHealth, onBackupHealthCh
     } catch {
       setBackupText("");
       setBackupName("");
-      setResult({ ok: false, code: "invalid_shape", reason: "OS-One could not read this backup file." });
+      setResult({ ok: false, code: "invalid_shape", reason: "Lyfos could not read this backup file." });
     } finally {
       event.target.value = "";
     }
@@ -5864,16 +5962,16 @@ function BackupHealthPanel({ copy, health }) {
 
 function verificationErrorCopy(result) {
   if (result.code === "wrong_secret") return "This backup did not open with that phrase or recovery key. No local vault data was changed.";
-  if (result.code === "corrupted_payload") return "This backup appears damaged or unreadable. OS-One did not change your local vault.";
+  if (result.code === "corrupted_payload") return "This backup appears damaged or unreadable. Lyfos did not change your local vault.";
   if (result.code === "unsupported_version") return "This backup format is not supported by this beta. No local vault data was changed.";
-  return "This does not look like a valid OS-One encrypted backup. No local vault data was changed.";
+  return "This does not look like a valid Lyfos encrypted backup. No local vault data was changed.";
 }
 
 function restoreEraCopy(era) {
   if (era === "newer") return "This backup appears newer than the current local vault.";
   if (era === "older") return "This backup appears older than the current local vault.";
   if (era === "same-era") return "This backup appears from the same time window as the current local vault.";
-  return "OS-One can verify this backup, but cannot compare its age to the current local vault.";
+  return "Lyfos can verify this backup, but cannot compare its age to the current local vault.";
 }
 
 function RestoreMetric({ label, value }) {
