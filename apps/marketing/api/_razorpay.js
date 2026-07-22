@@ -53,7 +53,8 @@ export function sendJson(res, status, payload) {
 
 export function applyCors(req, res) {
   const allowedOrigins = new Set([
-    "https://lyfosvault.nuvirolabs.com",
+    "https://lyfos.in",
+    "https://app.lyfos.in",
     "https://forgeos.in",
     "https://www.forgeos.in",
     "https://nuvirolabs.com",

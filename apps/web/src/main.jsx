@@ -985,6 +985,17 @@ function App() {
     return () => { cancelled = true; };
   }, [session?.user?.id]);
 
+  useEffect(() => {
+    if (!sessionLoaded || typeof window === "undefined" || !isSupabaseConfigured()) return;
+    const { pathname, search, hash } = window.location;
+    const shouldShowLogin = !session && !storedRecord && !authBypass;
+    if (shouldShowLogin && pathname === "/") {
+      window.history.replaceState(null, "", `/login${search}${hash}`);
+    } else if (session && pathname === "/login") {
+      window.history.replaceState(null, "", `/${search}${hash}`);
+    }
+  }, [sessionLoaded, session, storedRecord, authBypass]);
+
   // When a session arrives (sign-in or hydrated existing session):
   //   1. Register/touch this device
   //   2. Pull the server's encrypted record and reconcile against local

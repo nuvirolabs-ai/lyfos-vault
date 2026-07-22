@@ -1,7 +1,7 @@
 # Lyfos — Marketing Site
 
 Static site for `https://lyfos.com` (the marketing surface, separate from
-the app at `https://lyfos.nuvirolabs.com`).
+the app at `https://app.lyfos.in`).
 
 ## What's in here
 

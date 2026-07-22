@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://lyfosvault.nuvirolabs.com/sitemap.xml
+Sitemap: https://lyfos.in/sitemap.xml
