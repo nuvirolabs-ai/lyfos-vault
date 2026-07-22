@@ -18,6 +18,14 @@
     return data;
   }
 
+  function customerSafeError(error) {
+    var message = error && error.message ? error.message : "";
+    if (/auth|credential|configured|key|secret/i.test(message)) {
+      return "Checkout is temporarily unavailable. Please email hello@nuvirolabs.com and we will help you activate Lyfos.";
+    }
+    return message || "Could not start checkout. Please try again.";
+  }
+
   async function startCheckout(button) {
     if (!window.Razorpay) throw new Error("Razorpay checkout could not load");
 
@@ -45,7 +53,7 @@
           await postJson("/api/verify-payment", response);
           setStatus(button, "Payment verified. Access will be activated shortly.", "success");
         } catch (error) {
-          setStatus(button, error.message || "Payment verification failed.", "error");
+          setStatus(button, customerSafeError(error) || "Payment verification failed.", "error");
         } finally {
           button.disabled = false;
         }
@@ -76,7 +84,7 @@
     event.preventDefault();
     startCheckout(button).catch(function (error) {
       button.disabled = false;
-      setStatus(button, error.message || "Could not start checkout.", "error");
+      setStatus(button, customerSafeError(error), "error");
     });
   });
 })();
