@@ -8,6 +8,7 @@
     "check": "node src/server.js --check"
   },
   "dependencies": {
-    "@os-one/vault-model": "0.1.0"
+    "@os-one/vault-model": "0.1.0",
+    "razorpay": "^2.9.8"
   }
 }

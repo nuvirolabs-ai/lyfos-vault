@@ -1,12 +1,13 @@
 import http from "node:http";
 import { VAULT_ITEM_TYPES, RELEASE_POLICY } from "@os-one/vault-model";
+import { getRazorpayClient, getRazorpayConfig, normalizeAmount, verifyRazorpaySignature } from "./razorpay.js";
 
 const PORT = Number(process.env.PORT ?? 4317);
 
 function sendJson(res, status, payload) {
   res.writeHead(status, {
-    "content-type": "application/json; charset=utf-8",
-    "access-control-allow-origin": "http://127.0.0.1:5173",
+      "content-type": "application/json; charset=utf-8",
+      "access-control-allow-origin": process.env.CORS_ORIGIN ?? "*",
     "access-control-allow-methods": "GET,POST,OPTIONS",
     "access-control-allow-headers": "content-type"
   });
@@ -57,6 +58,47 @@ export function createServer() {
           encryptedBlob: body.encryptedBlob,
           createdAt: new Date().toISOString()
         });
+      }
+
+      if (req.method === "POST" && req.url === "/api/create-order") {
+        try {
+          const body = await readBody(req);
+          const amount = normalizeAmount(body.amount);
+          const currency = body.currency || "INR";
+          const receipt = body.receipt || `lyfos_${Date.now()}`;
+          const order = await getRazorpayClient().orders.create({ amount, currency, receipt });
+          const { keyId } = getRazorpayConfig();
+          return sendJson(res, 200, {
+            key_id: keyId,
+            order_id: order.id,
+            amount: order.amount,
+            currency: order.currency
+          });
+        } catch (error) {
+          const status = error.statusCode === 401 ? 401 : error.message?.includes("amount") ? 400 : 500;
+          return sendJson(res, status, { error: status === 500 ? "Could not create Razorpay order" : error.message });
+        }
+      }
+
+      if (req.method === "POST" && req.url === "/api/verify-payment") {
+        try {
+          const body = await readBody(req);
+          const orderId = body.razorpay_order_id;
+          const paymentId = body.razorpay_payment_id;
+          const signature = body.razorpay_signature;
+          if (!orderId || !paymentId || !signature) {
+            return sendJson(res, 400, { error: "razorpay_order_id, razorpay_payment_id, and razorpay_signature are required" });
+          }
+
+          const { keySecret } = getRazorpayConfig();
+          const verified = verifyRazorpaySignature({ orderId, paymentId, signature, secret: keySecret });
+          if (!verified) return sendJson(res, 400, { success: false, error: "Invalid payment signature" });
+
+          return sendJson(res, 200, { success: true, payment_id: paymentId, order_id: orderId });
+        } catch (error) {
+          const status = error.statusCode === 401 ? 401 : 500;
+          return sendJson(res, status, { error: status === 500 ? "Could not verify payment" : error.message });
+        }
       }
 
       return sendJson(res, 404, { error: "Not found" });

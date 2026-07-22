@@ -2401,7 +2401,12 @@ function BillingSection({ subscription, entitlements, onSubscriptionChange }) {
         window.location.assign(result.checkoutUrl);
         return;
       }
-      setError("Upgrade started but no checkout URL returned. Try again or contact support.");
+      if (result?.verified) {
+        setError("Payment verified. We will activate paid access shortly.");
+        setShowPlans(false);
+        return;
+      }
+      setError("Upgrade started but no checkout confirmation returned. Try again or contact support.");
     } catch (err) {
       setError(err?.message || "Couldn't start upgrade.");
     } finally {

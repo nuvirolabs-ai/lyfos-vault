@@ -6,6 +6,51 @@
 // truth and our table mirrors are reconciled by the webhook handler.
 
 import { getSupabase, isSupabaseConfigured } from "./supabaseClient.js";
+import { planFor } from "./plans.js";
+
+const BILLING_API_BASE = (import.meta.env.VITE_BILLING_API_BASE || "").replace(/\/$/, "");
+
+async function postBillingJson(path, payload) {
+  const response = await fetch(`${BILLING_API_BASE}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "Payment request failed");
+  return data;
+}
+
+function openRazorpayCheckout(options) {
+  return new Promise((resolve, reject) => {
+    if (!window.Razorpay) {
+      reject(new Error("Razorpay checkout could not load"));
+      return;
+    }
+
+    const checkout = new window.Razorpay({
+      ...options,
+      handler: async (response) => {
+        try {
+          const verified = await postBillingJson("/api/verify-payment", response);
+          resolve(verified);
+        } catch (error) {
+          reject(error);
+        }
+      },
+      modal: {
+        ondismiss: () => reject(new Error("Checkout closed before payment."))
+      },
+      theme: { color: "#1d1d1f" }
+    });
+
+    checkout.on("payment.failed", (response) => {
+      reject(new Error(response?.error?.description || "Payment failed. Please try again."));
+    });
+
+    checkout.open();
+  });
+}
 
 // ============================================================
 // Read paths
@@ -69,27 +114,39 @@ export async function fetchInvoiceUrl(pdfPath) {
 }
 
 // ============================================================
-// Upgrade flow — calls create-checkout-session Edge Function
-// which talks to Razorpay (or Stripe) and returns a payment URL.
+// Upgrade flow — opens Razorpay Standard Checkout and verifies the
+// payment signature through the backend.
 // ============================================================
 
 /**
- * Kick off an upgrade. Returns { provider, checkoutUrl, subscriptionId? }
- * depending on what the Edge Function produced.
+ * Kick off an upgrade. Returns a verified payment response when the
+ * backend signature check passes.
  *
  * @param {object} opts
  * @param {string} opts.plan       'vault' | 'family'
  * @param {string} [opts.provider] 'razorpay' (default) | 'stripe'
  */
 export async function startUpgrade({ plan, provider = "razorpay" }) {
-  if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
   if (plan !== "vault" && plan !== "family") throw new Error("plan must be 'vault' or 'family'");
-  const sb = getSupabase();
-  const { data, error } = await sb.functions.invoke("create-checkout-session", {
-    body: { plan, provider }
+  if (provider !== "razorpay") throw new Error("Only Razorpay Standard Checkout is configured");
+
+  const selected = planFor(plan);
+  const order = await postBillingJson("/api/create-order", {
+    amount: selected.amountInr,
+    currency: "INR",
+    receipt: `lyfos_${plan}_${Date.now()}`
   });
-  if (error) throw error;
-  return data;
+
+  const verified = await openRazorpayCheckout({
+    key: order.key_id,
+    amount: order.amount,
+    currency: order.currency,
+    name: "Lyfos",
+    description: `Lyfos ${selected.label} annual access`,
+    order_id: order.order_id
+  });
+
+  return { provider: "razorpay", verified: true, ...verified };
 }
 
 /**
