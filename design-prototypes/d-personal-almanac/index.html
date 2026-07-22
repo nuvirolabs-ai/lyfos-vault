@@ -1,0 +1,788 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Lyfos · The Personal Almanac · Folio 47</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=GT+Sectra:opsz,wght@8..60,400;8..60,500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&family=Inter+Tight:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* Cream paper palette */
+    --paper: #F7F4EC;
+    --paper-2: #F2EEE3;
+    --paper-3: #ECE6D6;
+    --ink: #181715;
+    --ink-2: #3C3833;
+    --ink-3: #5C544A;
+    --ink-4: #8A8175;
+    --ink-5: #B5AB9C;
+
+    /* Two accents — printer's red + Prussian blue */
+    --red: #B5301F;
+    --blue: #1F3A5C;
+    --blue-soft: #E4EAF1;
+
+    /* Rules */
+    --rule-strong: #181715;
+    --rule: rgba(24,23,21,0.30);
+    --hairline: rgba(24,23,21,0.13);
+
+    --serif: "Source Serif 4", "GT Sectra", Georgia, serif;
+    --sans: "Inter Tight", -apple-system, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 16px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "tnum" 0;
+  }
+  /* Subtle paper texture — radial speckle */
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none;
+    background:
+      radial-gradient(circle at 20% 10%, rgba(24,23,21,0.025) 0, transparent 50%),
+      radial-gradient(circle at 80% 70%, rgba(24,23,21,0.020) 0, transparent 50%);
+    z-index: 1;
+  }
+  a { color: var(--ink); text-decoration: none; }
+
+  /* ============ Frontispiece ============ */
+  .frontispiece {
+    border-bottom: 3px double var(--rule-strong);
+    background: var(--paper);
+    position: relative; z-index: 2;
+  }
+  .front-inner {
+    max-width: 980px; margin: 0 auto;
+    padding: 24px 40px 12px;
+  }
+  .front-meta-top {
+    display: grid; grid-template-columns: 1fr auto 1fr;
+    font-family: var(--mono); font-size: 10px;
+    color: var(--ink-3); letter-spacing: 0.10em;
+    text-transform: uppercase; margin-bottom: 8px;
+  }
+  .front-meta-top > :nth-child(2) { text-align: center; color: var(--red); }
+  .front-meta-top > :nth-child(3) { text-align: right; }
+  .front-title {
+    font-family: var(--serif); font-weight: 500;
+    font-size: 64px; line-height: 1; letter-spacing: -0.04em;
+    text-align: center; margin: 8px 0;
+  }
+  .front-rubric {
+    font-family: var(--serif); font-style: italic; color: var(--ink-3);
+    font-size: 14px; text-align: center; margin: 0;
+  }
+  .front-rule {
+    display: grid; grid-template-columns: 1fr auto 1fr;
+    align-items: center; gap: 16px;
+    margin: 12px 0 0;
+  }
+  .front-rule .h { height: 1px; background: var(--rule-strong); }
+  .front-rule .o {
+    font-family: var(--mono); font-size: 10px; color: var(--ink-3);
+    letter-spacing: 0.16em; text-transform: uppercase;
+  }
+  .front-folio {
+    border-top: 1px solid var(--rule-strong);
+    margin-top: 10px; padding: 8px 0 0;
+    display: grid; grid-template-columns: 1fr auto 1fr;
+    font-family: var(--mono); font-size: 10.5px; color: var(--ink-2);
+    letter-spacing: 0.10em; text-transform: uppercase;
+  }
+  .front-folio nav { display: flex; gap: 22px; justify-content: center; }
+  .front-folio nav a { color: var(--ink-3); position: relative; padding-bottom: 2px; }
+  .front-folio nav a.active { color: var(--ink); }
+  .front-folio nav a.active::after {
+    content: ""; position: absolute; bottom: -8px; left: 0; right: 0;
+    height: 2px; background: var(--red);
+  }
+  .front-folio > :nth-child(3) { text-align: right; }
+
+  /* ============ Main grid ============ */
+  main {
+    max-width: 980px; margin: 0 auto;
+    padding: 56px 40px 80px;
+    position: relative; z-index: 2;
+  }
+
+  /* ============ Headline broadsheet ============ */
+  .broadsheet {
+    display: grid; grid-template-columns: 1.6fr 1fr;
+    gap: 48px; margin-bottom: 64px;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 40px;
+  }
+  @media (max-width: 780px) { .broadsheet { grid-template-columns: 1fr; gap: 24px; } }
+
+  .head-eyebrow {
+    font-family: var(--mono); font-size: 10px;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--red); margin-bottom: 16px;
+  }
+  .head-title {
+    font-family: var(--serif); font-weight: 400;
+    font-size: 56px; line-height: 1.04; letter-spacing: -0.025em;
+    margin: 0 0 20px;
+  }
+  .head-title em { font-style: italic; color: var(--blue); }
+  .head-deck {
+    font-family: var(--serif); font-style: italic;
+    color: var(--ink-3); font-size: 17px; line-height: 1.5; margin: 0;
+  }
+
+  /* ============ Side stat panel ============ */
+  .stat-panel {
+    border-top: 2px solid var(--rule-strong);
+    border-bottom: 2px solid var(--rule-strong);
+    padding: 16px 0;
+  }
+  .stat-panel .l {
+    font-family: var(--mono); font-size: 9.5px;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--ink-3); margin-bottom: 6px;
+  }
+  .stat-panel .v {
+    font-family: var(--serif); font-feature-settings: "tnum";
+    font-size: 44px; line-height: 1; font-weight: 500;
+    letter-spacing: -0.025em; margin: 0;
+  }
+  .stat-panel .v .cur { color: var(--ink-3); font-size: 22px; margin-right: 4px; }
+  .stat-panel .delta {
+    font-family: var(--mono); font-size: 11px;
+    color: var(--blue); margin-top: 8px;
+  }
+  .stat-panel .delta .arrow { display: inline-block; margin-right: 4px; }
+
+  /* ============ Sparkline table (the signature element) ============ */
+  .accounts-table {
+    margin-top: 24px;
+    border-top: 1px solid var(--rule);
+  }
+  .at-row {
+    display: grid;
+    grid-template-columns: 1fr 120px 100px;
+    gap: 16px; align-items: center;
+    padding: 14px 0; border-bottom: 1px solid var(--hairline);
+  }
+  .at-row.head {
+    border-bottom: 1px solid var(--rule);
+    font-family: var(--mono); font-size: 9.5px;
+    color: var(--ink-3); letter-spacing: 0.14em;
+    text-transform: uppercase; padding: 6px 0;
+  }
+  .at-row .desc { font-family: var(--serif); font-size: 15px; }
+  .at-row .desc .sub { display: block; font-size: 11.5px; color: var(--ink-3); font-style: italic; margin-top: 1px; }
+  .at-row .spark { display: flex; justify-content: flex-end; }
+  .at-row .amt {
+    font-family: var(--serif); font-feature-settings: "tnum";
+    font-size: 15px; text-align: right;
+  }
+
+  /* ============ Section heading w/ sigil ============ */
+  .section-head {
+    margin-top: 72px;
+    border-top: 3px double var(--rule-strong);
+    padding-top: 16px;
+    display: grid; grid-template-columns: 64px 1fr auto; gap: 24px; align-items: baseline;
+  }
+  .sigil {
+    width: 48px; height: 48px;
+    border: 1px solid var(--rule-strong);
+    border-radius: 50%;
+    display: grid; place-items: center;
+    font-family: var(--serif); font-weight: 500;
+    font-size: 18px; color: var(--ink);
+    font-feature-settings: "tnum";
+    font-variant-numeric: lining-nums;
+  }
+  .sec-title {
+    font-family: var(--serif); font-style: italic;
+    font-size: 28px; font-weight: 400; letter-spacing: -0.01em;
+    margin: 0;
+  }
+  .sec-title small {
+    display: block; font-family: var(--mono); font-style: normal;
+    font-size: 10px; color: var(--ink-3); letter-spacing: 0.14em;
+    text-transform: uppercase; margin-top: 4px;
+  }
+  .sec-meta {
+    font-family: var(--mono); font-size: 10px;
+    color: var(--ink-3); letter-spacing: 0.10em; text-transform: uppercase;
+    align-self: end;
+  }
+
+  /* ============ Small multiples grid ============ */
+  .smallmults {
+    margin-top: 32px;
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px;
+  }
+  @media (max-width: 780px) { .smallmults { grid-template-columns: repeat(3, 1fr); } }
+  .smallmult {
+    border-top: 1px solid var(--rule-strong);
+    padding-top: 8px;
+  }
+  .smallmult .name {
+    font-family: var(--mono); font-size: 9.5px;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-3); margin-bottom: 4px;
+    height: 24px;
+  }
+  .smallmult .n {
+    font-family: var(--serif); font-feature-settings: "tnum";
+    font-size: 24px; font-weight: 500; line-height: 1;
+    margin: 0 0 8px;
+  }
+  .smallmult.empty .n { color: var(--red); font-style: italic; font-size: 18px; }
+  .smallmult svg { width: 100%; height: 36px; display: block; }
+
+  /* ============ Marginalia / footnoted prose ============ */
+  .prose-with-margin {
+    margin-top: 40px;
+    display: grid; grid-template-columns: 1fr 220px; gap: 56px;
+    align-items: start;
+  }
+  @media (max-width: 780px) { .prose-with-margin { grid-template-columns: 1fr; } }
+
+  .prose {
+    font-family: var(--serif); font-size: 17px; line-height: 1.7;
+    color: var(--ink-2); max-width: 64ch;
+  }
+  .prose p { margin: 0 0 16px; }
+  .prose p:first-of-type::first-letter {
+    font-family: var(--serif); font-weight: 500; color: var(--red);
+    float: left; font-size: 52px; line-height: 0.86; margin: 4px 8px 0 0;
+  }
+  .prose strong { color: var(--ink); font-weight: 500; }
+  .prose .fn {
+    font-size: 11px; vertical-align: super; color: var(--red);
+    margin-left: 1px; font-weight: 500;
+  }
+
+  .margin {
+    font-family: var(--sans); font-size: 12.5px; line-height: 1.55;
+    color: var(--ink-3); border-left: 1px solid var(--rule-strong);
+    padding-left: 16px;
+  }
+  .margin .m-eyebrow {
+    font-family: var(--mono); font-size: 9.5px;
+    color: var(--red); letter-spacing: 0.16em; text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .margin p { margin: 0 0 12px; }
+  .margin strong { color: var(--ink); font-weight: 600; }
+
+  /* ============ Release plate (information diagram) ============ */
+  .plate {
+    margin-top: 40px;
+    border: 1px solid var(--rule-strong);
+    background: var(--paper-2);
+    display: grid; grid-template-columns: 1fr 1.4fr; gap: 0;
+  }
+  @media (max-width: 780px) { .plate { grid-template-columns: 1fr; } }
+  .plate-svg {
+    padding: 32px; border-right: 1px solid var(--rule);
+    display: grid; place-items: center;
+  }
+  @media (max-width: 780px) { .plate-svg { border-right: 0; border-bottom: 1px solid var(--rule); } }
+  .plate-svg svg { width: 100%; max-width: 320px; height: auto; }
+  .plate-text { padding: 32px; }
+  .plate-text .pt-label {
+    font-family: var(--mono); font-size: 9.5px; color: var(--red);
+    letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 12px;
+  }
+  .plate-text h3 {
+    font-family: var(--serif); font-style: italic; font-weight: 400;
+    font-size: 22px; letter-spacing: -0.01em; margin: 0 0 12px;
+  }
+  .plate-text p {
+    font-family: var(--serif); font-size: 15px; line-height: 1.6;
+    color: var(--ink-2); margin: 0 0 16px;
+  }
+  .plate-text p strong { color: var(--ink); font-weight: 500; }
+  .plate-cta {
+    display: inline-block; margin-top: 8px;
+    font-family: var(--sans); font-size: 12.5px; font-weight: 500;
+    color: var(--red); border-bottom: 1px solid var(--red);
+    padding-bottom: 2px;
+  }
+
+  /* ============ Appendix entries ============ */
+  .appendix {
+    margin-top: 32px;
+    font-family: var(--sans);
+  }
+  .ap-row {
+    display: grid; grid-template-columns: 140px 1fr 220px;
+    gap: 24px; padding: 10px 0;
+    border-bottom: 1px solid var(--hairline);
+    font-size: 13px; align-items: baseline;
+  }
+  .ap-row .d { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); }
+  .ap-row .e { font-family: var(--serif); font-size: 14.5px; }
+  .ap-row .e strong { color: var(--ink); font-weight: 500; }
+  .ap-row .v { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); text-align: right; }
+
+  /* ============ Footnotes ============ */
+  .footnotes {
+    margin-top: 64px; padding-top: 14px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--serif); font-size: 13px; line-height: 1.65;
+    color: var(--ink-3); max-width: 64ch;
+  }
+  .footnotes ol { list-style: none; padding: 0; margin: 0; counter-reset: fn; }
+  .footnotes li { padding-left: 28px; position: relative; margin-bottom: 8px; counter-increment: fn; }
+  .footnotes li::before {
+    content: counter(fn) ".";
+    position: absolute; left: 0; top: 0;
+    font-family: var(--mono); font-size: 10.5px; color: var(--red);
+  }
+
+  /* ============ Almanac strip ============ */
+  .strip {
+    margin-top: 64px;
+    border-top: 3px double var(--rule-strong);
+    border-bottom: 3px double var(--rule-strong);
+    padding: 24px 0;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px;
+    font-family: var(--mono); font-size: 10.5px;
+    letter-spacing: 0.10em; text-transform: uppercase; color: var(--ink-3);
+  }
+  @media (max-width: 780px) { .strip { grid-template-columns: 1fr 1fr; } }
+  .strip .it strong {
+    display: block; font-family: var(--serif); font-size: 15px;
+    color: var(--ink); font-weight: 500; letter-spacing: -0.005em;
+    text-transform: none; margin-top: 4px;
+  }
+
+  /* ============ Colophon ============ */
+  .colophon {
+    margin-top: 32px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+    font-family: var(--mono); font-size: 10px;
+    color: var(--ink-3); letter-spacing: 0.10em;
+    text-transform: uppercase;
+  }
+  .colophon .right { text-align: right; }
+
+  /* ============ Mobile tweaks ============ */
+  @media (max-width: 600px) {
+    .front-title { font-size: 40px; }
+    .head-title { font-size: 36px; }
+    .at-row { grid-template-columns: 1fr 60px 80px; }
+    .at-row .desc .sub { display: none; }
+    .stat-panel .v { font-size: 32px; }
+    .ap-row { grid-template-columns: 1fr; gap: 4px; }
+    .ap-row .d, .ap-row .v { font-size: 10px; }
+    .front-folio nav { gap: 16px; font-size: 9.5px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== FRONTISPIECE ===== -->
+<header class="frontispiece">
+  <div class="front-inner">
+    <div class="front-meta-top">
+      <span>The Personal Almanac</span>
+      <span>Established MMXXVI</span>
+      <span>Folio Forty-Seven</span>
+    </div>
+    <h1 class="front-title">Lyfos</h1>
+    <p class="front-rubric">A personal almanac of one's records, balances, and arrangements.</p>
+    <div class="front-rule">
+      <div class="h"></div>
+      <div class="o">Vol. I · No. 5 · May MMXXVI · Mumbai</div>
+      <div class="h"></div>
+    </div>
+    <div class="front-folio">
+      <span>Owner · T. Tejas</span>
+      <nav>
+        <a href="#" class="active">Home</a>
+        <a href="#">Records</a>
+        <a href="#">Release</a>
+        <a href="#">Appendix</a>
+      </nav>
+      <span>Sealed · 09:14 IST</span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- ===== BROADSHEET HEADLINE ===== -->
+  <section class="broadsheet">
+    <div>
+      <div class="head-eyebrow">For the week ending Thursday, 28 May</div>
+      <h1 class="head-title">Forty-seven records, <em>three new this week.</em></h1>
+      <p class="head-deck">Six sections, of which five are populated. Your monthly review is due in three days. The owner-protection hold remains armed and ready.</p>
+    </div>
+
+    <aside class="stat-panel">
+      <div class="l">Net position</div>
+      <p class="v"><span class="cur">₹</span>1,84,72,310</p>
+      <div class="delta"><span class="arrow">▲</span>+₹1,42,800 since 1 May · +0.78%</div>
+    </aside>
+  </section>
+
+  <!-- ===== TABLE WITH INLINE SPARKLINES (the signature move) ===== -->
+  <div class="accounts-table">
+    <div class="at-row head">
+      <span>Account · description</span>
+      <span style="text-align: center;">6-month trace</span>
+      <span style="text-align: right;">Balance (₹)</span>
+    </div>
+
+    <div class="at-row">
+      <div class="desc">HDFC Bank — primary<span class="sub">Savings · acct ending 1842</span></div>
+      <div class="spark">
+        <svg width="120" height="22" viewBox="0 0 120 22">
+          <path d="M0 14 L20 13 L40 15 L60 11 L80 10 L100 8 L120 6" fill="none" stroke="#1F3A5C" stroke-width="1.2"/>
+          <line x1="0" y1="22" x2="120" y2="22" stroke="#181715" stroke-width="0.4" opacity="0.3"/>
+          <circle cx="120" cy="6" r="1.6" fill="#B5301F"/>
+        </svg>
+      </div>
+      <div class="amt">14,82,640</div>
+    </div>
+
+    <div class="at-row">
+      <div class="desc">Kotak — salary<span class="sub">Salary · acct ending 7193</span></div>
+      <div class="spark">
+        <svg width="120" height="22" viewBox="0 0 120 22">
+          <path d="M0 12 L20 9 L40 14 L60 8 L80 12 L100 7 L120 4" fill="none" stroke="#1F3A5C" stroke-width="1.2"/>
+          <line x1="0" y1="22" x2="120" y2="22" stroke="#181715" stroke-width="0.4" opacity="0.3"/>
+          <circle cx="120" cy="4" r="1.6" fill="#B5301F"/>
+        </svg>
+      </div>
+      <div class="amt">18,57,570</div>
+    </div>
+
+    <div class="at-row">
+      <div class="desc">Parag Parikh Flexicap<span class="sub">Equity MF · SIP active · ₹25,000/mo</span></div>
+      <div class="spark">
+        <svg width="120" height="22" viewBox="0 0 120 22">
+          <path d="M0 18 L20 16 L40 17 L60 12 L80 10 L100 7 L120 3" fill="none" stroke="#1F3A5C" stroke-width="1.2"/>
+          <line x1="0" y1="22" x2="120" y2="22" stroke="#181715" stroke-width="0.4" opacity="0.3"/>
+          <circle cx="120" cy="3" r="1.6" fill="#B5301F"/>
+        </svg>
+      </div>
+      <div class="amt">42,18,800</div>
+    </div>
+
+    <div class="at-row">
+      <div class="desc">Kotak — fixed deposit<span class="sub">FD · 6.8% · matures Dec 2027</span></div>
+      <div class="spark">
+        <svg width="120" height="22" viewBox="0 0 120 22">
+          <path d="M0 22 L40 22 L60 22 L80 22 L100 22 L120 12" fill="none" stroke="#1F3A5C" stroke-width="1.2"/>
+          <line x1="0" y1="22" x2="120" y2="22" stroke="#181715" stroke-width="0.4" opacity="0.3"/>
+          <circle cx="120" cy="12" r="1.6" fill="#B5301F"/>
+          <text x="118" y="20" text-anchor="end" font-family="IBM Plex Mono" font-size="7" fill="#5C544A">new</text>
+        </svg>
+      </div>
+      <div class="amt">5,00,000</div>
+    </div>
+
+    <div class="at-row">
+      <div class="desc">Property — 2 BHK, Powai<span class="sub">Estd. ₹62 L · Aug 2022 purchase</span></div>
+      <div class="spark">
+        <svg width="120" height="22" viewBox="0 0 120 22">
+          <line x1="0" y1="11" x2="120" y2="9" stroke="#1F3A5C" stroke-width="1.2" stroke-dasharray="2 3"/>
+          <line x1="0" y1="22" x2="120" y2="22" stroke="#181715" stroke-width="0.4" opacity="0.3"/>
+          <circle cx="120" cy="9" r="1.6" fill="#B5301F"/>
+        </svg>
+      </div>
+      <div class="amt">62,00,000</div>
+    </div>
+
+    <div class="at-row">
+      <div class="desc">HDFC home loan<span class="sub">EMI ₹42,180 · 5 yrs remaining</span></div>
+      <div class="spark">
+        <svg width="120" height="22" viewBox="0 0 120 22">
+          <path d="M0 4 L20 6 L40 8 L60 10 L80 13 L100 15 L120 17" fill="none" stroke="#B5301F" stroke-width="1.2"/>
+          <line x1="0" y1="22" x2="120" y2="22" stroke="#181715" stroke-width="0.4" opacity="0.3"/>
+          <circle cx="120" cy="17" r="1.6" fill="#B5301F"/>
+        </svg>
+      </div>
+      <div class="amt" style="color: var(--red);">(28,48,400)</div>
+    </div>
+  </div>
+
+  <!-- ===== SECTION I — COVERAGE (Small multiples) ===== -->
+  <div class="section-head">
+    <div class="sigil">I</div>
+    <h2 class="sec-title">Coverage, by section. <small>Six areas · 47 records · one empty</small></h2>
+    <div class="sec-meta">As at 28 May</div>
+  </div>
+
+  <div class="smallmults">
+    <div class="smallmult">
+      <div class="name">Identity</div>
+      <p class="n">7</p>
+      <svg viewBox="0 0 100 36">
+        <line x1="0" y1="34" x2="100" y2="34" stroke="#181715" stroke-width="0.5"/>
+        <rect x="6" y="20" width="8" height="14" fill="#1F3A5C"/>
+        <rect x="22" y="14" width="8" height="20" fill="#1F3A5C"/>
+        <rect x="38" y="22" width="8" height="12" fill="#1F3A5C"/>
+        <rect x="54" y="16" width="8" height="18" fill="#1F3A5C"/>
+        <rect x="70" y="10" width="8" height="24" fill="#1F3A5C"/>
+        <rect x="86" y="8" width="8" height="26" fill="#1F3A5C"/>
+      </svg>
+    </div>
+    <div class="smallmult">
+      <div class="name">Money</div>
+      <p class="n">19</p>
+      <svg viewBox="0 0 100 36">
+        <line x1="0" y1="34" x2="100" y2="34" stroke="#181715" stroke-width="0.5"/>
+        <rect x="6" y="6" width="8" height="28" fill="#1F3A5C"/>
+        <rect x="22" y="8" width="8" height="26" fill="#1F3A5C"/>
+        <rect x="38" y="4" width="8" height="30" fill="#1F3A5C"/>
+        <rect x="54" y="2" width="8" height="32" fill="#1F3A5C"/>
+        <rect x="70" y="6" width="8" height="28" fill="#1F3A5C"/>
+        <rect x="86" y="2" width="8" height="32" fill="#1F3A5C"/>
+      </svg>
+    </div>
+    <div class="smallmult">
+      <div class="name">Access</div>
+      <p class="n">14</p>
+      <svg viewBox="0 0 100 36">
+        <line x1="0" y1="34" x2="100" y2="34" stroke="#181715" stroke-width="0.5"/>
+        <rect x="6" y="14" width="8" height="20" fill="#1F3A5C"/>
+        <rect x="22" y="10" width="8" height="24" fill="#1F3A5C"/>
+        <rect x="38" y="8" width="8" height="26" fill="#1F3A5C"/>
+        <rect x="54" y="12" width="8" height="22" fill="#1F3A5C"/>
+        <rect x="70" y="6" width="8" height="28" fill="#1F3A5C"/>
+        <rect x="86" y="4" width="8" height="30" fill="#1F3A5C"/>
+      </svg>
+    </div>
+    <div class="smallmult">
+      <div class="name">Insurance</div>
+      <p class="n">4</p>
+      <svg viewBox="0 0 100 36">
+        <line x1="0" y1="34" x2="100" y2="34" stroke="#181715" stroke-width="0.5"/>
+        <rect x="6" y="28" width="8" height="6" fill="#1F3A5C"/>
+        <rect x="22" y="22" width="8" height="12" fill="#1F3A5C"/>
+        <rect x="38" y="20" width="8" height="14" fill="#1F3A5C"/>
+        <rect x="54" y="20" width="8" height="14" fill="#1F3A5C"/>
+        <rect x="70" y="20" width="8" height="14" fill="#1F3A5C"/>
+        <rect x="86" y="20" width="8" height="14" fill="#1F3A5C"/>
+      </svg>
+    </div>
+    <div class="smallmult">
+      <div class="name">Documents</div>
+      <p class="n">3</p>
+      <svg viewBox="0 0 100 36">
+        <line x1="0" y1="34" x2="100" y2="34" stroke="#181715" stroke-width="0.5"/>
+        <rect x="6" y="32" width="8" height="2" fill="#1F3A5C"/>
+        <rect x="22" y="30" width="8" height="4" fill="#1F3A5C"/>
+        <rect x="38" y="26" width="8" height="8" fill="#1F3A5C"/>
+        <rect x="54" y="24" width="8" height="10" fill="#1F3A5C"/>
+        <rect x="70" y="24" width="8" height="10" fill="#1F3A5C"/>
+        <rect x="86" y="24" width="8" height="10" fill="#1F3A5C"/>
+      </svg>
+    </div>
+    <div class="smallmult empty">
+      <div class="name">Emergency</div>
+      <p class="n">empty</p>
+      <svg viewBox="0 0 100 36">
+        <line x1="0" y1="34" x2="100" y2="34" stroke="#B5301F" stroke-width="0.5" stroke-dasharray="2 2"/>
+        <text x="50" y="22" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="#B5301F" font-style="italic">add a note</text>
+      </svg>
+    </div>
+  </div>
+
+  <!-- ===== SECTION II — PROSE WITH MARGINALIA ===== -->
+  <div class="section-head">
+    <div class="sigil">II</div>
+    <h2 class="sec-title">This month, in three paragraphs. <small>Movements · additions · notes</small></h2>
+    <div class="sec-meta">1 — 28 May</div>
+  </div>
+
+  <div class="prose-with-margin">
+    <div class="prose">
+      <p>The HDFC primary balance rose by <strong>₹78,200</strong> after the salary credit on the first. The SIP in Parag Parikh Flexicap auto-debited as scheduled on the fifteenth. The home loan principal reduced by <strong>₹42,180</strong> with the May EMI. Net position rose <strong>0.78%</strong>, which is consistent with your six-month median.<span class="fn">1</span></p>
+
+      <p>You added <strong>three records</strong> this week. A renewed Aadhaar on the twenty-second, after the biometric update at the seva kendra. A Life Insurance Corporation policy <em>(Jeevan Anand, 8842110)</em> paid up in March, with sum assured of ₹15,00,000. A fixed deposit opened on the twenty-sixth with Kotak — ₹5,00,000 at 6.8%, maturing December 2027.<span class="fn">2</span></p>
+
+      <p>Of these, two were marked <strong>emergency-eligible</strong> — meaning they will be released to your nominee on the partial-release path. The LIC policy is one; we would suggest you add a short note alongside it identifying Meera as the existing nominee on the policy itself, distinct from her role as Lyfos nominee. This is the only nuance that has caught grieving families out in our death-recovery test.<span class="fn">3</span></p>
+    </div>
+
+    <aside class="margin">
+      <div class="m-eyebrow">Note from the editors</div>
+      <p>Your <strong>Emergency</strong> section remains empty. We continue to recommend a single paragraph: <em>which family member to call first; where the spare house key is kept; the password to your phone.</em></p>
+
+      <p style="margin-top: 24px;"><strong>Cf.</strong> Section IV, Plate i, for the release-plan diagram. The mechanism is presently armed.</p>
+
+      <p style="margin-top: 24px;"><strong>Vol. I, Issue IV</strong> covered the addition of your first 30 records and is available in the Appendix.</p>
+    </aside>
+  </div>
+
+  <!-- ===== SECTION III — RELEASE PLATE ===== -->
+  <div class="section-head">
+    <div class="sigil">III</div>
+    <h2 class="sec-title">The release, presented in plate. <small>Plate i. · the 3-of-5 mechanism with hold</small></h2>
+    <div class="sec-meta">Armed</div>
+  </div>
+
+  <div class="plate">
+    <div class="plate-svg">
+      <svg viewBox="0 0 320 280">
+        <defs>
+          <style>
+            .ink-stroke { stroke: #181715; stroke-width: 0.7; fill: none; }
+            .ink-light { stroke: #181715; stroke-width: 0.5; fill: none; stroke-dasharray: 2 2; }
+            .ink-fill { fill: #181715; }
+            .red { fill: #B5301F; }
+            .blue { stroke: #1F3A5C; }
+            .label { font-family: "IBM Plex Mono", monospace; font-size: 8.5px; fill: #5C544A; letter-spacing: 0.10em; text-transform: uppercase; }
+            .name { font-family: "Source Serif 4", serif; font-size: 11px; fill: #181715; font-style: italic; }
+            .nom { font-family: "Source Serif 4", serif; font-size: 12px; fill: #B5301F; font-style: italic; font-weight: 500; }
+          </style>
+        </defs>
+
+        <!-- Owner (square — symbol of self) -->
+        <rect x="148" y="20" width="14" height="14" class="ink-fill"/>
+        <text x="155" y="14" text-anchor="middle" class="label">Owner</text>
+
+        <!-- Five holders in arc, each numbered -->
+        <g>
+          <circle cx="42" cy="100" r="6" class="ink-stroke"/>
+          <text x="42" y="120" text-anchor="middle" class="name">Anjali</text>
+          <text x="42" y="132" text-anchor="middle" class="label">i</text>
+
+          <circle cx="98" cy="76" r="6" class="ink-stroke"/>
+          <text x="98" y="64" text-anchor="middle" class="name">Ravi</text>
+          <text x="98" y="92" text-anchor="middle" class="label">ii</text>
+
+          <circle cx="155" cy="68" r="6" class="ink-stroke"/>
+          <text x="155" y="56" text-anchor="middle" class="name">Vikram</text>
+          <text x="155" y="84" text-anchor="middle" class="label">iii</text>
+
+          <circle cx="212" cy="76" r="6" class="ink-stroke"/>
+          <text x="212" y="64" text-anchor="middle" class="name">Priya</text>
+          <text x="212" y="92" text-anchor="middle" class="label">iv</text>
+
+          <circle cx="268" cy="100" r="6" class="ink-stroke"/>
+          <text x="268" y="120" text-anchor="middle" class="name">Arjun</text>
+          <text x="268" y="132" text-anchor="middle" class="label">v</text>
+        </g>
+
+        <!-- Lines: owner to all -->
+        <line x1="155" y1="34" x2="42" y2="100" class="ink-light"/>
+        <line x1="155" y1="34" x2="98" y2="76" class="ink-light"/>
+        <line x1="155" y1="34" x2="155" y2="68" class="ink-light"/>
+        <line x1="155" y1="34" x2="212" y2="76" class="ink-light"/>
+        <line x1="155" y1="34" x2="268" y2="100" class="ink-light"/>
+
+        <!-- Threshold bracket -->
+        <path d="M 30 152 L 30 162 L 280 162 L 280 152" class="ink-stroke"/>
+        <text x="155" y="178" text-anchor="middle" class="label">Threshold — any three of five</text>
+
+        <!-- 14-day hold strip -->
+        <line x1="30" y1="200" x2="280" y2="200" class="ink-stroke"/>
+        <line x1="30" y1="195" x2="30" y2="205" class="ink-stroke"/>
+        <line x1="280" y1="195" x2="280" y2="205" class="ink-stroke"/>
+        <text x="30" y="220" class="label">Day 0</text>
+        <text x="280" y="220" text-anchor="end" class="label">Day 14</text>
+
+        <!-- Alert channel ticks -->
+        <g class="blue" stroke-width="0.6">
+          <line x1="55" y1="195" x2="55" y2="205"/>
+          <line x1="100" y1="195" x2="100" y2="205"/>
+          <line x1="145" y1="195" x2="145" y2="205"/>
+          <line x1="190" y1="195" x2="190" y2="205"/>
+          <line x1="235" y1="195" x2="235" y2="205"/>
+        </g>
+        <text x="155" y="235" text-anchor="middle" class="label">Alerts · email · sms · whatsapp · push</text>
+
+        <!-- Nominee -->
+        <line x1="155" y1="200" x2="155" y2="252" class="ink-light"/>
+        <rect x="146" y="252" width="18" height="14" class="red"/>
+        <text x="155" y="278" text-anchor="middle" class="nom">Meera (nominee)</text>
+      </svg>
+    </div>
+
+    <div class="plate-text">
+      <div class="pt-label">Plate i. · Release mechanism</div>
+      <h3>How your vault returns to your family.</h3>
+      <p>You have chosen <strong>five</strong> persons to hold a sealed share of your vault key. Any <strong>three</strong> of them, acting together, can begin the release.</p>
+      <p>From that moment, a <strong>fourteen-day owner-protection hold</strong> commences. During the hold, alerts are sent to you each day on four independent channels. <strong>One reply aborts the release.</strong></p>
+      <p>If the hold expires undisturbed, the vault is returned to your nominee, <strong>Meera</strong>, who reconstructs the key on her own device. We never see it.</p>
+      <a href="#" class="plate-cta">Review the plan in detail →</a>
+    </div>
+  </div>
+
+  <!-- ===== SECTION IV — APPENDIX ===== -->
+  <div class="section-head">
+    <div class="sigil">IV</div>
+    <h2 class="sec-title">Appendix · recent events. <small>Six entries · auditable</small></h2>
+    <div class="sec-meta">Live</div>
+  </div>
+
+  <div class="appendix">
+    <div class="ap-row">
+      <div class="d">2026-05-28 09:14</div>
+      <div class="e"><strong>Vault unlocked</strong> via passphrase.</div>
+      <div class="v">iPhone 15 · Mumbai</div>
+    </div>
+    <div class="ap-row">
+      <div class="d">2026-05-26 18:42</div>
+      <div class="e">Record added · <strong>Kotak FD</strong> · ₹5,00,000.</div>
+      <div class="v">MacBook Air · Mumbai</div>
+    </div>
+    <div class="ap-row">
+      <div class="d">2026-05-22 11:08</div>
+      <div class="e">Holder <strong>Ravi</strong> accepted invite · key registered.</div>
+      <div class="v">—</div>
+    </div>
+    <div class="ap-row">
+      <div class="d">2026-05-22 09:30</div>
+      <div class="e">Release plan finalised · <strong>5 shares sealed.</strong></div>
+      <div class="v">MacBook Air · Mumbai</div>
+    </div>
+    <div class="ap-row">
+      <div class="d">2026-05-15 07:30</div>
+      <div class="e">Cloud sync · 142 KB encrypted blob.</div>
+      <div class="v">iPhone 15 · Mumbai</div>
+    </div>
+    <div class="ap-row">
+      <div class="d">2026-05-01 00:00</div>
+      <div class="e">Monthly review opened by scheduler.</div>
+      <div class="v">supabase · cron</div>
+    </div>
+  </div>
+
+  <!-- ===== ALMANAC STRIP ===== -->
+  <div class="strip">
+    <div class="it">Net worth this folio<strong>₹1,84,72,310</strong></div>
+    <div class="it">Records held<strong>47 · across 5 sections</strong></div>
+    <div class="it">Release plan<strong>Armed · 5/5 verified</strong></div>
+    <div class="it">Next review<strong>3 days · 1 June</strong></div>
+  </div>
+
+  <!-- ===== FOOTNOTES ===== -->
+  <div class="footnotes">
+    <ol>
+      <li>The six-month median net-position movement is +0.81%, derived from the prior issues. <em>Cf.</em> Vol. I, Issue III, Folio 41.</li>
+      <li>Records added are categorised on entry; the category is amendable, and the prior assignment is retained in the audit log.</li>
+      <li>The release mechanism treats LIC nomination as separate from the Lyfos release plan — the policy itself names a nominee, recorded with the insurer.</li>
+    </ol>
+  </div>
+
+  <!-- ===== COLOPHON ===== -->
+  <footer class="colophon">
+    <div>Lyfos · Vol. I · No. 5<br>Set in Source Serif 4, Inter Tight &amp; IBM Plex Mono.</div>
+    <div class="right">47 records · 5/5 holders · Armed<br>Sealed locally · 09:14 IST</div>
+  </footer>
+
+</main>
+
+</body>
+</html>

@@ -3,21 +3,24 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Lyfos · Home</title>
+<title>Lyfos · Vol. I · Issue V · May MMXXVI</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
     --paper: #f4f1ec;
+    --paper-2: #efeae3;
     --ink: #1a1a1a;
     --ink-2: #4a4a4a;
     --ink-3: #6e6e73;
     --ink-4: #a1a1a6;
-    --hairline: rgba(0, 0, 0, 0.10);
+    --rule-strong: rgba(0,0,0,0.55);
+    --rule: rgba(0,0,0,0.18);
+    --hairline: rgba(0,0,0,0.09);
     --accent: #8B2E1F;
     --serif: "Source Serif 4", "Tiempos Headline", Georgia, serif;
-    --sans: "Inter Tight", -apple-system, BlinkMacSystemFont, sans-serif;
+    --sans: "Inter Tight", -apple-system, sans-serif;
     --mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
   }
   * { box-sizing: border-box; }
@@ -25,345 +28,594 @@
     margin: 0; padding: 0;
     background: var(--paper); color: var(--ink);
     font-family: var(--sans);
-    font-size: 17px; line-height: 1.55;
+    font-size: 16px; line-height: 1.55;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    font-variant-numeric: oldstyle-nums proportional-nums;
   }
   a { color: var(--ink); text-decoration: none; }
   a:hover { text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1px; }
 
-  /* Top nav */
-  nav.top {
-    border-bottom: 1px solid var(--hairline);
+  /* ===== Masthead (newspaper-style) ===== */
+  .masthead {
+    border-bottom: 2px solid var(--rule-strong);
     background: var(--paper);
   }
-  nav.top .inner {
-    max-width: 760px; margin: 0 auto;
-    display: flex; align-items: baseline; justify-content: space-between;
-    padding: 28px 32px;
+  .masthead-inner {
+    max-width: 920px; margin: 0 auto;
+    padding: 28px 32px 16px;
   }
-  nav.top .brand {
-    font-family: var(--serif); font-size: 22px; letter-spacing: -0.01em;
-    font-weight: 500;
+  .masthead-meta {
+    display: flex; justify-content: space-between;
+    font-family: var(--mono); font-size: 10px;
+    letter-spacing: 0.10em; text-transform: uppercase;
+    color: var(--ink-3); margin-bottom: 12px;
   }
-  nav.top ul {
-    display: flex; gap: 32px; list-style: none; padding: 0; margin: 0;
-    font-size: 14px;
-  }
-  nav.top a { color: var(--ink-2); }
-  nav.top a.active { color: var(--ink); }
-  nav.top a.active::after {
-    content: ""; display: block; height: 1px; background: var(--ink);
-    margin-top: 4px;
-  }
-
-  main {
-    max-width: 760px; margin: 0 auto;
-    padding: 80px 32px 160px;
-  }
-
-  /* Hero */
-  .dateline {
-    font-family: var(--mono); font-size: 12px;
-    color: var(--ink-3); letter-spacing: 0.04em;
-    text-transform: uppercase; margin-bottom: 32px;
-  }
-  h1.hero {
+  .masthead-title {
     font-family: var(--serif);
-    font-size: 64px; line-height: 1.04; letter-spacing: -0.025em;
-    font-weight: 400; margin: 0 0 24px;
-    max-width: 16ch;
+    font-size: 56px; line-height: 1; letter-spacing: -0.03em;
+    font-weight: 500; text-align: center; margin: 4px 0;
   }
-  .hero-sub {
-    font-family: var(--serif); font-size: 22px; line-height: 1.45;
-    color: var(--ink-2); font-weight: 400; margin: 0 0 48px;
-    max-width: 32ch;
+  .masthead-tagline {
+    font-family: var(--serif); font-style: italic;
+    text-align: center; color: var(--ink-3);
+    font-size: 13px; margin: 6px 0 14px;
   }
-
-  /* Net worth panel — typographic, no card */
-  section.networth {
-    border-top: 1px solid var(--hairline);
-    padding-top: 40px; margin-top: 40px;
-  }
-  .net-label {
-    font-family: var(--sans); font-size: 11px; letter-spacing: 0.18em;
-    text-transform: uppercase; color: var(--ink-3); font-weight: 600;
-    margin-bottom: 16px;
-  }
-  .net-number {
-    font-family: var(--serif); font-feature-settings: "tnum";
-    font-size: 72px; line-height: 1; letter-spacing: -0.02em;
-    font-weight: 400; margin: 0;
-  }
-  .net-currency { color: var(--ink-3); margin-right: 8px; font-size: 36px; font-weight: 400; }
-  .net-delta {
-    margin-top: 16px; font-size: 14px; color: var(--ink-2);
-    display: flex; gap: 8px; align-items: baseline;
-  }
-  .net-delta .up {
-    font-family: var(--mono); color: #1d6b3a; font-size: 13px;
-  }
-
-  /* Breakdown */
-  .breakdown {
-    margin-top: 32px;
-    border-top: 1px solid var(--hairline);
-  }
-  .breakdown-row {
-    display: grid; grid-template-columns: 1fr auto auto;
-    gap: 24px; align-items: baseline;
-    padding: 20px 0; border-bottom: 1px solid var(--hairline);
-    font-size: 16px;
-  }
-  .breakdown-row .label { font-family: var(--sans); color: var(--ink); }
-  .breakdown-row .count { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
-  .breakdown-row .amount { font-family: var(--serif); font-feature-settings: "tnum"; font-size: 18px; }
-  .breakdown-row.liability .amount { color: var(--accent); }
-  .breakdown-row.liability .amount::before { content: "−"; margin-right: 2px; }
-
-  /* Section heading style */
-  h2.section {
-    font-family: var(--serif);
-    font-size: 32px; line-height: 1.2; letter-spacing: -0.02em;
-    font-weight: 400; margin: 80px 0 24px;
-  }
-
-  /* Today notes — reads like a magazine column */
-  .notes {
-    column-count: 1; font-size: 17px; line-height: 1.65;
+  .masthead-folio {
+    display: flex; justify-content: space-between; align-items: baseline;
+    border-top: 1px solid var(--rule-strong);
+    border-bottom: 1px solid var(--rule-strong);
+    padding: 8px 0; margin-top: 12px;
+    font-family: var(--mono); font-size: 11px;
+    letter-spacing: 0.06em; text-transform: uppercase;
     color: var(--ink-2);
   }
-  .notes p { margin: 0 0 16px; }
-  .notes p strong { color: var(--ink); font-weight: 500; }
-  .notes p a { border-bottom: 1px solid var(--accent); padding-bottom: 1px; text-decoration: none; }
+  .masthead-folio nav { display: flex; gap: 24px; }
+  .masthead-folio nav a { color: var(--ink-3); }
+  .masthead-folio nav a.active { color: var(--ink); }
 
-  /* Life areas — reads like a TOC */
-  .toc { margin-top: 16px; }
-  .toc-row {
-    display: grid; grid-template-columns: 32px 1fr auto auto;
-    align-items: baseline; gap: 24px;
-    padding: 22px 0; border-bottom: 1px solid var(--hairline);
+  main {
+    max-width: 920px; margin: 0 auto;
+    padding: 56px 32px 120px;
   }
-  .toc-row .roman {
-    font-family: var(--serif); font-style: italic;
-    color: var(--ink-4); font-size: 14px;
-  }
-  .toc-row .name {
-    font-family: var(--serif); font-size: 22px; font-weight: 400;
-    letter-spacing: -0.01em;
-  }
-  .toc-row .what {
-    font-family: var(--sans); font-size: 13px; color: var(--ink-3);
-    font-style: italic;
-  }
-  .toc-row .n {
-    font-family: var(--mono); font-size: 12px; color: var(--ink-3);
-    min-width: 60px; text-align: right;
-  }
-  .toc-row .empty .n { color: var(--accent); }
 
-  /* Release plan callout */
-  .callout {
-    margin-top: 80px;
-    padding: 40px 0;
-    border-top: 1px solid var(--hairline);
+  /* ===== Lead spread ===== */
+  .lead { display: grid; grid-template-columns: 1.6fr 1fr; gap: 64px; align-items: start; }
+  @media (max-width: 760px) { .lead { grid-template-columns: 1fr; gap: 24px; } }
+
+  .lead h1 {
+    font-family: var(--serif);
+    font-size: 60px; line-height: 1.02; letter-spacing: -0.025em;
+    font-weight: 400; margin: 0 0 24px;
+  }
+  .lead h1 em {
+    font-style: italic; color: var(--ink-2);
+  }
+  .lead-body {
+    font-family: var(--serif); font-size: 19px; line-height: 1.55;
+    color: var(--ink-2);
+  }
+  .lead-body p { margin: 0 0 16px; }
+  .lead-body p::first-letter {
+    font-family: var(--serif); font-weight: 500; color: var(--accent);
+    float: left; font-size: 56px; line-height: 0.86; margin: 4px 8px 0 0;
+  }
+
+  .lead-aside {
+    border-top: 2px solid var(--rule-strong);
+    padding-top: 14px;
+  }
+  .aside-label {
+    font-family: var(--mono); font-size: 10px;
+    letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--ink-3); margin-bottom: 10px;
+  }
+  .aside-stat {
+    font-family: var(--serif); font-feature-settings: "tnum";
+    font-size: 44px; line-height: 1; font-weight: 400;
+    letter-spacing: -0.02em; margin: 0;
+  }
+  .aside-stat .cur { color: var(--ink-3); font-size: 24px; margin-right: 4px; }
+  .aside-row {
+    display: flex; justify-content: space-between;
+    font-size: 13px; padding: 8px 0;
     border-bottom: 1px solid var(--hairline);
-  }
-  .callout h3 {
-    font-family: var(--serif); font-size: 28px; font-weight: 400;
-    letter-spacing: -0.01em; margin: 0 0 16px;
-  }
-  .callout p {
-    font-family: var(--serif); font-size: 18px; line-height: 1.5;
-    color: var(--ink-2); margin: 0 0 24px; max-width: 50ch;
-  }
-  .cta-link {
-    font-family: var(--sans); font-size: 14px; font-weight: 500;
-    color: var(--accent); border-bottom: 1px solid var(--accent);
-    padding-bottom: 2px; display: inline-block;
-  }
-  .cta-link:hover { text-decoration: none; opacity: 0.7; }
-
-  /* Activity */
-  .activity { margin-top: 16px; }
-  .activity-row {
-    display: grid; grid-template-columns: 100px 1fr auto;
-    gap: 24px; align-items: baseline;
-    padding: 16px 0; border-bottom: 1px solid var(--hairline);
-    font-size: 14px;
-  }
-  .activity-row .when {
-    font-family: var(--mono); color: var(--ink-3); font-size: 12px;
-  }
-  .activity-row .what { color: var(--ink); font-family: var(--sans); }
-  .activity-row .device {
-    font-family: var(--sans); color: var(--ink-3); font-size: 12px;
-    font-style: italic;
-  }
-
-  /* Colophon */
-  footer.colophon {
-    margin-top: 120px; padding-top: 32px;
-    border-top: 1px solid var(--hairline);
-    font-size: 12px; color: var(--ink-3);
-    display: flex; justify-content: space-between; gap: 32px;
     font-family: var(--sans);
   }
+  .aside-row.head {
+    border-bottom: 1px solid var(--rule);
+    color: var(--ink-3); font-size: 10px;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    font-weight: 600; padding-top: 0;
+  }
+  .aside-row.total {
+    border-top: 1px solid var(--rule-strong);
+    border-bottom: 0;
+    padding-top: 10px; margin-top: 4px;
+    font-weight: 500; color: var(--ink);
+  }
+  .aside-row .num { font-family: var(--serif); font-feature-settings: "tnum"; }
 
+  /* ===== Section heading ===== */
+  .section-heading {
+    margin-top: 96px; padding-top: 24px;
+    border-top: 2px solid var(--rule-strong);
+    display: grid; grid-template-columns: auto 1fr auto; align-items: baseline; gap: 24px;
+  }
+  .section-no {
+    font-family: var(--mono); font-size: 11px;
+    letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .section-no strong { color: var(--ink); font-weight: 500; }
+  .section-title {
+    font-family: var(--serif); font-style: italic;
+    font-size: 28px; letter-spacing: -0.01em; font-weight: 400;
+    color: var(--ink);
+  }
+  .section-meta {
+    font-family: var(--mono); font-size: 10px;
+    color: var(--ink-3); letter-spacing: 0.08em; text-transform: uppercase;
+  }
+
+  /* ===== Statement table (financial-report style) ===== */
+  .statement {
+    margin-top: 28px;
+    border-top: 1px solid var(--rule-strong);
+  }
+  .statement-row {
+    display: grid; grid-template-columns: 32px 1fr 100px 160px;
+    gap: 24px; align-items: baseline;
+    padding: 14px 0; border-bottom: 1px solid var(--hairline);
+    font-size: 15px;
+  }
+  .statement-row.head {
+    border-bottom: 1px solid var(--rule);
+    font-family: var(--mono); font-size: 10px;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-3); padding: 8px 0;
+  }
+  .statement-row .ref { font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
+  .statement-row .desc { font-family: var(--serif); }
+  .statement-row .desc .sub { display: block; font-size: 12px; color: var(--ink-3); font-style: italic; margin-top: 2px; }
+  .statement-row .count { font-family: var(--mono); font-size: 11px; color: var(--ink-3); text-align: right; }
+  .statement-row .amount { font-family: var(--serif); font-feature-settings: "tnum"; font-size: 18px; text-align: right; }
+  .statement-row.liability .amount { color: var(--accent); }
+  .statement-row.liability .amount::before { content: "(₹"; color: var(--accent); margin-right: 1px; }
+  .statement-row.liability .amount::after { content: ")"; color: var(--accent); }
+  .statement-row.subtotal {
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px double var(--rule-strong);
+    font-weight: 500;
+  }
+  .statement-row.subtotal .desc { font-family: var(--sans); font-weight: 600; font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); }
+
+  /* ===== Movements table ===== */
+  .movements {
+    margin-top: 24px;
+    font-family: var(--sans);
+  }
+  .move-row {
+    display: grid; grid-template-columns: 100px 1fr 140px 140px;
+    gap: 24px; align-items: baseline;
+    padding: 12px 0; border-bottom: 1px solid var(--hairline);
+    font-size: 14px;
+  }
+  .move-row.head {
+    border-bottom: 1px solid var(--rule);
+    font-family: var(--mono); font-size: 10px;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .move-row .date { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+  .move-row .desc { font-family: var(--serif); font-size: 15px; }
+  .move-row .desc small { color: var(--ink-3); margin-left: 6px; font-style: italic; }
+  .move-row .amt { font-family: var(--serif); font-feature-settings: "tnum"; font-size: 15px; text-align: right; }
+  .move-row .amt.cr { color: #1d6b3a; }
+  .move-row .amt.dr { color: var(--accent); }
+  .move-row .bal { font-family: var(--serif); font-feature-settings: "tnum"; font-size: 15px; text-align: right; color: var(--ink-2); }
+
+  /* ===== Coverage prose with footnote refs ===== */
+  .prose {
+    margin-top: 24px; font-family: var(--serif);
+    font-size: 17px; line-height: 1.7; color: var(--ink-2);
+    max-width: 64ch;
+  }
+  .prose p { margin: 0 0 16px; }
+  .prose strong { color: var(--ink); font-weight: 500; }
+  .footnote-ref {
+    font-size: 11px; vertical-align: super; color: var(--accent);
+    margin-left: 1px;
+  }
+
+  /* ===== Release plan plate ===== */
+  .plate {
+    margin-top: 24px;
+    border: 1px solid var(--rule-strong);
+    background: var(--paper-2);
+    padding: 32px;
+    display: grid; grid-template-columns: 1fr 1.3fr; gap: 40px;
+    align-items: center;
+  }
+  @media (max-width: 760px) { .plate { grid-template-columns: 1fr; } }
+  .plate svg { width: 100%; height: auto; }
+  .plate-caption {
+    font-family: var(--serif); font-size: 16px; line-height: 1.6; color: var(--ink-2);
+  }
+  .plate-caption strong { color: var(--ink); font-weight: 500; }
+  .plate-caption .label {
+    font-family: var(--mono); font-size: 10px; color: var(--ink-3);
+    letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 8px;
+    display: block;
+  }
+
+  /* ===== Appendix (audit log) ===== */
+  .appendix {
+    margin-top: 24px;
+    border-top: 1px solid var(--rule);
+  }
+  .app-row {
+    display: grid; grid-template-columns: 140px 1fr 220px;
+    gap: 24px; padding: 10px 0;
+    border-bottom: 1px solid var(--hairline);
+    font-size: 13px; align-items: baseline;
+  }
+  .app-row .date { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+  .app-row .ev { font-family: var(--serif); font-size: 14px; }
+  .app-row .ev strong { color: var(--ink); font-weight: 500; }
+  .app-row .dev { font-family: var(--mono); font-size: 11px; color: var(--ink-3); text-align: right; }
+
+  /* ===== Footnotes ===== */
+  .footnotes {
+    margin-top: 80px; padding-top: 16px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--serif); font-size: 13px; line-height: 1.6;
+    color: var(--ink-2); max-width: 64ch;
+  }
+  .footnotes ol {
+    list-style: none; padding: 0; margin: 0;
+    counter-reset: fn;
+  }
+  .footnotes li {
+    padding-left: 28px; position: relative; margin-bottom: 10px;
+    counter-increment: fn;
+  }
+  .footnotes li::before {
+    content: counter(fn) ".";
+    position: absolute; left: 0; top: 0;
+    font-family: var(--mono); font-size: 11px; color: var(--accent);
+  }
+
+  /* ===== PDF download box ===== */
+  .download {
+    margin-top: 80px;
+    border-top: 2px solid var(--rule-strong);
+    border-bottom: 2px solid var(--rule-strong);
+    padding: 28px 0;
+    display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: center;
+  }
+  .download .pitch {
+    font-family: var(--serif); font-size: 17px; line-height: 1.55; color: var(--ink-2);
+    max-width: 48ch;
+  }
+  .download .pitch strong { color: var(--ink); font-weight: 500; }
+  .download .btn {
+    font-family: var(--sans); font-size: 13px; font-weight: 500;
+    padding: 14px 24px; background: var(--ink); color: var(--paper);
+    border: 0; cursor: pointer;
+  }
+  .download .btn::after { content: " →"; }
+
+  /* ===== Colophon ===== */
+  .colophon {
+    margin-top: 64px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+    font-family: var(--mono); font-size: 10px;
+    letter-spacing: 0.10em; text-transform: uppercase;
+    color: var(--ink-3); padding-top: 16px;
+    border-top: 1px solid var(--rule);
+  }
+  .colophon .right { text-align: right; }
+
+  /* Drop fixed sizes for mobile */
   @media (max-width: 600px) {
-    h1.hero { font-size: 44px; }
-    .net-number { font-size: 56px; }
-    .toc-row { grid-template-columns: 24px 1fr auto; }
-    .toc-row .what { display: none; }
-    nav.top ul { display: none; }
+    .masthead-title { font-size: 36px; }
+    .lead h1 { font-size: 36px; }
+    .aside-stat { font-size: 32px; }
+    .statement-row, .move-row { grid-template-columns: 1fr auto; }
+    .statement-row .ref, .statement-row .count { display: none; }
+    .move-row .bal { display: none; }
+    .masthead-folio nav { display: none; }
+    .download { grid-template-columns: 1fr; }
   }
 </style>
 </head>
 <body>
 
-<nav class="top">
-  <div class="inner">
-    <div class="brand">Lyfos</div>
-    <ul>
-      <li><a href="#" class="active">Home</a></li>
-      <li><a href="#">Vault</a></li>
-      <li><a href="#">Release</a></li>
-      <li><a href="#">Settings</a></li>
-    </ul>
+<!-- ===== MASTHEAD ===== -->
+<header class="masthead">
+  <div class="masthead-inner">
+    <div class="masthead-meta">
+      <span>Vol. I · Issue V</span>
+      <span>Folio 47</span>
+      <span>Mumbai · 28.V.MMXXVI</span>
+    </div>
+    <h1 class="masthead-title">Lyfos</h1>
+    <div class="masthead-tagline">The quarterly report on yourself.</div>
+    <div class="masthead-folio">
+      <nav>
+        <a href="#" class="active">Home</a>
+        <a href="#">Vault</a>
+        <a href="#">Release</a>
+        <a href="#">Appendix</a>
+      </nav>
+      <span>Sealed · Locally encrypted</span>
+    </div>
   </div>
-</nav>
+</header>
 
 <main>
 
-  <div class="dateline">Thursday · 28 May 2026 · Mumbai</div>
-
-  <h1 class="hero">Your records, as of this morning.</h1>
-  <p class="hero-sub">Forty-seven entries across six areas of your life. Your monthly review is due in three days.</p>
-
-  <section class="networth">
-    <div class="net-label">Net worth</div>
-    <p class="net-number"><span class="net-currency">₹</span>1,84,72,310</p>
-    <div class="net-delta">
-      <span class="up">▲ ₹1,42,800</span>
-      <span>since the first of the month</span>
-    </div>
-
-    <div class="breakdown">
-      <div class="breakdown-row">
-        <div class="label">Bank &amp; cash</div>
-        <div class="count">4 accounts</div>
-        <div class="amount">₹38,40,210</div>
-      </div>
-      <div class="breakdown-row">
-        <div class="label">Investments</div>
-        <div class="count">11 holdings</div>
-        <div class="amount">₹1,12,80,500</div>
-      </div>
-      <div class="breakdown-row">
-        <div class="label">Property</div>
-        <div class="count">1 asset</div>
-        <div class="amount">₹62,00,000</div>
-      </div>
-      <div class="breakdown-row liability">
-        <div class="label">Loans</div>
-        <div class="count">1 outstanding</div>
-        <div class="amount">28,48,400</div>
+  <!-- ===== LEAD ===== -->
+  <section class="lead">
+    <div>
+      <h1>The state of your records, <em>as of this morning.</em></h1>
+      <div class="lead-body">
+        <p>Forty-seven entries are presently held in your vault, across six sections of your life. Your monthly review is due in three days; we have set it aside for your convenience. Three records were added this week — a renewed Aadhaar, a Life Insurance Corporation policy paid up in March, and a fixed deposit opened with Kotak. Two have been categorised under Identity; one under Money.<sup class="footnote-ref">1</sup></p>
+        <p>Your home loan principal reduced by ₹42,180 since the first of May. Your SIP in Parag Parikh Flexicap auto-debited as scheduled. The HDFC primary balance rose by ₹78,200 after the salary credit on the first.<sup class="footnote-ref">2</sup></p>
+        <p>The fourteen-day owner-protection hold on your release plan is presently armed and ready. All five key holders have accepted. Your nominee, Meera, has been verified.</p>
       </div>
     </div>
+
+    <aside class="lead-aside">
+      <div class="aside-label">Statement of position</div>
+      <p class="aside-stat"><span class="cur">₹</span>1,84,72,310</p>
+      <div style="font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin: 8px 0 18px;">
+        +₹1,42,800 month-to-date · +0.78%
+      </div>
+      <div class="aside-row head"><span>Position</span><span>Value</span></div>
+      <div class="aside-row"><span>Bank &amp; cash</span><span class="num">38,40,210</span></div>
+      <div class="aside-row"><span>Investments</span><span class="num">1,12,80,500</span></div>
+      <div class="aside-row"><span>Property</span><span class="num">62,00,000</span></div>
+      <div class="aside-row"><span>Loans</span><span class="num" style="color: var(--accent);">(28,48,400)</span></div>
+      <div class="aside-row total"><span>Net position</span><span class="num">1,84,72,310</span></div>
+    </aside>
   </section>
 
-  <h2 class="section">This month, briefly.</h2>
-  <div class="notes">
-    <p>Your HDFC primary balance rose by <strong>₹78,200</strong> after the salary credit on the first. Your SIP in Parag Parikh Flexicap auto-debited as scheduled. Your home-loan principal reduced by <strong>₹42,180</strong>.</p>
-    <p>You added <strong>three records</strong> to the vault this week — a renewed Aadhaar, the LIC policy paid up in March, and the FD you opened with Kotak. Two are categorised under Identity, one under Money.</p>
-    <p>Your monthly balance-sheet review is due in three days. <a href="#">Open it now &rarr;</a></p>
+  <!-- ===== SECTION I — STATEMENT ===== -->
+  <div class="section-heading">
+    <div class="section-no"><strong>§ I</strong></div>
+    <div class="section-title">Statement of holdings, in summary.</div>
+    <div class="section-meta">As at 28 May 2026</div>
   </div>
 
-  <h2 class="section">Your life, by area.</h2>
-  <div class="toc">
-    <div class="toc-row">
-      <div class="roman">I</div>
-      <div>
-        <div class="name">Identity</div>
-        <div class="what">IDs, certificates, legal proof</div>
-      </div>
-      <div class="n">7 records</div>
+  <div class="statement">
+    <div class="statement-row head">
+      <span class="ref">Ref</span><span>Holding</span><span>Count</span><span style="text-align:right;">Value (₹)</span>
     </div>
-    <div class="toc-row">
-      <div class="roman">II</div>
-      <div>
-        <div class="name">Money</div>
-        <div class="what">Accounts, cards, balances, obligations</div>
-      </div>
-      <div class="n">19 records</div>
+    <div class="statement-row">
+      <div class="ref">1.1</div>
+      <div class="desc">Bank &amp; cash<span class="sub">HDFC primary, Kotak salary, ICICI savings, cash on hand</span></div>
+      <div class="count">4 accounts</div>
+      <div class="amount">38,40,210</div>
     </div>
-    <div class="toc-row">
-      <div class="roman">III</div>
-      <div>
-        <div class="name">Access</div>
-        <div class="what">Passwords, PINs, recovery routes</div>
-      </div>
-      <div class="n">14 records</div>
+    <div class="statement-row">
+      <div class="ref">1.2</div>
+      <div class="desc">Investments<span class="sub">Equity holdings, mutual funds, FDs, PPF</span></div>
+      <div class="count">11 holdings</div>
+      <div class="amount">1,12,80,500</div>
     </div>
-    <div class="toc-row">
-      <div class="roman">IV</div>
-      <div>
-        <div class="name">Insurance</div>
-        <div class="what">Policies, claims, nominee evidence</div>
-      </div>
-      <div class="n">4 records</div>
+    <div class="statement-row">
+      <div class="ref">1.3</div>
+      <div class="desc">Property<span class="sub">2 BHK · Powai · purchased Aug 2022</span></div>
+      <div class="count">1 asset</div>
+      <div class="amount">62,00,000</div>
     </div>
-    <div class="toc-row">
-      <div class="roman">V</div>
-      <div>
-        <div class="name">Documents</div>
-        <div class="what">Property, tax, legal records</div>
-      </div>
-      <div class="n">3 records</div>
+    <div class="statement-row liability">
+      <div class="ref">1.4</div>
+      <div class="desc">Loans &amp; obligations<span class="sub">HDFC home loan · 5 yrs remaining · ₹42,180 EMI</span></div>
+      <div class="count">1 outstanding</div>
+      <div class="amount">28,48,400</div>
     </div>
-    <div class="toc-row empty">
-      <div class="roman">VI</div>
-      <div>
-        <div class="name">Emergency</div>
-        <div class="what">First 72 hours plan</div>
-      </div>
-      <div class="n">empty</div>
+    <div class="statement-row subtotal">
+      <div></div>
+      <div class="desc">Net worth</div>
+      <div></div>
+      <div class="amount">1,84,72,310</div>
     </div>
   </div>
 
-  <div class="callout">
-    <h3>Your release plan, briefly.</h3>
-    <p>You have chosen five people to hold the keys to your vault: Anjali, Ravi, Vikram, Priya, and Arjun. Three of them, together, can release the vault to your nominee, Meera. All five have accepted. The fourteen-day owner-protection hold is ready when you are.</p>
-    <a href="#" class="cta-link">Review the release plan →</a>
+  <!-- ===== SECTION II — MOVEMENTS ===== -->
+  <div class="section-heading">
+    <div class="section-no"><strong>§ II</strong></div>
+    <div class="section-title">Movements, this month.</div>
+    <div class="section-meta">1 May — 28 May</div>
   </div>
 
-  <h2 class="section">Recent events.</h2>
-  <div class="activity">
-    <div class="activity-row">
-      <div class="when">Today 09:14</div>
-      <div class="what">Vault unlocked</div>
-      <div class="device">iPhone 15 · Mumbai</div>
+  <div class="movements">
+    <div class="move-row head">
+      <span>Date</span><span>Description</span><span style="text-align:right;">Amount (₹)</span><span style="text-align:right;">Running balance</span>
     </div>
-    <div class="activity-row">
-      <div class="when">26 May 18:42</div>
-      <div class="what">Added record · Kotak FD</div>
-      <div class="device">MacBook Air · Mumbai</div>
+    <div class="move-row">
+      <div class="date">26 May</div>
+      <div class="desc">Kotak — fixed deposit opened <small>FD ending 4421 · 6.8% · 36-month tenure</small></div>
+      <div class="amt dr">−5,00,000</div>
+      <div class="bal">1,84,72,310</div>
     </div>
-    <div class="activity-row">
-      <div class="when">22 May 11:08</div>
-      <div class="what">Holder Ravi accepted invite</div>
-      <div class="device">—</div>
+    <div class="move-row">
+      <div class="date">15 May</div>
+      <div class="desc">SIP auto-debit — Parag Parikh Flexicap</div>
+      <div class="amt dr">−25,000</div>
+      <div class="bal">1,89,72,310</div>
     </div>
-    <div class="activity-row">
-      <div class="when">15 May 07:30</div>
-      <div class="what">Cloud sync completed</div>
-      <div class="device">iPhone 15 · Mumbai</div>
+    <div class="move-row">
+      <div class="date">10 May</div>
+      <div class="desc">HDFC home loan — EMI</div>
+      <div class="amt dr">−42,180</div>
+      <div class="bal">1,89,97,310</div>
+    </div>
+    <div class="move-row">
+      <div class="date">01 May</div>
+      <div class="desc">Salary credit · Acme Corp</div>
+      <div class="amt cr">+2,10,000</div>
+      <div class="bal">1,90,39,490</div>
+    </div>
+    <div class="move-row">
+      <div class="date">01 May</div>
+      <div class="desc">Opening balance</div>
+      <div class="amt" style="color: var(--ink-3);">—</div>
+      <div class="bal">1,83,29,510</div>
     </div>
   </div>
 
+  <!-- ===== SECTION III — COVERAGE ===== -->
+  <div class="section-heading">
+    <div class="section-no"><strong>§ III</strong></div>
+    <div class="section-title">Coverage, by life-area.</div>
+    <div class="section-meta">6 sections · 47 records</div>
+  </div>
+
+  <div class="prose">
+    <p>Your <strong>Identity</strong> section now holds seven records — the renewed Aadhaar, your PAN card, the passport (valid through 2031), the voter ID, your driver's licence, the marriage certificate, and the registered will from 2024.<sup class="footnote-ref">3</sup></p>
+    <p>The <strong>Money</strong> section is the most populated at nineteen records. <strong>Access</strong> holds fourteen — your primary email, the two-factor authentication seeds for the three exchange accounts, the SIM PUK code, the cloud-backup encryption key, and the rest. <strong>Insurance</strong> holds four policies — health, term life, the LIC endowment, and the home contents cover.</p>
+    <p>Your <strong>Emergency</strong> section is empty. We would suggest a short note, perhaps a paragraph, on the first seventy-two hours: which family member to call first, where the spare house key is kept, the password to your phone. Anything that would save your nominee a long night.<sup class="footnote-ref">4</sup></p>
+  </div>
+
+  <!-- ===== SECTION IV — RELEASE PLAN ===== -->
+  <div class="section-heading">
+    <div class="section-no"><strong>§ IV</strong></div>
+    <div class="section-title">Release plan, presented in plate.</div>
+    <div class="section-meta">Plate i. · 3-of-5 mechanism</div>
+  </div>
+
+  <div class="plate">
+    <!-- Small diagram of 3-of-5 mechanism -->
+    <svg viewBox="0 0 300 220" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <style>
+          .hold-stroke { stroke: #1a1a1a; stroke-width: 0.6; fill: none; }
+          .hold-light { stroke: #1a1a1a; stroke-width: 0.4; fill: none; stroke-dasharray: 2 2; }
+          .hold-fill { fill: #1a1a1a; }
+          .accent { fill: #8B2E1F; }
+          .label { font-family: "JetBrains Mono", monospace; font-size: 8px; fill: #6e6e73; letter-spacing: 0.08em; text-transform: uppercase; }
+          .name { font-family: "Source Serif 4", serif; font-size: 11px; fill: #1a1a1a; font-style: italic; }
+        </style>
+      </defs>
+
+      <!-- Owner -->
+      <circle cx="150" cy="32" r="6" class="hold-fill"/>
+      <text x="150" y="20" text-anchor="middle" class="label">Owner</text>
+
+      <!-- Five holders in arc -->
+      <g>
+        <circle cx="50" cy="100" r="5" class="hold-stroke"/>
+        <text x="50" y="125" text-anchor="middle" class="name">Anjali</text>
+
+        <circle cx="100" cy="80" r="5" class="hold-stroke"/>
+        <text x="100" y="68" text-anchor="middle" class="name">Ravi</text>
+
+        <circle cx="150" cy="74" r="5" class="hold-stroke"/>
+        <text x="150" y="62" text-anchor="middle" class="name">Vikram</text>
+
+        <circle cx="200" cy="80" r="5" class="hold-stroke"/>
+        <text x="200" y="68" text-anchor="middle" class="name">Priya</text>
+
+        <circle cx="250" cy="100" r="5" class="hold-stroke"/>
+        <text x="250" y="125" text-anchor="middle" class="name">Arjun</text>
+      </g>
+
+      <!-- Lines from owner to holders -->
+      <line x1="150" y1="38" x2="50" y2="100" class="hold-light"/>
+      <line x1="150" y1="38" x2="100" y2="80" class="hold-light"/>
+      <line x1="150" y1="38" x2="150" y2="74" class="hold-light"/>
+      <line x1="150" y1="38" x2="200" y2="80" class="hold-light"/>
+      <line x1="150" y1="38" x2="250" y2="100" class="hold-light"/>
+
+      <!-- Threshold bracket -->
+      <path d="M 35 145 L 35 155 L 265 155 L 265 145" class="hold-stroke"/>
+      <text x="150" y="170" text-anchor="middle" class="label">Threshold · 3 of 5</text>
+
+      <!-- 14-day hold -->
+      <line x1="35" y1="178" x2="265" y2="178" class="hold-stroke"/>
+      <g class="label">
+        <text x="35" y="195" class="label">Day 0</text>
+        <text x="265" y="195" text-anchor="end" class="label">Day 14</text>
+      </g>
+      <text x="150" y="195" text-anchor="middle" class="label">Owner-protection hold</text>
+
+      <!-- Nominee -->
+      <rect x="142" y="200" width="16" height="12" class="accent"/>
+      <text x="150" y="216" text-anchor="middle" class="label" fill="#8B2E1F">Meera</text>
+    </svg>
+
+    <div class="plate-caption">
+      <span class="label">Plate i. — Release mechanism</span>
+      You have chosen five people to hold a sealed share of your vault key. <strong>Any three of them, acting together,</strong> can begin the release to your nominee, <strong>Meera</strong>. From that moment a fourteen-day owner-protection hold commences, during which alerts are sent on four channels — email, SMS, WhatsApp, and push notification. One reply aborts the release.
+    </div>
+  </div>
+
+  <!-- ===== SECTION V — APPENDIX ===== -->
+  <div class="section-heading">
+    <div class="section-no"><strong>§ V</strong></div>
+    <div class="section-title">Appendix — recent events.</div>
+    <div class="section-meta">6 entries · auditable</div>
+  </div>
+
+  <div class="appendix">
+    <div class="app-row">
+      <div class="date">2026-05-28 09:14</div>
+      <div class="ev"><strong>Vault unlocked.</strong> Via passphrase.</div>
+      <div class="dev">iPhone 15 · Mumbai</div>
+    </div>
+    <div class="app-row">
+      <div class="date">2026-05-26 18:42</div>
+      <div class="ev"><strong>Record added.</strong> Kotak FD · 5,00,000 · Money.</div>
+      <div class="dev">MacBook Air · Mumbai</div>
+    </div>
+    <div class="app-row">
+      <div class="date">2026-05-22 11:08</div>
+      <div class="ev"><strong>Holder accepted.</strong> Ravi · key registered.</div>
+      <div class="dev">—</div>
+    </div>
+    <div class="app-row">
+      <div class="date">2026-05-22 09:30</div>
+      <div class="ev"><strong>Release plan finalised.</strong> 5 shares sealed.</div>
+      <div class="dev">MacBook Air · Mumbai</div>
+    </div>
+    <div class="app-row">
+      <div class="date">2026-05-15 07:30</div>
+      <div class="ev"><strong>Cloud sync.</strong> 142 KB encrypted blob.</div>
+      <div class="dev">iPhone 15 · Mumbai</div>
+    </div>
+    <div class="app-row">
+      <div class="date">2026-05-01 00:00</div>
+      <div class="ev"><strong>Monthly review opened.</strong> By scheduler.</div>
+      <div class="dev">supabase · cron</div>
+    </div>
+  </div>
+
+  <!-- ===== DOWNLOAD CALL-OUT ===== -->
+  <div class="download">
+    <div class="pitch">
+      Your <strong>May 2026 issue</strong> is ready. We have typeset it as a printable, archivable PDF for your records — the financial summary, the movements, the coverage notes, the release plan plate.
+    </div>
+    <button class="btn">Download issue (PDF · 2.4 MB)</button>
+  </div>
+
+  <!-- ===== FOOTNOTES ===== -->
+  <div class="footnotes">
+    <ol>
+      <li>Records categorised on entry. Re-categorisation is permitted; the audit log retains the prior category.</li>
+      <li>Balance movements are reconciled against your monthly statements when uploaded. None presently outstanding.</li>
+      <li>Identity records carry a special flag — they are released to the nominee even on the partial-release path (any 3 holders, hold expired, nominee verified).</li>
+      <li>Empty sections are not penalised. The Emergency section is the one we would most strongly recommend filling.</li>
+    </ol>
+  </div>
+
+  <!-- ===== COLOPHON ===== -->
   <footer class="colophon">
-    <div>Lyfos · Locally encrypted on this device</div>
-    <div>Last sync 09:14 IST · 47 records · 5 key holders verified</div>
+    <div>Lyfos · Vol. I · Issue V<br>Set in Source Serif 4 &amp; Inter Tight</div>
+    <div class="right">47 records · 5/5 holders · Ready<br>Sealed locally · 09:14 IST</div>
   </footer>
 
 </main>
