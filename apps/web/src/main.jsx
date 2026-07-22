@@ -1390,7 +1390,8 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
       if (passphrase.length < 12) throw new Error("Use at least 12 characters. A memorable phrase is better than a short password.");
       if (passphrase !== confirm) throw new Error("Passphrases do not match.");
       if (!recoveryKey) throw new Error("Generate a recovery key before creating the vault.");
-      if (normalizeRecoveryKey(recoveryConfirm) !== recoveryKey) throw new Error("Recovery key confirmation does not match.");
+      if (!recoveryConfirm) throw new Error("Save the recovery phrase, tick the checkbox, then answer the three word checks.");
+      if (normalizeRecoveryKey(recoveryConfirm) !== recoveryKey) throw new Error("The recovery phrase check does not match. Recheck the requested words.");
       const nextVault = createEmptyVault();
       const nextRecord = await createStage1VaultRecord({ vault: nextVault, passphrase, recoveryKey });
       saveStage1Record(localStorage, nextRecord);
@@ -1412,7 +1413,8 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
       if (passphrase.length < 12) throw new Error("Use at least 12 characters before creating a sample vault.");
       if (passphrase !== confirm) throw new Error("Passphrases do not match.");
       if (!recoveryKey) throw new Error("Generate and confirm a recovery key before creating a sample vault.");
-      if (normalizeRecoveryKey(recoveryConfirm) !== recoveryKey) throw new Error("Recovery key confirmation does not match.");
+      if (!recoveryConfirm) throw new Error("Save the recovery phrase, tick the checkbox, then answer the three word checks.");
+      if (normalizeRecoveryKey(recoveryConfirm) !== recoveryKey) throw new Error("The recovery phrase check does not match. Recheck the requested words.");
       const nextVault = await loadDemoVaultModule();
       const nextRecord = await createStage1VaultRecord({ vault: nextVault, passphrase, recoveryKey });
       saveStage1Record(localStorage, nextRecord);
@@ -5682,6 +5684,11 @@ function RecoveryKeyPanel({ recoveryKey, recoveryConfirm, onGenerate, onConfirmC
             <button type="button" onClick={download} className="rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-3.5 py-1.5 text-[12px] font-semibold text-[var(--ink-2)] transition hover:text-[var(--ink)]">Download .txt</button>
             <span className="ml-auto text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--ink-4)]">Store offline</span>
           </div>
+          {isBip39 && (
+            <p className="mt-3 rounded-xl bg-[var(--surface-2)] px-3 py-2 text-[12px] leading-5 text-[var(--ink-2)]">
+              Next: save this phrase, tick the checkbox, then answer three word checks.
+            </p>
+          )}
 
           {isBip39 ? (
             <div className="mt-4">
