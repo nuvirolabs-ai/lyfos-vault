@@ -1591,7 +1591,7 @@ function greeting() {
   return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
 }
 
-function HomeDashboard({ vault, onNavigate, onOpenArea, backupHealth, onPreviewRecovery }) {
+function HomeDashboard({ vault, onNavigate, onOpenRecord, backupHealth, onPreviewRecovery }) {
   const items = vault.items ?? [];
   const total = items.length;
   const now = Date.now();
@@ -1673,7 +1673,7 @@ function HomeDashboard({ vault, onNavigate, onOpenArea, backupHealth, onPreviewR
             {recent.map((it, i) => {
               const area = getAreaForType(it.type);
               return (
-                <button key={i} onClick={() => onOpenArea(area.id)} className={cx("flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition hover:bg-[var(--surface-2)]", i > 0 && "border-t border-[var(--line)]")}>
+                <button key={i} onClick={() => onOpenRecord(it)} className={cx("flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition hover:bg-[var(--surface-2)]", i > 0 && "border-t border-[var(--line)]")}>
                   <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px]" style={{ background: "color-mix(in srgb, " + (AREA_TONE[area.id] || "var(--ink-4)") + " 14%, transparent)" }}>
                     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={AREA_TONE[area.id] || "var(--ink-3)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={AREA_ICON[area.id]} /></svg>
                   </span>
@@ -1707,7 +1707,7 @@ function HomeDashboard({ vault, onNavigate, onOpenArea, backupHealth, onPreviewR
   );
 }
 
-function AllRecords({ vault, onOpenArea }) {
+function AllRecords({ vault, onOpenRecord }) {
   const [filter, setFilter] = useState("all");
   const items = vault.items ?? [];
   const chips = [["all", "All", items.length], ...AREAS.map((a) => [a.id, a.label, items.filter((it) => a.types.includes(it.type)).length])];
@@ -1731,7 +1731,7 @@ function AllRecords({ vault, onOpenArea }) {
           {rows.map((it, i) => {
             const area = getAreaForType(it.type);
             return (
-              <button key={i} onClick={() => onOpenArea(area.id)} className={cx("flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition hover:bg-[var(--surface-2)]", i > 0 && "border-t border-[var(--line)]")}>
+              <button key={i} onClick={() => onOpenRecord(it)} className={cx("flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition hover:bg-[var(--surface-2)]", i > 0 && "border-t border-[var(--line)]")}>
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px]" style={{ background: "color-mix(in srgb, " + (AREA_TONE[area.id] || "var(--ink-4)") + " 14%, transparent)" }}>
                   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={AREA_TONE[area.id] || "var(--ink-3)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={AREA_ICON[area.id]} /></svg>
                 </span>
@@ -2168,8 +2168,8 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
 
           <div className={cx("mx-auto flex gap-8", screen === "home" ? "max-w-[1140px] items-start" : "max-w-3xl")}>
             <div className="min-w-0 flex-1">
-              {screen === "home"    && <HomeDashboard vault={vault} onNavigate={setScreen} onOpenArea={openArea} backupHealth={backupHealth} onPreviewRecovery={() => { setReleaseAutoPreview(true); setScreen("release"); }} />}
-              {screen === "records" && <AllRecords vault={vault} onOpenArea={openArea} />}
+              {screen === "home"    && <HomeDashboard vault={vault} onNavigate={setScreen} onOpenRecord={openRecord} backupHealth={backupHealth} onPreviewRecovery={() => { setReleaseAutoPreview(true); setScreen("release"); }} />}
+              {screen === "records" && <AllRecords vault={vault} onOpenRecord={openRecord} />}
               {screen === "money"   && <HomeScreen vault={vault} onSave={onSave} onNavigate={setScreen} backupHealth={backupHealth} onExport={onExport} />}
               {screen === "setup"   && <SetupScreen vault={vault} onSave={onSave} onNavigate={setScreen} />}
               {screen === "update"  && <UpdateScreen vault={vault} onSave={onSave} onNavigate={setScreen} />}
@@ -4016,7 +4016,7 @@ function CategoryWorkspace({ vault, area, initialRecordId, onSave, onCapture, on
     }, eventName), changeReason);
     setSelectedId(nextRecord.id);
     setMode("detail");
-    setMessage(exists ? "Dossier updated." : "Dossier created.");
+    setMessage(exists ? "Record updated." : "Record created.");
   }
 
   async function deleteRecord(record) {
@@ -4029,7 +4029,7 @@ function CategoryWorkspace({ vault, area, initialRecordId, onSave, onCapture, on
     }, "Record deleted"), "record_change");
     setSelectedId(null);
     setMode("overview");
-    setMessage("Dossier deleted.");
+    setMessage("Record deleted.");
   }
 
   async function attachToRecord(record, files) {
@@ -4373,7 +4373,7 @@ function RecordEditorDrawer({ area, record, onCancel, onSave }) {
 
       {message && <div className={cx("mt-4 rounded-2xl border px-4 py-3 text-sm font-semibold", messageTone === "red" ? "border-[#ff453a]/25 bg-[#ff453a]/10 text-[var(--red-2)]" : "border-[#34c759]/20 bg-[#34c759]/10 text-[var(--green-ink)]")}>{message}</div>}
 
-      <button onClick={handleSave} className="mt-6 w-full rounded-full bg-[var(--accent)] px-5 py-4 text-sm font-semibold text-white transition hover:bg-[var(--accent-hover)]">Save dossier</button>
+      <button onClick={handleSave} className="mt-6 w-full rounded-full bg-[var(--accent)] px-5 py-4 text-sm font-semibold text-white transition hover:bg-[var(--accent-hover)]">Save changes</button>
     </div>
   );
 }
@@ -4640,12 +4640,12 @@ function CaptureScreen({ vault, onSave, onNavigate }) {
         {showManual && (
           <div className="mt-5 grid gap-3 md:grid-cols-2">
             <p className="md:col-span-2 text-[13px] leading-5 text-[var(--ink-2)]">Add the basics, review once, then save it encrypted.</p>
-            <input className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)]" placeholder="Title" value={manual.title} onChange={(event) => setManual({ ...manual, title: event.target.value })} />
-            <select className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)]" value={manual.type} onChange={(event) => setManual({ ...manual, type: event.target.value })}>
+            <input aria-label="Record title" className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)]" placeholder="Title" value={manual.title} onChange={(event) => setManual({ ...manual, title: event.target.value })} />
+            <select aria-label="Record type" className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)]" value={manual.type} onChange={(event) => setManual({ ...manual, type: event.target.value })}>
               {TYPE_OPTIONS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
             </select>
-            <input className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)]" placeholder="Login / account / policy" value={manual.username} onChange={(event) => setManual({ ...manual, username: event.target.value })} />
-            <input className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)]" placeholder="Secret / PIN / key" value={manual.secret} onChange={(event) => setManual({ ...manual, secret: event.target.value })} />
+            <input aria-label="Login, account, or policy" className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)]" placeholder="Login / account / policy" value={manual.username} onChange={(event) => setManual({ ...manual, username: event.target.value })} />
+            <input aria-label="Secret, PIN, or key" className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)]" placeholder="Secret / PIN / key" value={manual.secret} onChange={(event) => setManual({ ...manual, secret: event.target.value })} />
             <button
               onClick={() => { setDrafts([{ ...manual, candidateId: crypto.randomUUID(), confidence: 1, warnings: [], extractedFields: [] }]); setSelectedDraftIndex(0); }}
               className="md:col-span-2 mt-2 rounded-full border border-[var(--line)] bg-[var(--surface)] px-5 py-2.5 text-xs font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-2)]"
