@@ -5,6 +5,11 @@
   "outputDirectory": "apps/web/dist",
   "framework": null,
   "rewrites": [
+    { "source": "/contact", "destination": "/contact/index.html" },
+    { "source": "/refund-policy", "destination": "/refund-cancellation/index.html" },
+    { "source": "/refund-cancellation", "destination": "/refund-cancellation/index.html" },
+    { "source": "/delivery", "destination": "/shipping-delivery/index.html" },
+    { "source": "/shipping-delivery", "destination": "/shipping-delivery/index.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

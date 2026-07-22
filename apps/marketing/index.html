@@ -7,20 +7,20 @@
 <meta name="description" content="A zero-knowledge vault for everything that matters — recoverable by the people you trust, never by us." />
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="Lyfos" />
-<meta property="og:url" content="https://lyfoslanding.signorvale.com/" />
+<meta property="og:url" content="https://lyfosvault.nuvirolabs.com/" />
 <meta property="og:title" content="Lyfos · The vault your family can actually open." />
 <meta property="og:description" content="A zero-knowledge vault built for life recovery. Five people you trust, three to release, a 14-day hold." />
-<meta property="og:image" content="https://lyfoslanding.signorvale.com/og.png" />
+<meta property="og:image" content="https://lyfosvault.nuvirolabs.com/og.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="Lyfos · The vault your family can actually open." />
 <meta name="twitter:description" content="A zero-knowledge vault built for life recovery. Five people you trust, three to release, a 14-day hold." />
-<meta name="twitter:image" content="https://lyfoslanding.signorvale.com/og.png" />
+<meta name="twitter:image" content="https://lyfosvault.nuvirolabs.com/og.png" />
 <meta name="theme-color" content="#f4f4f6" />
 <!-- Set this to your deployed Supabase `waitlist` function URL, e.g. https://<project-ref>.supabase.co/functions/v1/waitlist -->
 <meta name="lyfos-waitlist-endpoint" content="https://YOUR-PROJECT.supabase.co/functions/v1/waitlist" />
-<link rel="canonical" href="https://lyfoslanding.signorvale.com/" />
+<link rel="canonical" href="https://lyfosvault.nuvirolabs.com/" />
 <link rel="icon" type="image/svg+xml" href="/icon.svg" />
 <!-- Privacy-respecting analytics (no cookies, no personal data). Activates once a
      Plausible account exists for the domain; harmless 404 otherwise. -->
@@ -34,7 +34,7 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
 {
   "@context":"https://schema.org",
   "@graph":[
-    {"@type":"Organization","@id":"https://lyfoslanding.signorvale.com/#org","name":"Lyfos","url":"https://lyfoslanding.signorvale.com/","logo":"https://lyfoslanding.signorvale.com/icon.svg","description":"A zero-knowledge vault built for life recovery.","sameAs":["https://lyfos.nuvirolabs.com"]},
+    {"@type":"Organization","@id":"https://lyfosvault.nuvirolabs.com/#org","name":"Lyfos","url":"https://lyfosvault.nuvirolabs.com/","logo":"https://lyfosvault.nuvirolabs.com/icon.svg","description":"A zero-knowledge vault built for life recovery.","sameAs":["https://lyfos.nuvirolabs.com"]},
     {"@type":"SoftwareApplication","name":"Lyfos","applicationCategory":"SecurityApplication","operatingSystem":"Web browser","offers":[{"@type":"Offer","price":"0","priceCurrency":"INR","name":"Free"},{"@type":"Offer","price":"999","priceCurrency":"INR","name":"Vault (per year)"}],"description":"Encrypted vault for passwords, IDs, money and insurance — recoverable by the people you trust, never by Lyfos."},
     {"@type":"FAQPage","mainEntity":[
       {"@type":"Question","name":"Can Lyfos read my vault?","acceptedAnswer":{"@type":"Answer","text":"No. Your vault is encrypted on your device with a key derived from a passphrase only you know. We only ever store ciphertext and hold no key to decrypt it."}},
@@ -799,7 +799,7 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
       <div class="avatar reveal"><span>SV</span></div>
       <div class="reveal">
         <blockquote>“I watched a family spend nine months piecing together what one person knew by heart. Lyfos is the thing I wish they'd had — built so it can't betray that trust.”</blockquote>
-        <p class="who"><strong>The Lyfos founder</strong> · Signor Vale AI · Building in public</p>
+        <p class="who"><strong>The Lyfos founder</strong> · Nuviro Labs · Building in public</p>
       </div>
     </div>
   </section>
@@ -895,10 +895,14 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
         <a href="/blog/">Blog</a>
         <a href="/press/">Press</a>
         <a href="https://lyfos.nuvirolabs.com/legal/privacy.html">Privacy</a>
+        <a href="https://lyfos.nuvirolabs.com/legal/terms.html">Terms</a>
+        <a href="https://lyfos.nuvirolabs.com/refund-cancellation/">Refunds</a>
+        <a href="https://lyfos.nuvirolabs.com/shipping-delivery/">Delivery</a>
+        <a href="https://lyfos.nuvirolabs.com/contact/">Contact</a>
         <a href="https://lyfos.nuvirolabs.com/status/">Status</a>
       </div>
     </div>
-    <p class="copy">© 2026 Signor Vale AI Pvt Ltd · A vault your family can actually open. · <button class="motion-btn" id="motionToggle"></button></p>
+    <p class="copy">© 2026 Nuviro Labs · A vault your family can actually open. · <button class="motion-btn" id="motionToggle"></button></p>
   </div>
 </footer>
 
@@ -988,7 +992,7 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
       const configured = endpoint && !/YOUR-PROJECT/.test(endpoint);
       function done(){ form.hidden=true; if(sub) sub.hidden=true; show("You’re in. We’ll send the occasional founder note — and nothing else. Meanwhile, your vault’s ready whenever you are.",true); }
       // No backend wired yet → route the signup to the founder's inbox so nothing is lost.
-      function fallback(){ const s=encodeURIComponent('Add me to Lyfos founding members'); const b=encodeURIComponent('Please add '+email+' to the founding-members list.'); try{ window.location.href='mailto:hello@lyfos.signorvale.com?subject='+s+'&body='+b; }catch(_){ } form.hidden=true; if(sub) sub.hidden=true; note.hidden=false; note.className='note ok'; note.innerHTML='Opening your email app to finish — or just write to <a href="mailto:hello@lyfos.signorvale.com" style="color:inherit;text-decoration:underline;">hello@lyfos.signorvale.com</a>.'; }
+      function fallback(){ const s=encodeURIComponent('Add me to Lyfos founding members'); const b=encodeURIComponent('Please add '+email+' to the founding-members list.'); try{ window.location.href='mailto:hello@nuvirolabs.com?subject='+s+'&body='+b; }catch(_){ } form.hidden=true; if(sub) sub.hidden=true; note.hidden=false; note.className='note ok'; note.innerHTML='Opening your email app to finish — or just write to <a href="mailto:hello@nuvirolabs.com" style="color:inherit;text-decoration:underline;">hello@nuvirolabs.com</a>.'; }
       if(!configured){ fallback(); return; }
       btn.disabled=true; const l=btn.textContent; btn.textContent='Joining…';
       try{ const r=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email,source:'marketing-home',referrer:document.referrer||''})}); if(!r.ok) throw 0; done();

@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://lyfoslanding.signorvale.com/</loc><changefreq>weekly</changefreq><priority>1.0</priority><lastmod>2026-06-09</lastmod></url>
-  <url><loc>https://lyfoslanding.signorvale.com/pricing/</loc><changefreq>monthly</changefreq><priority>0.9</priority><lastmod>2026-06-09</lastmod></url>
-  <url><loc>https://lyfoslanding.signorvale.com/continuity/</loc><changefreq>monthly</changefreq><priority>0.9</priority><lastmod>2026-06-11</lastmod></url>
-  <url><loc>https://lyfoslanding.signorvale.com/security/</loc><changefreq>monthly</changefreq><priority>0.9</priority><lastmod>2026-06-09</lastmod></url>
-  <url><loc>https://lyfoslanding.signorvale.com/trust/</loc><changefreq>monthly</changefreq><priority>0.9</priority><lastmod>2026-06-09</lastmod></url>
-  <url><loc>https://lyfoslanding.signorvale.com/press/</loc><changefreq>monthly</changefreq><priority>0.6</priority><lastmod>2026-06-09</lastmod></url>
-  <url><loc>https://lyfoslanding.signorvale.com/blog/</loc><changefreq>weekly</changefreq><priority>0.7</priority><lastmod>2026-06-09</lastmod></url>
-  <url><loc>https://lyfoslanding.signorvale.com/blog/we-released-a-vault.html</loc><changefreq>yearly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://lyfoslanding.signorvale.com/blog/why-no-nominee-kyc.html</loc><changefreq>yearly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://lyfoslanding.signorvale.com/blog/zero-knowledge-mobile.html</loc><changefreq>yearly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://lyfosvault.nuvirolabs.com/</loc><changefreq>weekly</changefreq><priority>1.0</priority><lastmod>2026-06-09</lastmod></url>
+  <url><loc>https://lyfosvault.nuvirolabs.com/pricing/</loc><changefreq>monthly</changefreq><priority>0.9</priority><lastmod>2026-06-09</lastmod></url>
+  <url><loc>https://lyfosvault.nuvirolabs.com/continuity/</loc><changefreq>monthly</changefreq><priority>0.9</priority><lastmod>2026-06-11</lastmod></url>
+  <url><loc>https://lyfosvault.nuvirolabs.com/security/</loc><changefreq>monthly</changefreq><priority>0.9</priority><lastmod>2026-06-09</lastmod></url>
+  <url><loc>https://lyfosvault.nuvirolabs.com/trust/</loc><changefreq>monthly</changefreq><priority>0.9</priority><lastmod>2026-06-09</lastmod></url>
+  <url><loc>https://lyfosvault.nuvirolabs.com/press/</loc><changefreq>monthly</changefreq><priority>0.6</priority><lastmod>2026-06-09</lastmod></url>
+  <url><loc>https://lyfosvault.nuvirolabs.com/blog/</loc><changefreq>weekly</changefreq><priority>0.7</priority><lastmod>2026-06-09</lastmod></url>
+  <url><loc>https://lyfosvault.nuvirolabs.com/blog/we-released-a-vault.html</loc><changefreq>yearly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://lyfosvault.nuvirolabs.com/blog/why-no-nominee-kyc.html</loc><changefreq>yearly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://lyfosvault.nuvirolabs.com/blog/zero-knowledge-mobile.html</loc><changefreq>yearly</changefreq><priority>0.6</priority></url>
 </urlset>
