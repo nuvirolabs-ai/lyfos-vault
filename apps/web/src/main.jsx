@@ -2066,10 +2066,9 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
   const selectedArea = AREAS.find((a) => a.id === areaId) ?? AREAS[0];
   const initials = (session?.user?.email?.[0] ?? "L").toUpperCase();
 
-  // First-run coachmark tour
-  const [showTour, setShowTour] = useState(() => {
-    try { return !localStorage.getItem(ONBOARDING_KEY); } catch { return false; }
-  });
+  // Coachmark tour stays available on demand, but should not block the first
+  // post-create action. The empty state already points to the right next step.
+  const [showTour, setShowTour] = useState(false);
   function finishTour() {
     try { localStorage.setItem(ONBOARDING_KEY, "1"); } catch { /* ignore */ }
     setShowTour(false);
@@ -2182,6 +2181,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
               <footer className="mt-14 flex flex-wrap items-center justify-between gap-4 border-t border-[var(--line)] py-6 text-[11px] font-medium text-[var(--ink-4)]">
                 <span>Lyfos · Beta · Locally encrypted on this device.</span>
                 <div className="flex items-center gap-4">
+                  <button type="button" onClick={() => setShowTour(true)} className="hover:text-[var(--ink)]">Tour</button>
                   <a href="mailto:hello@lyfos.signorvale.com?subject=Lyfos%20help" className="hover:text-[var(--ink)]">Help</a>
                   <a href="/legal/beta-disclaimer.html" className="hover:text-[var(--ink)]">Beta disclaimer</a>
                   <a href="/legal/privacy.html" className="hover:text-[var(--ink)]">Privacy</a>
@@ -4634,11 +4634,12 @@ function CaptureScreen({ vault, onSave, onNavigate }) {
           onClick={() => setShowManual((v) => !v)}
           className="flex w-full items-center justify-between text-left"
         >
-          <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Or enter manually</span>
+          <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Enter manually</span>
           <span className={cx("text-[var(--ink-5)] transition", showManual && "rotate-90")}>›</span>
         </button>
         {showManual && (
           <div className="mt-5 grid gap-3 md:grid-cols-2">
+            <p className="md:col-span-2 text-[13px] leading-5 text-[var(--ink-2)]">Add the basics, review once, then save it encrypted.</p>
             <input className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)]" placeholder="Title" value={manual.title} onChange={(event) => setManual({ ...manual, title: event.target.value })} />
             <select className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)]" value={manual.type} onChange={(event) => setManual({ ...manual, type: event.target.value })}>
               {TYPE_OPTIONS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
@@ -4649,7 +4650,7 @@ function CaptureScreen({ vault, onSave, onNavigate }) {
               onClick={() => { setDrafts([{ ...manual, candidateId: crypto.randomUUID(), confidence: 1, warnings: [], extractedFields: [] }]); setSelectedDraftIndex(0); }}
               className="md:col-span-2 mt-2 rounded-full border border-[var(--line)] bg-[var(--surface)] px-5 py-2.5 text-xs font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-2)]"
             >
-              Preview as draft
+              Review record
             </button>
           </div>
         )}
