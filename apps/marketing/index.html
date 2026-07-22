@@ -829,7 +829,8 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> The full release engine</li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Encrypted sync across devices</li>
           </ul>
-          <a class="btn btn-ghost btn-lg" href="https://app.lyfos.in">Create your vault</a>
+          <button class="btn btn-ghost btn-lg" type="button" data-razorpay-checkout data-amount="99900" data-currency="INR" data-name="Lyfos" data-description="Lyfos Vault annual access" data-receipt="lyfos_vault_annual_home" data-status-target="homeVaultPayStatus">Pay with Razorpay</button>
+          <p id="homeVaultPayStatus" class="pay-status" data-razorpay-status></p>
         </div>
         <div class="price feature reveal">
           <div class="tag">Family · most popular</div>
@@ -839,7 +840,8 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Everything in Vault, for each person</li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> One monthly ritual for the family's money</li>
           </ul>
-          <a class="btn btn-green btn-lg" href="https://app.lyfos.in">Protect your family</a>
+          <button class="btn btn-green btn-lg" type="button" data-razorpay-checkout data-amount="249900" data-currency="INR" data-name="Lyfos" data-description="Lyfos Family annual access" data-receipt="lyfos_family_annual_home" data-status-target="homeFamilyPayStatus">Pay with Razorpay</button>
+          <p id="homeFamilyPayStatus" class="pay-status" data-razorpay-status></p>
         </div>
       </div>
       <p class="tiny reveal" style="margin-top:22px;"><a href="/pricing/" style="color:var(--green-ink);border-bottom:1px solid color-mix(in srgb,var(--green) 35%,transparent);">compare all plans →</a> · GST invoices · cancel anytime</p>
@@ -1049,6 +1051,8 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
     sync();
     b.addEventListener('click',()=>{ const n=root.getAttribute('data-motion')==='off'?'on':'off'; try{localStorage.setItem('lyfos-motion',n);}catch(e){} location.reload(); });
   })();
-</script>
+  </script>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script src="/razorpay-checkout.js?v=20260722-4" defer></script>
 </body>
 </html>
