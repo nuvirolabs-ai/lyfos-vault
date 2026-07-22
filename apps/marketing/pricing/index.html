@@ -74,7 +74,8 @@
         <li>Email + SMS + WhatsApp + push alerts</li>
         <li>Priority support (1 business day)</li>
       </ul>
-      <a class="btn primary cta" href="https://lyfos.nuvirolabs.com/upgrade?plan=vault">Upgrade to Vault</a>
+      <button class="btn primary cta" data-razorpay-checkout data-amount="99900" data-currency="INR" data-name="Lyfos" data-description="Lyfos Vault annual access" data-receipt="lyfos_vault_annual" data-status-target="vaultPayStatus">Pay securely with Razorpay</button>
+      <p id="vaultPayStatus" class="pay-status" data-razorpay-status></p>
     </div>
 
     <div class="plan">
@@ -88,7 +89,8 @@
         <li>Founder-direct email line</li>
         <li>Free invoicing in any name (B2B)</li>
       </ul>
-      <a class="btn ghost cta" href="https://lyfos.nuvirolabs.com/upgrade?plan=family">Upgrade to Family</a>
+      <button class="btn ghost cta" data-razorpay-checkout data-amount="249900" data-currency="INR" data-name="Lyfos" data-description="Lyfos Family annual access" data-receipt="lyfos_family_annual" data-status-target="familyPayStatus">Pay securely with Razorpay</button>
+      <p id="familyPayStatus" class="pay-status" data-razorpay-status></p>
     </div>
 
   </div>
@@ -148,5 +150,7 @@
     <div><h4>Legal</h4><ul><li><a href="/privacy/">Privacy</a></li><li><a href="/terms/">Terms</a></li><li><a href="/refund-cancellation/">Refunds</a></li><li><a href="/shipping-delivery/">Delivery</a></li><li><a href="/contact/">Contact</a></li></ul></div>
   </div>
 </footer>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script src="/razorpay-checkout.js?v=20260722" defer></script>
 </body>
 </html>
