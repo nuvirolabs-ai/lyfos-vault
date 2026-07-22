@@ -5,6 +5,8 @@
   "outputDirectory": "apps/web/dist",
   "framework": null,
   "rewrites": [
+    { "source": "/api/create-order", "destination": "/api/create-order" },
+    { "source": "/api/verify-payment", "destination": "/api/verify-payment" },
     { "source": "/contact", "destination": "/contact/index.html" },
     { "source": "/refund-policy", "destination": "/refund-cancellation/index.html" },
     { "source": "/refund-cancellation", "destination": "/refund-cancellation/index.html" },
