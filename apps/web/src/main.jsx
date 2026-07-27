@@ -4234,8 +4234,31 @@ function maskSecret(value) {
   return "•••• •••• ••••";
 }
 
+function primaryDetailPlaceholder(type, area) {
+  if (["password", "pin", "email_account"].includes(type)) return "Email, login, or device";
+  if (type === "bank_account") return "Account number or customer ID";
+  if (type === "card") return "Card ending or card name";
+  if (type === "insurance_policy") return "Policy number";
+  if (type === "identity_document") return "Document number";
+  if (type === "emergency_instruction") return "Person, place, or first action";
+  return `${area?.label ?? "Record"} detail`;
+}
+
+function hasMoreRecordDetails(record) {
+  return [
+    record?.secret,
+    record?.notes,
+    record?.bankDetails,
+    record?.cardDetails,
+    record?.email,
+    record?.financial?.value,
+    record?.financial?.liability
+  ].some((value) => String(value ?? "").trim()) || (record?.attachments?.length ?? 0) > 0 || record?.emergencyEligible === false;
+}
+
 function RecordEditorDrawer({ area, record, onCancel, onSave }) {
   const [draft, setDraft] = useState(record ?? createBlankRecord(area));
+  const [showMore, setShowMore] = useState(() => hasMoreRecordDetails(record));
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState("green");
 
@@ -4315,7 +4338,6 @@ function RecordEditorDrawer({ area, record, onCancel, onSave }) {
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--green-ink)]">{draft.id ? "Edit dossier" : "Create dossier"}</p>
           <h3 className="mt-2 text-3xl font-semibold md:text-4xl">{area.label} record</h3>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--ink-3)]">Keep it short, verifiable, and useful to the person who may need this under stress.</p>
         </div>
         <button onClick={onCancel} className="rounded-full border border-[var(--line)] bg-[var(--surface-2)] px-4 py-2 text-sm font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-2)]">Close</button>
       </div>
@@ -4329,47 +4351,59 @@ function RecordEditorDrawer({ area, record, onCancel, onSave }) {
             {TYPE_OPTIONS.filter(([id]) => area.types.includes(id) || area.types.length === 1).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
           </select>
         </EditorField>
-        <EditorField label="Identifier / account" dark>
-          <input className="editor-input-dark" value={draft.username} onChange={(event) => setDraft({ ...draft, username: event.target.value })} placeholder="Account, email, policy, ID" />
-        </EditorField>
-        <EditorField label="Sensitive value" dark>
-          <input className="editor-input-dark" value={draft.secret} onChange={(event) => setDraft({ ...draft, secret: event.target.value })} placeholder="Password, PIN, locker code" />
-        </EditorField>
-        <EditorField label="Emergency release" dark>
-          <select className="editor-input-dark" value={draft.emergencyEligible ? "yes" : "no"} onChange={(event) => setDraft({ ...draft, emergencyEligible: event.target.value === "yes" })}>
-            <option value="yes">Emergency-enabled</option>
-            <option value="no">Private</option>
-          </select>
-        </EditorField>
-        <EditorField label="Financial value" dark>
-          <input className="editor-input-dark" value={draft.financial?.value ?? ""} onChange={(event) => setDraft({ ...draft, financial: { ...draft.financial, value: event.target.value } })} placeholder="Optional asset value" />
+        <EditorField label="Primary detail" dark>
+          <input className="editor-input-dark" value={draft.username} onChange={(event) => setDraft({ ...draft, username: event.target.value })} placeholder={primaryDetailPlaceholder(draft.type, area)} />
         </EditorField>
       </div>
 
-      <EditorField label="Family notes" className="mt-4" dark>
-        <textarea className="editor-input-dark min-h-32" value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} placeholder="What should your family know before acting?" />
-      </EditorField>
+      <button
+        type="button"
+        onClick={() => setShowMore((value) => !value)}
+        className="mt-5 rounded-full border border-[var(--line)] bg-[var(--surface-2)] px-4 py-2 text-sm font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-2)]"
+      >
+        {showMore ? "Hide details" : "+ Add more details"}
+      </button>
 
-      <div className="mt-6 rounded-[1.5rem] border border-[var(--line)] bg-[var(--surface-3)] p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-[var(--ink)]">Attachments and extraction</p>
-            <p className="mt-1 text-sm text-[var(--ink-3)]">Upload PDF, image, screenshot, or document proof.</p>
+      {showMore && (
+        <>
+          <div className="mt-5 grid gap-4">
+            <EditorField label="Sensitive value" dark>
+              <input className="editor-input-dark" value={draft.secret} onChange={(event) => setDraft({ ...draft, secret: event.target.value })} placeholder="Password, PIN, locker code" />
+            </EditorField>
+            <EditorField label="Emergency release" dark>
+              <select className="editor-input-dark" value={draft.emergencyEligible ? "yes" : "no"} onChange={(event) => setDraft({ ...draft, emergencyEligible: event.target.value === "yes" })}>
+                <option value="yes">Emergency-enabled</option>
+                <option value="no">Private</option>
+              </select>
+            </EditorField>
+            <EditorField label="Financial value" dark>
+              <input className="editor-input-dark" value={draft.financial?.value ?? ""} onChange={(event) => setDraft({ ...draft, financial: { ...draft.financial, value: event.target.value } })} placeholder="Amount" />
+            </EditorField>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <AttachmentUploader onFiles={uploadFiles} />
-            <label className="cursor-pointer rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-4 py-2 text-sm font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-2)]">
-              Extract screenshot
-              <input className="hidden" type="file" accept="image/*" onChange={async (event) => {
-                const file = event.target.files?.[0];
-                if (file) await extractFromScreenshot(file);
-                event.target.value = "";
-              }} />
-            </label>
+
+          <EditorField label="Notes" className="mt-4" dark>
+            <textarea className="editor-input-dark min-h-32" value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} placeholder="Details for later" />
+          </EditorField>
+
+          <div className="mt-6 rounded-[1.5rem] border border-[var(--line)] bg-[var(--surface-3)] p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-[var(--ink)]">Files</p>
+              <div className="flex flex-wrap gap-2">
+                <AttachmentUploader onFiles={uploadFiles} />
+                <label className="cursor-pointer rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-4 py-2 text-sm font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-2)]">
+                  Extract screenshot
+                  <input className="hidden" type="file" accept="image/*" onChange={async (event) => {
+                    const file = event.target.files?.[0];
+                    if (file) await extractFromScreenshot(file);
+                    event.target.value = "";
+                  }} />
+                </label>
+              </div>
+            </div>
+            {(draft.attachments?.length ?? 0) > 0 && <AttachmentGrid attachments={draft.attachments ?? []} onDelete={deleteDraftAttachment} onReplace={replaceDraftAttachment} tone="dark" />}
           </div>
-        </div>
-        <AttachmentGrid attachments={draft.attachments ?? []} onDelete={deleteDraftAttachment} onReplace={replaceDraftAttachment} tone="dark" />
-      </div>
+        </>
+      )}
 
       {message && <div className={cx("mt-4 rounded-2xl border px-4 py-3 text-sm font-semibold", messageTone === "red" ? "border-[#ff453a]/25 bg-[#ff453a]/10 text-[var(--red-2)]" : "border-[#34c759]/20 bg-[#34c759]/10 text-[var(--green-ink)]")}>{message}</div>}
 
@@ -4542,24 +4576,23 @@ function CaptureScreen({ vault, onSave, onNavigate }) {
     setSelectedDraftIndex(0);
     setAttachments([]);
     setManual({ ...EMPTY_ITEM, title: "", type: "important_document" });
+    setShowManualMore(false);
     if (!remainingDrafts.length) onNavigate("life");
   }
 
   const [showManual, setShowManual] = useState(false);
+  const [showManualMore, setShowManualMore] = useState(false);
 
   return (
     <section className="mx-auto max-w-2xl">
       <div className="text-center">
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Capture</p>
         <h1 className="mt-3 text-[36px] font-semibold leading-[1.1] tracking-tight md:text-[44px]">Drop in the mess.</h1>
-        <p className="mx-auto mt-4 max-w-md text-[14px] leading-6 text-[var(--ink-2)]">
-          Paste a note or upload a screenshot. We propose a draft. You decide what becomes a record.
-        </p>
       </div>
 
       <textarea
-        className="mt-10 min-h-44 w-full rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5 text-[15px] leading-7 outline-none transition focus:border-[var(--ink)]"
-        placeholder="Paste anything — bank details, a password note, an email screenshot's text…"
+        className="mt-8 min-h-44 w-full rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5 text-[15px] leading-7 outline-none transition focus:border-[var(--ink)]"
+        placeholder="Paste record details"
         value={messyText}
         onChange={(event) => setMessyText(event.target.value)}
       />
@@ -4636,16 +4669,31 @@ function CaptureScreen({ vault, onSave, onNavigate }) {
         >
           <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Enter manually</span>
           <span className={cx("text-[var(--ink-5)] transition", showManual && "rotate-90")}>›</span>
-        </button>
+          </button>
         {showManual && (
           <div className="mt-5 grid gap-3 md:grid-cols-2">
-            <p className="md:col-span-2 text-[13px] leading-5 text-[var(--ink-2)]">Add the basics, review once, then save it encrypted.</p>
             <input aria-label="Record title" className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)]" placeholder="Title" value={manual.title} onChange={(event) => setManual({ ...manual, title: event.target.value })} />
             <select aria-label="Record type" className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)]" value={manual.type} onChange={(event) => setManual({ ...manual, type: event.target.value })}>
               {TYPE_OPTIONS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
             </select>
-            <input aria-label="Login, account, or policy" className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)]" placeholder="Login / account / policy" value={manual.username} onChange={(event) => setManual({ ...manual, username: event.target.value })} />
-            <input aria-label="Secret, PIN, or key" className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)]" placeholder="Secret / PIN / key" value={manual.secret} onChange={(event) => setManual({ ...manual, secret: event.target.value })} />
+            <input aria-label="Primary detail" className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)] md:col-span-2" placeholder={primaryDetailPlaceholder(manual.type)} value={manual.username} onChange={(event) => setManual({ ...manual, username: event.target.value })} />
+            <button
+              type="button"
+              onClick={() => setShowManualMore((value) => !value)}
+              className="md:col-span-2 rounded-full border border-[var(--line)] bg-[var(--surface)] px-5 py-2.5 text-xs font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-2)]"
+            >
+              {showManualMore ? "Hide details" : "+ Add more details"}
+            </button>
+            {showManualMore && (
+              <>
+                <input aria-label="Secret, PIN, or key" className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)]" placeholder="Secret / PIN / key" value={manual.secret} onChange={(event) => setManual({ ...manual, secret: event.target.value })} />
+                <select aria-label="Emergency release" className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)]" value={manual.emergencyEligible ? "yes" : "no"} onChange={(event) => setManual({ ...manual, emergencyEligible: event.target.value === "yes" })}>
+                  <option value="yes">Emergency-enabled</option>
+                  <option value="no">Private</option>
+                </select>
+                <textarea aria-label="Notes" className="min-h-28 rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)] md:col-span-2" placeholder="Notes" value={manual.notes} onChange={(event) => setManual({ ...manual, notes: event.target.value })} />
+              </>
+            )}
             <button
               onClick={() => { setDrafts([{ ...manual, candidateId: crypto.randomUUID(), confidence: 1, warnings: [], extractedFields: [] }]); setSelectedDraftIndex(0); }}
               className="md:col-span-2 mt-2 rounded-full border border-[var(--line)] bg-[var(--surface)] px-5 py-2.5 text-xs font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-2)]"
