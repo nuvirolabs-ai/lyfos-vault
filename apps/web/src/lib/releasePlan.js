@@ -54,7 +54,12 @@ export async function createKeyHolderInvite({ label, holderEmail, holderPhone })
     })
     .select()
     .single();
-  if (error) throw error;
+  if (error) {
+    if (error.code === "23505" || /key_holders_owner_id_holder_email_key/i.test(error.message || "")) {
+      throw new Error("This email is already in your trust circle. Open the existing invite and use Send email again.");
+    }
+    throw error;
+  }
   return data;
 }
 
