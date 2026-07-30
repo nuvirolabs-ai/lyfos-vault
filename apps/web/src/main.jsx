@@ -51,7 +51,7 @@ import { prepareStage2BackupExport } from "./lib/stage2BackupManifest.js";
 import { initTelemetry, registerServiceWorker } from "./lib/telemetry.js";
 import { buildSnapshotsCsv, suggestedCsvFilename } from "./lib/csvExport.js";
 import { formatCurrency, formatCompact, DEFAULT_CURRENCY } from "./lib/currency.js";
-import { listMyKeyHolders, createKeyHolderInvite, revokeKeyHolder, deleteKeyHolder, sendInviteEmail, finalizeReleasePlan } from "./lib/releasePlan.js";
+import { listMyKeyHolders, createKeyHolderInvite, revokeKeyHolder, deleteKeyHolder, sendInviteEmail, finalizeReleasePlan, summarizeKeyHolders } from "./lib/releasePlan.js";
 import { loadMyReleaseSettings, upsertMyReleaseSettings, rotateMyClaimToken, fetchActiveReleaseAgainstMe, ownerAbortRelease, isValidNomineeEmail } from "./lib/releaseClaim.js";
 import { fetchMySubscription, fetchMyBillingEvents, fetchMyBillingProfile, upsertMyBillingProfile, fetchInvoiceUrl, startUpgrade, cancelSubscriptionAtPeriodEnd, resumeSubscription } from "./lib/billing.js";
 import { PLANS, planFor, isPaid, entitlementsFor, daysLeftFor } from "./lib/plans.js";
@@ -5309,13 +5309,11 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
   const [finalizing, setFinalizing] = useState(false);
   const [finalizeFeedback, setFinalizeFeedback] = useState("");
 
-  const acceptedHolders = holders.filter((h) => h.status === "accepted");
-  const verifiedHolders = holders.filter((h) => h.status === "verified");
-  const accepted = acceptedHolders.length + verifiedHolders.length;
-  const verified = verifiedHolders.length;
-  const planActive = verified >= 5;
+  const holderSummary = useMemo(() => summarizeKeyHolders(holders), [holders]);
+  const { activeHolders, readyHolders, invited, accepted, verified, finalized } = holderSummary;
+  const planActive = finalized >= 5;
   const canPay = entitlements ? entitlements.releaseEnabled : false;
-  const canFinalize = !planActive && holders.length === 5 && accepted === 5 && canPay;
+  const canFinalize = !planActive && invited === 5 && verified === 5 && canPay;
 
   async function refresh() {
     setLoading(true);
@@ -5405,6 +5403,7 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
     if (!window.confirm(`Delete ${holder.label}'s invite permanently? This removes the invite so you can send a new one to the same email.`)) return;
     try {
       await deleteKeyHolder(holder.id);
+      setHolders((current) => current.filter((h) => h.id !== holder.id));
       await refresh();
     } catch (err) {
       setError(err?.message || "Couldn't delete the invite.");
@@ -5422,7 +5421,7 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
     try {
       // Export the raw 32-byte AES key from the unlocked CryptoKey
       const rawKey = new Uint8Array(await crypto.subtle.exportKey("raw", vaultKey));
-      await finalizeReleasePlan({ rawVaultKey: rawKey, holders: acceptedHolders });
+      await finalizeReleasePlan({ rawVaultKey: rawKey, holders: readyHolders });
       // Zero the buffer best-effort (JS doesn't guarantee but better than not)
       for (let i = 0; i < rawKey.length; i++) rawKey[i] = 0;
       setFinalizeOpen(false);
@@ -5449,7 +5448,7 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
 
       {/* Readiness pill row */}
       <div className="mt-10 grid grid-cols-3 gap-3 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4 text-center">
-        <ReleaseStat label="Invited" value={holders.length} ok={holders.length === 5} />
+        <ReleaseStat label="Invited" value={invited} ok={invited === 5} />
         <ReleaseStat label="Accepted" value={accepted} ok={accepted === 5} />
         <ReleaseStat label="Verified" value={verified} ok={verified === 5} />
       </div>
@@ -5458,28 +5457,28 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
       {inviteFeedback && <InviteFeedback feedback={inviteFeedback} onClose={() => setInviteFeedback(null)} />}
 
       <div className="mt-8 space-y-2">
-        {holders.length === 0 && !loading && (
+        {activeHolders.length === 0 && !loading && (
           <div className="rounded-2xl border border-dashed border-[var(--line-2)] bg-[var(--surface)] p-6 text-center">
             <p className="text-[14px] font-medium text-[var(--ink)]">No key holders yet.</p>
             <p className="mt-1 text-[12px] text-[var(--ink-3)]">Invite five people who would help your nominee if something happens to you.</p>
           </div>
         )}
-        {holders.map((h) => <KeyHolderRow key={h.id} holder={h} onRevoke={() => revoke(h)} onDelete={() => remove(h)} onResend={() => resendInvite(h)} resending={resendingId === h.id} />)}
+        {activeHolders.map((h) => <KeyHolderRow key={h.id} holder={h} onRevoke={() => revoke(h)} onDelete={() => remove(h)} onResend={() => resendInvite(h)} resending={resendingId === h.id} />)}
       </div>
 
       <div className="mt-8 flex flex-col items-center gap-3">
-        {holders.length < 5 && !showInvite && !planActive && (
+        {invited < 5 && !showInvite && !planActive && (
           <button
             onClick={() => setShowInvite(true)}
             className="rounded-full bg-[#1d1d1f] px-7 py-3 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition hover:bg-black"
           >
-            Invite key holder {holders.length + 1} of 5
+            Invite key holder {invited + 1} of 5
           </button>
         )}
         {showInvite && (
           <InviteForm busy={busy} onCancel={() => setShowInvite(false)} onSubmit={handleInviteCreated} />
         )}
-        {holders.length === 5 && accepted < 5 && (
+        {invited === 5 && accepted < 5 && (
           <p className="text-[12px] text-[var(--ink-3)]">Waiting on {5 - accepted} {5 - accepted === 1 ? "holder" : "holders"} to accept.</p>
         )}
         {canFinalize && (
@@ -5495,7 +5494,7 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
             </p>
           </>
         )}
-        {!planActive && holders.length === 5 && accepted === 5 && !canPay && (
+        {!planActive && invited === 5 && verified === 5 && !canPay && (
           <FreeReleaseUpgradePrompt />
         )}
         {planActive && (
@@ -5513,7 +5512,7 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
 
       {finalizeOpen && (
         <FinalizeModal
-          acceptedHolders={acceptedHolders}
+          acceptedHolders={readyHolders}
           finalizing={finalizing}
           hasVaultKey={Boolean(vaultKey)}
           onCancel={() => setFinalizeOpen(false)}
@@ -5787,7 +5786,7 @@ function KeyHolderRow({ holder, onRevoke, onDelete, onResend, resending }) {
           <div className="mt-0.5 truncate text-[12px] text-[var(--ink-3)]">{holder.holder_email}</div>
         </div>
         <div className="shrink-0 text-right">
-          <KeyHolderStatusPill status={holder.status} />
+          <KeyHolderStatusPill holder={holder} />
         </div>
       </div>
 
@@ -5830,13 +5829,15 @@ function KeyHolderRow({ holder, onRevoke, onDelete, onResend, resending }) {
   );
 }
 
-function KeyHolderStatusPill({ status }) {
+function KeyHolderStatusPill({ holder }) {
+  const status = holder?.status;
+  const displayStatus = status === "accepted" && holder?.release_pubkey ? "verified" : status;
   const tone = {
     pending:  ["bg-[var(--amber-soft)] text-[var(--amber-ink)]", "Pending invite"],
     accepted: ["bg-[#34c759]/10 text-[var(--green-ink)]", "Accepted"],
     verified: ["bg-[#34c759]/20 text-[var(--green-ink)]", "Verified"],
     revoked:  ["bg-[#ff453a]/8 text-[var(--red-2)]", "Revoked"]
-  }[status] ?? ["bg-[var(--surface-3)] text-[var(--ink-2)]", status];
+  }[displayStatus] ?? ["bg-[var(--surface-3)] text-[var(--ink-2)]", displayStatus];
   return <span className={cx("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider", tone[0])}>{tone[1]}</span>;
 }
 

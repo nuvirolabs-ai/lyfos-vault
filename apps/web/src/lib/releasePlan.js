@@ -27,6 +27,7 @@ export async function listMyKeyHolders() {
     .from("key_holders")
     .select("*")
     .eq("owner_id", userData.user.id)
+    .neq("status", "revoked")
     .order("created_at", { ascending: true });
   if (error) throw error;
   return data ?? [];
@@ -41,12 +42,20 @@ export async function createKeyHolderInvite({ label, holderEmail, holderPhone })
   const { data: userData } = await sb.auth.getUser();
   if (!userData?.user?.id) throw new Error("Not signed in");
 
+  const normalizedEmail = holderEmail.trim().toLowerCase();
+  await sb
+    .from("key_holders")
+    .delete()
+    .eq("owner_id", userData.user.id)
+    .eq("holder_email", normalizedEmail)
+    .eq("status", "revoked");
+
   const invite_token = makeInviteToken();
   const { data, error } = await sb
     .from("key_holders")
     .insert({
       owner_id: userData.user.id,
-      holder_email: holderEmail.trim().toLowerCase(),
+      holder_email: normalizedEmail,
       holder_phone: holderPhone?.trim() || null,
       label: label.trim(),
       invite_token,
@@ -84,6 +93,26 @@ export async function deleteKeyHolder(holderId) {
   if (error) throw error;
 }
 
+export function summarizeKeyHolders(holders = []) {
+  const activeHolders = holders.filter((h) => h?.status !== "revoked");
+  const readyHolders = activeHolders.filter((h) =>
+    (h.status === "accepted" || h.status === "verified") && Boolean(h.release_pubkey)
+  );
+  const acceptedHolders = activeHolders.filter((h) => h.status === "accepted" || h.status === "verified");
+  const finalizedHolders = activeHolders.filter((h) => h.status === "verified");
+
+  return {
+    activeHolders,
+    readyHolders,
+    acceptedHolders,
+    finalizedHolders,
+    invited: activeHolders.length,
+    accepted: acceptedHolders.length,
+    verified: readyHolders.length,
+    finalized: finalizedHolders.length
+  };
+}
+
 /**
  * Send the invite email via the send-key-holder-invite Edge Function.
  * If the function isn't deployed yet (404), we surface the invite URL
@@ -106,7 +135,7 @@ export async function sendInviteEmail(inviteId) {
  *
  * Inputs:
  *   - rawVaultKey: 32-byte Uint8Array (caller exported it from CryptoKey)
- *   - holders: 5 key_holder rows with status === 'accepted' and a release_pubkey
+ *   - holders: 5 key_holder rows with status accepted/verified and a release_pubkey
  */
 export async function finalizeReleasePlan({ rawVaultKey, holders }) {
   if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
@@ -114,8 +143,8 @@ export async function finalizeReleasePlan({ rawVaultKey, holders }) {
     throw new Error("Need exactly 5 accepted holders to finalize");
   }
   for (const h of holders) {
-    if (h.status !== "accepted") {
-      throw new Error(`Holder ${h.label} is in status "${h.status}", expected "accepted"`);
+    if (h.status !== "accepted" && h.status !== "verified") {
+      throw new Error(`Holder ${h.label} is in status "${h.status}", expected accepted or verified`);
     }
     if (!h.release_pubkey) {
       throw new Error(`Holder ${h.label} has not uploaded a release public key yet`);

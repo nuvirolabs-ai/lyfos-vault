@@ -8,8 +8,9 @@
 
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const VITE_ENV = import.meta.env ?? {};
+const SUPABASE_URL = VITE_ENV.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = VITE_ENV.VITE_SUPABASE_ANON_KEY;
 
 let cached = null;
 
