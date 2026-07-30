@@ -87,6 +87,7 @@ import {
 } from "./lib/stage2RecoveryKey.js";
 import { getBackupSizeWarning } from "./lib/stage2BackupSize.js";
 import { deriveHomeHealth, getPrimaryHomeAction } from "./lib/homeHealth.js";
+import { getBalanceSheetSummary } from "./lib/balanceSheet.js";
 import "./styles.css";
 
 const AREAS = [
@@ -2265,7 +2266,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
             <div className="min-w-0 flex-1">
               {screen === "home"    && <FamilyHomeDashboard vault={vault} onNavigate={setScreen} onOpenArea={openArea} onOpenRecord={openRecord} />}
               {screen === "records" && <AllRecords vault={vault} onOpenRecord={openRecord} />}
-              {screen === "money"   && <HomeScreen vault={vault} onSave={onSave} onNavigate={setScreen} backupHealth={backupHealth} onExport={onExport} />}
+              {screen === "money"   && <BalanceSheetDashboard vault={vault} onSave={onSave} onNavigate={setScreen} />}
               {screen === "setup"   && <SetupScreen vault={vault} onSave={onSave} onNavigate={setScreen} />}
               {screen === "update"  && <UpdateScreen vault={vault} onSave={onSave} onNavigate={setScreen} />}
               {screen === "capture" && <CaptureScreen vault={vault} onSave={onSave} onNavigate={(s) => setScreen(s === "life" ? "home" : s)} />}
@@ -2981,6 +2982,74 @@ function CheckInModal({ vault, series, attention, monthName, onNavigate, onClose
         </div>
       </div>
     </div>
+  );
+}
+
+function BalanceSheetDashboard({ vault, onSave, onNavigate }) {
+  const bs = vault.balanceSheet ?? createEmptyBalanceSheet();
+  const summary = useMemo(() => getBalanceSheetSummary(bs), [bs]);
+  const latest = [...(bs.snapshots ?? [])].sort((a, b) => String(a.month).localeCompare(String(b.month))).at(-1);
+  const values = latest?.values ?? {};
+  const [addingKind, setAddingKind] = useState(null);
+  const [draftName, setDraftName] = useState("");
+  const [draftValue, setDraftValue] = useState("");
+
+  function closeAdd() {
+    setAddingKind(null);
+    setDraftName("");
+    setDraftValue("");
+  }
+
+  async function addQuickAccount() {
+    const name = draftName.trim();
+    const value = Number(draftValue.replace(/,/g, ""));
+    if (!name || !Number.isFinite(value) || value < 0 || !addingKind) return;
+    const id = `acc_${crypto.randomUUID().slice(0, 8)}`;
+    const category = addingKind === "asset" ? "other_asset" : "other_debt";
+    const nextValues = { ...values, [id]: value };
+    const month = monthKey();
+    const snapshots = (bs.snapshots ?? []).filter((snapshot) => snapshot.month !== month);
+    const nextVault = {
+      ...vault,
+      balanceSheet: {
+        ...bs,
+        accounts: [...(bs.accounts ?? []), { id, category, kind: addingKind, name, createdAt: new Date().toISOString() }],
+        snapshots: [...snapshots, { id: `snap_${crypto.randomUUID().slice(0, 8)}`, month, takenAt: new Date().toISOString(), values: nextValues }]
+      }
+    };
+    await onSave(nextVault, "balance_sheet_quick_add");
+    closeAdd();
+  }
+
+  const directionCopy = summary.direction === "positive"
+    ? "Your assets are keeping ahead of your liabilities."
+    : summary.direction === "watch"
+      ? "Liabilities need a closer look this month."
+      : "Add your first numbers to see your direction over time.";
+  const accountsByKind = (kind) => (bs.accounts ?? []).filter((account) => account.kind === kind);
+
+  return (
+    <section className="space-y-10">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div><p className="text-[12px] font-medium uppercase tracking-[0.16em] text-[var(--ink-3)]">Personal balance sheet</p><h1 className="mt-3 text-[36px] font-semibold leading-[1.08] tracking-tight text-[var(--ink)] md:text-[46px]">Know what you own and what you owe.</h1></div>
+        <button onClick={() => onNavigate("update")} className="text-[13px] font-semibold text-[var(--green-ink)] hover:underline">Update this month <span aria-hidden="true">›</span></button>
+      </header>
+
+      <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-7 md:p-9">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--ink-3)]">Net worth</p>
+        <div className="mt-3 text-[48px] font-semibold tracking-tight text-[var(--ink)] md:text-[62px]">{formatINR(summary.netWorth)}</div>
+        <p className={cx("mt-3 text-[14px]", summary.direction === "watch" ? "text-[var(--amber-ink)]" : "text-[var(--ink-2)]")}>{directionCopy}</p>
+        <div className="mt-8 grid gap-3 md:grid-cols-2"><div className="rounded-2xl bg-[var(--surface-2)] px-5 py-4"><div className="text-[12px] text-[var(--ink-3)]">Assets</div><div className="mt-1 text-[22px] font-semibold text-[var(--ink)]">{formatINR(summary.assets)}</div></div><div className="rounded-2xl bg-[var(--surface-2)] px-5 py-4"><div className="text-[12px] text-[var(--ink-3)]">Liabilities</div><div className="mt-1 text-[22px] font-semibold text-[var(--ink)]">{formatINR(summary.liabilities)}</div></div></div>
+      </section>
+
+      {addingKind && (
+        <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface-2)] p-5"><div className="flex items-center justify-between"><h2 className="text-[16px] font-semibold text-[var(--ink)]">Add {addingKind}</h2><button onClick={closeAdd} aria-label="Close" className="text-[var(--ink-3)] hover:text-[var(--ink)]">✕</button></div><div className="mt-4 grid gap-3 md:grid-cols-[1fr_180px_auto]"><input autoFocus value={draftName} onChange={(event) => setDraftName(event.target.value)} placeholder={addingKind === "asset" ? "e.g. HDFC savings" : "e.g. Home loan"} className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[13px] outline-none focus:border-[var(--ink)]" /><input type="number" min="0" value={draftValue} onChange={(event) => setDraftValue(event.target.value)} placeholder="Current value" className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[13px] outline-none focus:border-[var(--ink)]" /><button onClick={addQuickAccount} disabled={!draftName.trim() || !draftValue} className="rounded-xl bg-[var(--solid)] px-5 py-3 text-[13px] font-semibold text-[var(--on-solid)] disabled:opacity-40">Add</button></div></div>
+      )}
+
+      <section><div className="mb-3 flex items-baseline justify-between"><h2 className="text-[16px] font-semibold text-[var(--ink)]">Your accounts</h2><span className="text-[12px] text-[var(--ink-3)]">{summary.accountCount} total</span></div><div className="grid gap-3 md:grid-cols-2"><div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5"><div className="flex items-center justify-between"><h3 className="text-[14px] font-semibold text-[var(--ink)]">Assets</h3><button onClick={() => setAddingKind("asset")} className="text-[12px] font-semibold text-[var(--green-ink)]">+ Add asset</button></div><div className="mt-3 divide-y divide-[var(--line)]">{accountsByKind("asset").length ? accountsByKind("asset").map((account) => <button key={account.id} onClick={() => onNavigate("update")} className="flex w-full items-center justify-between py-3 text-left"><span className="truncate pr-3 text-[13px] text-[var(--ink-2)]">{account.name}</span><span className="shrink-0 text-[13px] font-semibold text-[var(--ink)]">{formatINR(values[account.id] ?? 0)}</span></button>) : <p className="py-4 text-[13px] text-[var(--ink-3)]">Nothing added yet.</p>}</div></div><div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5"><div className="flex items-center justify-between"><h3 className="text-[14px] font-semibold text-[var(--ink)]">Liabilities</h3><button onClick={() => setAddingKind("liability")} className="text-[12px] font-semibold text-[var(--green-ink)]">+ Add liability</button></div><div className="mt-3 divide-y divide-[var(--line)]">{accountsByKind("liability").length ? accountsByKind("liability").map((account) => <button key={account.id} onClick={() => onNavigate("update")} className="flex w-full items-center justify-between py-3 text-left"><span className="truncate pr-3 text-[13px] text-[var(--ink-2)]">{account.name}</span><span className="shrink-0 text-[13px] font-semibold text-[var(--ink)]">{formatINR(values[account.id] ?? 0)}</span></button>) : <p className="py-4 text-[13px] text-[var(--ink-3)]">Nothing added yet.</p>}</div></div></div></section>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] pt-5"><p className="max-w-md text-[12px] leading-5 text-[var(--ink-3)]">Lyfos shows your balance over time so you can notice direction without turning your family vault into a finance dashboard.</p><button onClick={() => onNavigate("setup")} className="text-[12px] font-semibold text-[var(--ink-2)] hover:underline">Manage categories <span aria-hidden="true">›</span></button></div>
+    </section>
   );
 }
 
