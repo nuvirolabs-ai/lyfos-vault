@@ -5277,6 +5277,7 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
   const [error, setError] = useState("");
   const [showInvite, setShowInvite] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [resendingId, setResendingId] = useState(null);
   const [inviteFeedback, setInviteFeedback] = useState(null); // { holderId, inviteUrl }
   const [finalizeOpen, setFinalizeOpen] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
@@ -5311,22 +5312,53 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
     try {
       const created = await createKeyHolderInvite({ label, holderEmail, holderPhone });
       const inviteUrl = `${window.location.origin}/invite/${created.invite_token}`;
+      let delivery = { status: "failed", message: "The invite was created, but the email could not be sent." };
       try {
-        await sendInviteEmail(created.id);
+        const result = await sendInviteEmail(created.id);
+        delivery = result?.delivered === false
+          ? { status: "failed", message: result.reason || "Email delivery is not configured yet." }
+          : { status: "sent", message: "Email sent successfully." };
       } catch (sendErr) {
-        // Edge function not deployed yet — fall through with the URL so
-        // the owner can share manually.
         if (typeof console !== "undefined") {
-          console.warn("[lyfos] invite email send failed; showing manual share URL:", sendErr?.message ?? sendErr);
+          console.warn("[lyfos] invite email send failed:", sendErr?.message ?? sendErr);
         }
+        delivery = { status: "failed", message: sendErr?.message || "The email provider rejected the invite." };
       }
-      setInviteFeedback({ holderId: created.id, inviteUrl });
+      setInviteFeedback({ holderId: created.id, inviteUrl, holderLabel: label, holderEmail, delivery });
       setShowInvite(false);
       await refresh();
     } catch (err) {
       setError(err?.message || "Couldn't create invite.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function resendInvite(holder) {
+    setResendingId(holder.id);
+    setError("");
+    try {
+      const result = await sendInviteEmail(holder.id);
+      const inviteUrl = `${window.location.origin}/invite/${holder.invite_token}`;
+      setInviteFeedback({
+        holderId: holder.id,
+        inviteUrl,
+        holderLabel: holder.label,
+        holderEmail: holder.holder_email,
+        delivery: result?.delivered === false
+          ? { status: "failed", message: result.reason || "Email delivery is not configured yet." }
+          : { status: "sent", message: "Email sent successfully." }
+      });
+    } catch (err) {
+      setInviteFeedback({
+        holderId: holder.id,
+        inviteUrl: `${window.location.origin}/invite/${holder.invite_token}`,
+        holderLabel: holder.label,
+        holderEmail: holder.holder_email,
+        delivery: { status: "failed", message: err?.message || "The email provider rejected the invite." }
+      });
+    } finally {
+      setResendingId(null);
     }
   }
 
@@ -5396,7 +5428,7 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
             <p className="mt-1 text-[12px] text-[var(--ink-3)]">Invite five people who would help your nominee if something happens to you.</p>
           </div>
         )}
-        {holders.map((h) => <KeyHolderRow key={h.id} holder={h} onRevoke={() => revoke(h)} />)}
+        {holders.map((h) => <KeyHolderRow key={h.id} holder={h} onRevoke={() => revoke(h)} onResend={() => resendInvite(h)} resending={resendingId === h.id} />)}
       </div>
 
       <div className="mt-8 flex flex-col items-center gap-3">
@@ -5705,7 +5737,7 @@ function FinalizeModal({ acceptedHolders, finalizing, hasVaultKey, onCancel, onC
   );
 }
 
-function KeyHolderRow({ holder, onRevoke }) {
+function KeyHolderRow({ holder, onRevoke, onResend, resending }) {
   const inviteUrl = holder.status === "pending"
     ? `${typeof window !== "undefined" ? window.location.origin : ""}/invite/${holder.invite_token}`
     : null;
@@ -5735,6 +5767,13 @@ function KeyHolderRow({ holder, onRevoke }) {
               className="text-[11px] font-medium text-[var(--ink-3)] underline-offset-2 hover:text-[var(--ink)] hover:underline"
             >
               {showUrl ? "Hide invite link" : "Show invite link"}
+            </button>
+            <button
+              onClick={onResend}
+              disabled={resending}
+              className="text-[11px] font-medium text-[var(--ink-3)] underline-offset-2 hover:text-[var(--ink)] hover:underline disabled:opacity-50"
+            >
+              {resending ? "Sending…" : "Send email again"}
             </button>
           </div>
           {showUrl && (
@@ -5832,9 +5871,14 @@ function InviteFeedback({ feedback, onClose }) {
     <div className="mt-4 rounded-2xl border border-[#34c759]/30 bg-[#34c759]/8 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium text-[var(--green-ink)]">Invite created.</p>
-          <p className="mt-1 text-[12px] leading-5 text-[var(--green-ink)]/85">
-            We tried to email them automatically. If the email doesn't arrive, share this link directly — they need to open it on their own device:
+          <p className={cx("text-[13px] font-medium", feedback.delivery?.status === "sent" ? "text-[var(--green-ink)]" : "text-[var(--amber-ink)]")}>
+            {feedback.delivery?.status === "sent" ? "Invite sent." : "Invite created, email not sent."}
+          </p>
+          <p className="mt-1 text-[12px] leading-5 text-[var(--ink-2)]">
+            Invited: <strong>{feedback.holderLabel}</strong> · {feedback.holderEmail}
+          </p>
+          <p className="mt-1 text-[12px] leading-5 text-[var(--ink-3)]">
+            {feedback.delivery?.message || "Share this link directly if needed — they should open it on their own device:"}
           </p>
           <div className="mt-2 break-all rounded-md bg-[var(--surface-3)] px-3 py-2 font-mono text-[11px]">{feedback.inviteUrl}</div>
           <div className="mt-2.5 flex items-center gap-3">
