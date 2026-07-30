@@ -20,7 +20,7 @@ import {
 
 const MIN_PASSWORD = 12;
 
-export function AuthScreen({ onSignedIn, onContinueLocalOnly }) {
+export function AuthScreen({ onSignedIn, onContinueLocalOnly, onNomineeEntry }) {
   const [mode, setMode] = useState("signin"); // signin | signup | magic
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -173,6 +173,15 @@ export function AuthScreen({ onSignedIn, onContinueLocalOnly }) {
             <p className="mt-2 text-[11px] text-[#a1a1a6]">
               Your vault will stay encrypted on this browser only. You can connect an account later.
             </p>
+          </div>
+        )}
+
+        {onNomineeEntry && (
+          <div className={(onContinueLocalOnly ? "mt-5" : "mt-12 border-t border-black/8 pt-6") + " text-center"}>
+            <button onClick={onNomineeEntry} className="rounded-full border border-black/8 bg-white px-4 py-2 text-[12px] font-semibold text-[#1d1d1f] transition hover:bg-[#f5f5f7]">
+              I am a nominee
+            </button>
+            <p className="mt-2 text-[11px] text-[#a1a1a6]">Use this if someone shared a Lyfos claim link with you.</p>
           </div>
         )}
 

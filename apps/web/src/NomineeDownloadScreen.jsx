@@ -12,10 +12,9 @@ import React, { useEffect, useState } from "react";
 import { AuthScreen } from "./AuthScreen.jsx";
 import { getSession, onAuthStateChange } from "./lib/auth.js";
 import { fetchSharesReleasedFor, fetchMyReleaseRequests } from "./lib/releaseClaim.js";
+import { nomineeReleaseTimeline, RELEASE_KEY_STORAGE_PREFIX, retrieveReleaseProcessSecret } from "./lib/nomineeReleaseFlow.js";
 import { openSealedShare, combineShares, bytesToShareString } from "./lib/shareCrypto.js";
 import { getSupabase } from "./lib/supabaseClient.js";
-
-const RELEASE_KEY_STORAGE_PREFIX = "lyfos-release-process-key-";
 
 export function NomineeDownloadScreen({ onReturnHome }) {
   const [session, setSession] = useState(null);
@@ -70,7 +69,7 @@ export function NomineeDownloadScreen({ onReturnHome }) {
       //    The claim screen stashed it keyed by the claim_token used at
       //    file time. We don't have the claim_token here; we stashed
       //    under the claim_token AND under request_id for resilience.
-      const secretKey = retrieveReleaseProcessSecret(request.id);
+      const secretKey = retrieveReleaseProcessSecret({ requestId: request.id });
       if (!secretKey) {
         throw new Error("Couldn't find your release process key in this browser session. You must use the same browser tab + session you used when filing the claim.");
       }
@@ -161,8 +160,8 @@ export function NomineeDownloadScreen({ onReturnHome }) {
       <div>
         <div className="mx-auto max-w-md px-5 pt-12 text-center">
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Nominee download</p>
-          <h1 className="mt-3 text-[28px] font-semibold leading-tight tracking-tight">Sign in to download.</h1>
-          <p className="mt-3 text-[13px] text-[#86868b]">Use the same email and the same browser tab you used to file the claim.</p>
+          <h1 className="mt-3 text-[28px] font-semibold leading-tight tracking-tight">Check your release request.</h1>
+          <p className="mt-3 text-[13px] text-[#86868b]">Sign in with the nominee email used when the claim was filed.</p>
         </div>
         <div className="mt-6">
           <AuthScreen onSignedIn={(s) => setSession(s)} />
@@ -175,7 +174,10 @@ export function NomineeDownloadScreen({ onReturnHome }) {
     <main className="min-h-screen bg-[#fbfbfd] text-[#1d1d1f]">
       <div className="mx-auto max-w-xl px-5 py-12">
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Lyfos · Nominee</p>
-        <h1 className="mt-2 text-[28px] font-semibold tracking-tight">Release download</h1>
+        <h1 className="mt-2 text-[30px] font-semibold tracking-tight">Release status</h1>
+        <p className="mt-3 text-[14px] leading-6 text-[#6e6e73]">
+          This is where a nominee follows the release request from review to download. The vault is not opened until 3 trusted people release keys and the owner-protection hold finishes.
+        </p>
 
         {loading && <p className="mt-6 text-[14px] text-[#86868b]">Loading…</p>}
 
@@ -207,7 +209,10 @@ export function NomineeDownloadScreen({ onReturnHome }) {
                 {combining ? "Combining…" : "Combine shares and download"}
               </button>
             ) : (
-              <p className="text-[12px] text-[#86868b]">{waitingCopy(request, shares.length)}</p>
+              <div className="rounded-2xl border border-black/8 bg-white p-5">
+                <p className="text-[12px] font-semibold text-[#1d1d1f]">Next</p>
+                <p className="mt-1 text-[12px] leading-5 text-[#86868b]">{waitingCopy(request, shares.length)}</p>
+              </div>
             )}
           </div>
         )}
@@ -221,16 +226,37 @@ export function NomineeDownloadScreen({ onReturnHome }) {
 }
 
 function Status({ request, sharesCount }) {
-  const daysLeft = request.ready_at
-    ? Math.max(0, Math.ceil((new Date(request.ready_at).getTime() - Date.now()) / 86_400_000))
-    : null;
+  const timeline = nomineeReleaseTimeline(request, sharesCount);
   return (
     <div className="rounded-2xl border border-black/8 bg-white p-5">
-      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">State</p>
-      <p className="mt-1 text-[14px] font-medium">{request.state.replace(/_/g, " ")}</p>
-      <p className="mt-2 text-[12px] text-[#86868b]">{sharesCount} of 3 required keys received</p>
-      {request.state === "holding" && daysLeft !== null && (
-        <p className="mt-2 text-[12px] text-[#86868b]">{daysLeft} day{daysLeft === 1 ? "" : "s"} until the hold expires</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Current state</p>
+          <p className="mt-1 text-[14px] font-medium capitalize">{request.state.replace(/_/g, " ")}</p>
+        </div>
+        <p className="rounded-full bg-[#f5f5f7] px-3 py-1 text-[11px] font-semibold text-[#6e6e73]">{sharesCount}/3 keys</p>
+      </div>
+      <div className="mt-5 space-y-3">
+        {timeline.map((step) => (
+          <div key={step.id} className="flex gap-3">
+            <span className={"mt-1 grid h-5 w-5 shrink-0 place-items-center rounded-full border text-[10px] font-semibold " + (
+              step.status === "done" ? "border-[#1f9d55] bg-[#1f9d55] text-white"
+              : step.status === "active" ? "border-[#1d1d1f] bg-[#1d1d1f] text-white"
+              : "border-black/10 bg-[#f5f5f7] text-[#a1a1a6]"
+            )}>
+              {step.status === "done" ? "✓" : ""}
+            </span>
+            <div>
+              <p className="text-[13px] font-semibold text-[#1d1d1f]">{step.title}</p>
+              <p className="mt-0.5 text-[12px] leading-5 text-[#86868b]">{step.detail}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      {request.state === "ready_to_release" && sharesCount >= 3 && (
+        <p className="mt-5 rounded-xl bg-[#34c759]/10 px-4 py-3 text-[12px] font-medium text-[#0b6b3a]">
+          The release is ready on this device. Download before closing this browser session.
+        </p>
       )}
     </div>
   );
@@ -245,35 +271,6 @@ function waitingCopy(request, sharesCount) {
   if (request.state === "rejected") return `Your claim was rejected: ${request.rejection_reason ?? "no reason given"}.`;
   if (request.state === "completed") return "This release has already been completed.";
   return "Waiting…";
-}
-
-function retrieveReleaseProcessSecret(requestId) {
-  // The claim screen stashed under RELEASE_KEY_STORAGE_PREFIX + token.
-  // We don't have the token here, but if there's exactly one stashed key
-  // in this session, use it (common case). Otherwise look up by request id.
-  try {
-    if (typeof sessionStorage === "undefined") return null;
-    const candidates = [];
-    for (let i = 0; i < sessionStorage.length; i++) {
-      const k = sessionStorage.key(i);
-      if (k && k.startsWith(RELEASE_KEY_STORAGE_PREFIX)) {
-        const raw = sessionStorage.getItem(k);
-        if (raw) {
-          try {
-            const parsed = JSON.parse(raw);
-            if (parsed?.secretKey) candidates.push(parsed.secretKey);
-          } catch {}
-        }
-      }
-    }
-    if (candidates.length === 1) return candidates[0];
-    if (candidates.length === 0) return null;
-    // Multiple → ambiguous; for now return the first. In practice a
-    // nominee will have at most one in-flight claim.
-    return candidates[0];
-  } catch {
-    return null;
-  }
 }
 
 function base64ToBytes(b64) {

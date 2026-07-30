@@ -25,9 +25,8 @@ import React, { useEffect, useState } from "react";
 import { AuthScreen } from "./AuthScreen.jsx";
 import { getSession, onAuthStateChange, signOut } from "./lib/auth.js";
 import { peekClaim, uploadDeathCertificate, createReleaseRequest } from "./lib/releaseClaim.js";
+import { stashReleaseProcessKey } from "./lib/nomineeReleaseFlow.js";
 import { makeReleaseProcessKeypair } from "./lib/shareCrypto.js";
-
-const RELEASE_KEY_STORAGE_PREFIX = "lyfos-release-process-key-";
 
 export function ClaimScreen({ token, onReturnHome }) {
   const [info, setInfo] = useState(null);
@@ -69,7 +68,7 @@ export function ClaimScreen({ token, onReturnHome }) {
       // so a reload during the same browser session can still combine
       // shares when the time comes.
       const kp = await makeReleaseProcessKeypair();
-      sessionStorage.setItem(RELEASE_KEY_STORAGE_PREFIX + token, JSON.stringify(kp));
+      stashReleaseProcessKey({ token, keypair: kp });
 
       const certPath = await uploadDeathCertificate(file);
       const id = await createReleaseRequest({
@@ -77,6 +76,7 @@ export function ClaimScreen({ token, onReturnHome }) {
         releaseProcessPubkey: kp.publicKey,
         deathCertificatePath: certPath
       });
+      stashReleaseProcessKey({ token, requestId: id, keypair: kp });
       setRequestId(id);
       setDone(true);
     } catch (err) {
@@ -114,7 +114,10 @@ export function ClaimScreen({ token, onReturnHome }) {
           After the hold, you'll be able to download the emergency-eligible records from this same device. <strong>Keep this browser session open</strong> — your release process key is stored in this tab only.
         </p>
         <p className="mt-4 text-[12px] text-[#86868b]">Reference: <span className="font-mono">{requestId?.slice(0, 8)}…</span></p>
-        <button onClick={onReturnHome} className="mt-10 rounded-full bg-[#1d1d1f] px-7 py-3 text-sm font-semibold text-white">Done</button>
+        <div className="mt-10 flex flex-col gap-3 sm:flex-row">
+          <button onClick={() => { window.location.assign("/download"); }} className="rounded-full bg-[#1d1d1f] px-7 py-3 text-sm font-semibold text-white">View release status</button>
+          <button onClick={onReturnHome} className="rounded-full border border-black/8 bg-white px-7 py-3 text-sm font-semibold text-[#1d1d1f]">Done</button>
+        </div>
       </Frame>
     );
   }

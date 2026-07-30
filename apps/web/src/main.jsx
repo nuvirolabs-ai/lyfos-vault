@@ -70,6 +70,7 @@ import {
 import { AuthScreen } from "./AuthScreen.jsx";
 import { InviteAcceptScreen } from "./InviteAcceptScreen.jsx";
 import { ClaimScreen } from "./ClaimScreen.jsx";
+import { NomineeEntryScreen } from "./NomineeEntryScreen.jsx";
 import { AdminScreen } from "./AdminScreen.jsx";
 import { AbortScreen } from "./AbortScreen.jsx";
 import { HolderReleaseScreen } from "./HolderReleaseScreen.jsx";
@@ -1146,6 +1147,9 @@ function App() {
   if (claimToken) {
     return <ClaimScreen token={claimToken} onReturnHome={() => { window.location.assign("/"); }} />;
   }
+  if (typeof window !== "undefined" && window.location.pathname === "/claim") {
+    return <NomineeEntryScreen onReturnHome={() => { window.location.assign("/"); }} />;
+  }
   if (typeof window !== "undefined" && window.location.pathname.startsWith("/admin")) {
     return <AdminScreen onReturnHome={() => { window.location.assign("/"); }} />;
   }
@@ -1182,6 +1186,7 @@ function App() {
         onContinueLocalOnly={authPanelOpen
           ? () => setAuthPanelOpen(false)
           : () => setAuthBypass(true)}
+        onNomineeEntry={() => { window.location.assign("/claim"); }}
       />
     );
   }
@@ -1252,6 +1257,7 @@ function App() {
         backupHealth={backupHealth}
         onBackupHealthChange={updateBackupHealth}
         onReset={resetVaultForTesting}
+        onNomineeEntry={() => { window.location.assign("/claim"); }}
       />
     );
   }
@@ -1363,7 +1369,7 @@ function PassStrength({ passphrase }) {
   );
 }
 
-function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlockFailed, onImported, onRestoreConfirmed, backupHealth, onBackupHealthChange, onReset }) {
+function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlockFailed, onImported, onRestoreConfirmed, backupHealth, onBackupHealthChange, onReset, onNomineeEntry }) {
   const [passphrase, setPassphrase] = useState("");
   const [confirm, setConfirm] = useState("");
   const [unlockMode, setUnlockMode] = useState("passphrase");
@@ -1536,6 +1542,14 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3 L20 6 V12 C 20 17 16 20 12 21 C 8 20 4 17 4 12 V6 Z" /></svg>
             Your passphrase never leaves this device.
           </div>
+
+          {onNomineeEntry && (
+            <div className="mt-5 text-center">
+              <button type="button" onClick={onNomineeEntry} className="rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-4 py-2 text-[12.5px] font-semibold text-[var(--ink-2)] transition hover:text-[var(--ink)]">
+                I am a nominee
+              </button>
+            </div>
+          )}
 
           {!hasVault && (
             <div className="mt-5 flex flex-wrap justify-center gap-2">
