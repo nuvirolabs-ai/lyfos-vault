@@ -1832,14 +1832,14 @@ function AllRecords({ vault, onOpenRecord }) {
   );
 }
 
-function RailItem({ active, onClick, icon, label, count, dot, dataTour, pulse }) {
+function RailItem({ active, onClick, icon, label, count, dot, dataTour, pulse, collapsed = false }) {
   return (
-    <button data-tour={dataTour} onClick={onClick} className={cx("flex w-full items-center gap-3 rounded-[10px] px-2.5 py-2 text-[14px] transition", active ? "bg-[var(--green-soft)] font-medium text-[var(--ink)]" : "text-[var(--ink-2)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]", pulse && "tour-pulse")}>
+    <button data-tour={dataTour} onClick={onClick} aria-label={label} title={collapsed ? label : undefined} className={cx("flex w-full items-center gap-3 rounded-[10px] py-2 text-[14px] transition", collapsed ? "justify-center px-2" : "px-2.5", active ? "bg-[var(--green-soft)] font-medium text-[var(--ink)]" : "text-[var(--ink-2)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]", pulse && "tour-pulse")}>
       {dot ? <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} /> : (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={active ? "var(--accent)" : "var(--ink-3)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d={icon} /></svg>
       )}
-      <span className="flex-1 truncate text-left">{label}</span>
-      {count != null && <span className={cx("text-[12px] tabular-nums", count === 0 ? "text-[var(--rose,#c0335e)]" : "text-[var(--ink-4)]")}>{count}</span>}
+      {!collapsed && <span className="flex-1 truncate text-left">{label}</span>}
+      {!collapsed && count != null && <span className={cx("text-[12px] tabular-nums", count === 0 ? "text-[var(--rose,#c0335e)]" : "text-[var(--ink-4)]")}>{count}</span>}
     </button>
   );
 }
@@ -2150,6 +2150,16 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
   // Coachmark tour stays available on demand, but should not block the first
   // post-create action. The empty state already points to the right next step.
   const [showTour, setShowTour] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(() => {
+    try { return localStorage.getItem("lyfos-rail-collapsed") === "1"; } catch { return false; }
+  });
+  function toggleRail() {
+    setRailCollapsed((collapsed) => {
+      const next = !collapsed;
+      try { localStorage.setItem("lyfos-rail-collapsed", next ? "1" : "0"); } catch { /* local preference only */ }
+      return next;
+    });
+  }
   function finishTour() {
     try { localStorage.setItem(ONBOARDING_KEY, "1"); } catch { /* ignore */ }
     setShowTour(false);
@@ -2200,19 +2210,22 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
 
       <div className="mx-auto flex max-w-[1340px]">
         {/* Left rail */}
-        <aside className="hidden w-60 shrink-0 border-r border-[var(--line)] px-3 py-5 lg:block" style={{ minHeight: "calc(100vh - 3.5rem)" }}>
-          <div className="px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">Workspace</div>
+        <aside className={cx("hidden shrink-0 border-r border-[var(--line)] py-5 transition-[width] duration-200 lg:block", railCollapsed ? "w-[76px] px-2" : "w-60 px-3")} style={{ minHeight: "calc(100vh - 3.5rem)" }}>
+          <button onClick={toggleRail} aria-label={railCollapsed ? "Expand navigation" : "Collapse navigation"} title={railCollapsed ? "Expand navigation" : "Collapse navigation"} className={cx("mb-4 flex h-9 items-center rounded-[10px] text-[var(--ink-2)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]", railCollapsed ? "w-full justify-center" : "w-full justify-end px-2.5")}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={railCollapsed ? "M9 18l6-6-6-6" : "M15 18l-6-6 6-6"} /><path d="M4 5v14" /></svg>
+          </button>
+          {!railCollapsed && <div className="px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">Workspace</div>}
           <div className="mt-1.5 space-y-0.5">
-            {railWorkspace.map((n) => <RailItem key={n.id} active={screen === n.id} onClick={() => setScreen(n.id)} icon={n.icon} label={n.label} count={n.count} dataTour={n.id === "release" ? "trust" : undefined} pulse={hint(n.id)} />)}
+            {railWorkspace.map((n) => <RailItem key={n.id} collapsed={railCollapsed} active={screen === n.id} onClick={() => setScreen(n.id)} icon={n.icon} label={n.label} count={n.count} dataTour={n.id === "release" ? "trust" : undefined} pulse={hint(n.id)} />)}
           </div>
-          <div className="mt-6 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">Life areas</div>
+          {!railCollapsed && <div className="mt-6 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">Life areas</div>}
           <div className="mt-1.5 space-y-0.5">
-            {model.areas.map((a) => <RailItem key={a.id} active={screen === "area" && areaId === a.id} onClick={() => openArea(a.id)} dot={stateDot[a.state]} label={a.label} count={a.count} />)}
+            {model.areas.map((a) => <RailItem key={a.id} collapsed={railCollapsed} active={screen === "area" && areaId === a.id} onClick={() => openArea(a.id)} dot={stateDot[a.state]} label={a.label} count={a.count} />)}
           </div>
-          <div className="mt-6 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">You</div>
+          {!railCollapsed && <div className="mt-6 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">You</div>}
           <div className="mt-1.5 space-y-0.5">
-            <RailItem active={screen === "capture"} onClick={() => setScreen("capture")} icon="M12 5 V19 M5 12 H19" label="Add a record" dataTour="add" pulse={hint("capture")} />
-            <RailItem active={screen === "settings"} onClick={() => setScreen("settings")} icon="M12 9 a3 3 0 1 0 0 6 a3 3 0 0 0 0-6 Z M12 2 v3 M12 19 v3 M5 5 l2 2 M17 17 l2 2 M2 12 h3 M19 12 h3 M5 19 l2-2 M17 7 l2-2" label="Settings" />
+            <RailItem collapsed={railCollapsed} active={screen === "capture"} onClick={() => setScreen("capture")} icon="M12 5 V19 M5 12 H19" label="Add a record" dataTour="add" pulse={hint("capture")} />
+            <RailItem collapsed={railCollapsed} active={screen === "settings"} onClick={() => setScreen("settings")} icon="M12 9 a3 3 0 1 0 0 6 a3 3 0 0 0 0-6 Z M12 2 v3 M12 19 v3 M5 5 l2 2 M17 17 l2 2 M2 12 h3 M19 12 h3 M5 19 l2-2 M17 7 l2-2" label="Settings" />
           </div>
         </aside>
 
