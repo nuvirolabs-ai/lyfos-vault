@@ -5,6 +5,7 @@
 import { getSupabase, isSupabaseConfigured } from "./supabaseClient.js";
 
 const DEVICE_TOKEN_KEY = "lyfos-device-token-v1";
+const PRODUCTION_APP_URL = "https://app.lyfos.in/";
 
 export function ensureDeviceToken() {
   if (typeof window === "undefined") return null;
@@ -135,11 +136,11 @@ function requireSupabase() {
 }
 
 function emailRedirect() {
-  if (typeof window === "undefined") return undefined;
-  const origin = window.location.origin;
-  const isLocalOrigin = /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
-  if (isLocalOrigin) return "https://app.lyfos.in/";
-  return `${origin}/`;
+  return getAuthEmailRedirect(typeof window === "undefined" ? undefined : window.location.origin);
+}
+
+export function getAuthEmailRedirect(_origin) {
+  return PRODUCTION_APP_URL;
 }
 
 export { isSupabaseConfigured };
