@@ -1610,6 +1610,7 @@ function FamilyHomeDashboard({ vault, onNavigate, onOpenRecord, onOpenArea }) {
     : health.completion >= 80
       ? "Your family vault is in good shape."
       : "Your family vault is taking shape.";
+  const openHealth = () => document.getElementById("vault-health-details")?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return (
     <div className="space-y-10">
@@ -1630,7 +1631,7 @@ function FamilyHomeDashboard({ vault, onNavigate, onOpenRecord, onOpenArea }) {
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--ink-3)]">Family cover</p>
             <h2 className="mt-3 text-[22px] font-semibold leading-tight text-[var(--ink)]">{health.protectedCount} of {health.totalAreas} areas protected</h2>
             <p className="mt-3 text-[14px] leading-6 text-[var(--ink-2)]">{health.reviewCount ? `${health.reviewCount} area${health.reviewCount === 1 ? " needs" : "s need"} a review.` : health.exposedCount ? `${health.exposedCount} area${health.exposedCount === 1 ? " is" : "s are"} still waiting for a first record.` : "Most of what matters is protected."}</p>
-            <button onClick={() => onNavigate("home")} className="mt-5 text-[13px] font-semibold text-[var(--green-ink)] hover:underline">View vault health <span aria-hidden="true">›</span></button>
+            <button onClick={openHealth} className="mt-5 text-[13px] font-semibold text-[var(--green-ink)] hover:underline">View vault health <span aria-hidden="true">›</span></button>
           </div>
         </div>
 
@@ -1642,6 +1643,31 @@ function FamilyHomeDashboard({ vault, onNavigate, onOpenRecord, onOpenArea }) {
           </div>
           <span className="text-[13px] font-semibold text-[var(--green-ink)]">{primaryAction.id === "healthy" ? "Open vault" : "Continue"} <span className="text-xl align-[-2px] transition group-hover:translate-x-1">›</span></span>
         </button>
+      </section>
+
+      <section id="vault-health-details" className="scroll-mt-24 rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-6 md:p-8">
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--ink-3)]">Vault health</p>
+            <h2 className="mt-2 text-[22px] font-semibold tracking-tight text-[var(--ink)]">What is protected right now</h2>
+          </div>
+          <span className="text-[13px] font-semibold text-[var(--green-ink)]">{health.protectedCount} of {health.totalAreas} protected</span>
+        </div>
+        <div className="mt-6 grid gap-2 md:grid-cols-2">
+          {health.areas.map((area) => {
+            const state = area.state === "protected" ? "Protected" : area.state === "review" ? "Review" : "Needs setup";
+            const tone = area.state === "protected" ? "text-[var(--green-ink)]" : area.state === "review" ? "text-[var(--amber-ink)]" : "text-[var(--ink-3)]";
+            return (
+              <button key={area.id} onClick={() => onOpenArea(area.id)} className="flex items-center justify-between rounded-2xl border border-[var(--line)] bg-[var(--surface-2)] px-4 py-3 text-left transition hover:border-[var(--line-2)] hover:bg-[var(--surface)]">
+                <span>
+                  <span className="block text-[13px] font-medium text-[var(--ink)]">{area.label}</span>
+                  <span className="mt-0.5 block text-[11px] text-[var(--ink-3)]">{area.count ? `${area.count} record${area.count === 1 ? "" : "s"}` : "No records yet"}</span>
+                </span>
+                <span className={cx("text-[11px] font-semibold", tone)}>{state} <span aria-hidden="true">›</span></span>
+              </button>
+            );
+          })}
+        </div>
       </section>
 
       <section className="grid gap-3 md:grid-cols-3">
