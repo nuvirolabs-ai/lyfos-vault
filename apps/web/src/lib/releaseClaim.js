@@ -6,6 +6,9 @@
 //                      approves/rejects
 
 import { getSupabase, isSupabaseConfigured } from "./supabaseClient.js";
+import { isValidNomineeEmail } from "./releaseValidation.js";
+
+export { isValidNomineeEmail } from "./releaseValidation.js";
 
 // ============================================================
 // Owner side — release_settings (claim URL the owner shares)
@@ -21,6 +24,7 @@ export async function loadMyReleaseSettings() {
 
 export async function upsertMyReleaseSettings({ claimText, nomineeEmail, nomineeLabel } = {}) {
   if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
+  if (!isValidNomineeEmail(nomineeEmail)) throw new Error("A valid nominee email is required");
   const sb = getSupabase();
   const { data: userData } = await sb.auth.getUser();
   if (!userData?.user?.id) throw new Error("Not signed in");

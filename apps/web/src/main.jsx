@@ -52,7 +52,7 @@ import { initTelemetry, registerServiceWorker } from "./lib/telemetry.js";
 import { buildSnapshotsCsv, suggestedCsvFilename } from "./lib/csvExport.js";
 import { formatCurrency, formatCompact, DEFAULT_CURRENCY } from "./lib/currency.js";
 import { listMyKeyHolders, createKeyHolderInvite, revokeKeyHolder, sendInviteEmail, finalizeReleasePlan } from "./lib/releasePlan.js";
-import { loadMyReleaseSettings, upsertMyReleaseSettings, rotateMyClaimToken, fetchActiveReleaseAgainstMe, ownerAbortRelease } from "./lib/releaseClaim.js";
+import { loadMyReleaseSettings, upsertMyReleaseSettings, rotateMyClaimToken, fetchActiveReleaseAgainstMe, ownerAbortRelease, isValidNomineeEmail } from "./lib/releaseClaim.js";
 import { fetchMySubscription, fetchMyBillingEvents, fetchMyBillingProfile, upsertMyBillingProfile, fetchInvoiceUrl, startUpgrade, cancelSubscriptionAtPeriodEnd, resumeSubscription } from "./lib/billing.js";
 import { PLANS, planFor, isPaid, entitlementsFor, daysLeftFor } from "./lib/plans.js";
 import { isSupabaseConfigured } from "./lib/supabaseClient.js";
@@ -5431,6 +5431,10 @@ function ClaimUrlPanel() {
   useEffect(() => { refresh(); }, []);
 
   async function save() {
+    if (!isValidNomineeEmail(nomineeEmail)) {
+      setError("Enter a valid email so your nominee can receive the key.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -5527,12 +5531,14 @@ function ClaimUrlPanel() {
             />
           </label>
           <label className="block">
-            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">Nominee email · optional, helps them know the link is for them</span>
+            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">Nominee email · required</span>
             <input
               type="email"
               value={nomineeEmail}
               onChange={(e) => setNomineeEmail(e.target.value)}
               placeholder="priya@example.com"
+              required
+              autoComplete="email"
               className="mt-1 w-full rounded-md border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[13px] outline-none focus:border-[var(--ink)]"
             />
           </label>
@@ -5549,7 +5555,7 @@ function ClaimUrlPanel() {
           {error && <div className="rounded-md bg-[#ff453a]/8 px-3 py-2 text-[12px] text-[var(--red-2)]">{error}</div>}
           <div className="mt-3 flex items-center justify-between gap-2">
             <button onClick={() => { setEditing(false); refresh(); }} className="text-[11px] text-[var(--ink-3)] hover:text-[var(--ink)]" disabled={busy}>Cancel</button>
-            <button onClick={save} disabled={busy} className="rounded-full bg-[#1d1d1f] px-4 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50">
+            <button onClick={save} disabled={busy || !isValidNomineeEmail(nomineeEmail)} className="rounded-full bg-[#1d1d1f] px-4 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50">
               {busy ? "Saving…" : "Save"}
             </button>
           </div>
