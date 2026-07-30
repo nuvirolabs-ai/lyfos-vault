@@ -240,7 +240,7 @@ function renderInvoiceHtml({ invoiceNumber, issuedAt, seller, buyer, line, payme
       ? "This is an inter-state supply; IGST has been applied as per Section 7 of the IGST Act."
       : "This is an intra-state supply; CGST + SGST applied as per Section 8 of the CGST Act."}
     HSN 9984 — Information Technology software services (online software supply). Reverse charge mechanism does not apply.
-    This invoice is computer-generated and does not require a signature. For queries, write to hello@lyfos.signorvale.com.
+    This invoice is computer-generated and does not require a signature. For queries, write to hello@lyfos.in.
   </p>
 
 </div></body></html>`;

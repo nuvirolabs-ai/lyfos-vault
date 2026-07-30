@@ -112,7 +112,7 @@ export function AbortScreen({ onReturnHome }) {
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#b42318]">Too late</p>
         <h1 className="mt-3 text-[28px] font-semibold tracking-tight">The hold has expired.</h1>
         <p className="mt-3 text-[14px] text-[#6e6e73]">
-          The 14-day window has passed; the release is now in your nominee's hands. If you believe this happened in error, email <a href="mailto:hello@lyfos.signorvale.com" className="underline">hello@lyfos.signorvale.com</a> immediately.
+          The 14-day window has passed; the release is now in your nominee's hands. If you believe this happened in error, email <a href="mailto:hello@lyfos.in" className="underline">hello@lyfos.in</a> immediately.
         </p>
       </Frame>
     );

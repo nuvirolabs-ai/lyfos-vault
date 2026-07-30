@@ -34,9 +34,9 @@ const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // @ts-ignore
 const RESEND_KEY   = Deno.env.get("RESEND_API_KEY") ?? "";
 // @ts-ignore
-const FROM_EMAIL   = Deno.env.get("FROM_EMAIL") ?? "Lyfos <hello@lyfos.signorvale.com>";
+const FROM_EMAIL   = Deno.env.get("FROM_EMAIL") ?? "Lyfos <hello@lyfos.in>";
 // @ts-ignore
-const APP_URL      = Deno.env.get("APP_URL") ?? "https://lyfos.signorvale.com";
+const APP_URL      = Deno.env.get("APP_URL") ?? "https://app.lyfos.in";
 // @ts-ignore
 const MSG91_KEY    = Deno.env.get("MSG91_AUTH_KEY") ?? "";
 // @ts-ignore

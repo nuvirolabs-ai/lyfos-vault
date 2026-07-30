@@ -84,7 +84,7 @@ export default function AbortScreen() {
           <Eyebrow style={{ color: colors.redInk }}>Too late</Eyebrow>
           <H1 style={{ marginTop: 12 }}>The hold has expired.</H1>
           <Footnote style={{ marginTop: 10 }}>
-            The 14-day window has passed; the release is now in your nominee's hands. If this happened in error, email hello@lyfos.signorvale.com immediately.
+            The 14-day window has passed; the release is now in your nominee's hands. If this happened in error, email hello@lyfos.in immediately.
           </Footnote>
         </SafeAreaView>
       </Screen>

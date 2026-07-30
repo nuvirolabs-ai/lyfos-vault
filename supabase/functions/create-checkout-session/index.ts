@@ -39,7 +39,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 // @ts-ignore
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // @ts-ignore
-const APP_URL      = Deno.env.get("APP_URL") ?? "https://lyfos.signorvale.com";
+const APP_URL      = Deno.env.get("APP_URL") ?? "https://app.lyfos.in";
 
 // @ts-ignore
 const RZP_KEY      = Deno.env.get("RAZORPAY_KEY_ID") ?? "";

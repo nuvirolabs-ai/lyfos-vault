@@ -11,7 +11,7 @@ module.exports = () => ({
     ...(base.extra ?? {}),
     SUPABASE_URL:      process.env.EXPO_PUBLIC_SUPABASE_URL      ?? base.extra?.SUPABASE_URL      ?? "",
     SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? base.extra?.SUPABASE_ANON_KEY ?? "",
-    APP_URL:           process.env.EXPO_PUBLIC_APP_URL           ?? base.extra?.APP_URL           ?? "https://lyfos.signorvale.com",
+    APP_URL:           process.env.EXPO_PUBLIC_APP_URL           ?? base.extra?.APP_URL           ?? "https://app.lyfos.in",
     eas: base.extra?.eas ?? {}
   }
 });

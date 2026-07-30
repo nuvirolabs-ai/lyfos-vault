@@ -47,7 +47,7 @@ export default function ReleasePlanScreen() {
     setBusy(true); setError("");
     try {
       const created = await createKeyHolderInvite({ label: input.label, holderEmail: input.email, holderPhone: input.phone });
-      const appUrl = (Constants?.expoConfig?.extra as any)?.APP_URL ?? "https://lyfos.signorvale.com";
+      const appUrl = (Constants?.expoConfig?.extra as any)?.APP_URL ?? "https://app.lyfos.in";
       const url = `${appUrl}/invite/${created.invite_token}`;
       try { await sendInviteEmail(created.id); } catch {}
       setFeedbackUrl(url);
@@ -264,7 +264,7 @@ function ClaimUrlPanel() {
     ]);
   }
 
-  const appUrl = (Constants?.expoConfig?.extra as any)?.APP_URL ?? "https://lyfos.signorvale.com";
+  const appUrl = (Constants?.expoConfig?.extra as any)?.APP_URL ?? "https://app.lyfos.in";
   const url = settings?.claim_token ? `${appUrl}/claim/${settings.claim_token}` : null;
 
   return (

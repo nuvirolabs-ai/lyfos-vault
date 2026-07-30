@@ -21,7 +21,7 @@
         "NSPhotoLibraryUsageDescription": "Attach photos of documents to your vault records.",
         "ITSAppUsesNonExemptEncryption": false
       },
-      "associatedDomains": ["applinks:lyfos.signorvale.com"]
+      "associatedDomains": ["applinks:app.lyfos.in"]
     },
     "android": {
       "package": "com.signorvale.lyfos",
@@ -38,7 +38,7 @@
         {
           "action": "VIEW",
           "data": [
-            { "scheme": "https", "host": "lyfos.signorvale.com" },
+            { "scheme": "https", "host": "app.lyfos.in" },
             { "scheme": "lyfos" }
           ],
           "category": ["BROWSABLE", "DEFAULT"],

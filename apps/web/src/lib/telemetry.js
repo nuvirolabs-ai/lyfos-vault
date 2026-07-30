@@ -1,8 +1,8 @@
 // Telemetry stubs — wired up but inactive until env vars are set in the host
-// (Cloudflare Pages / Vercel / wherever lyfos.signorvale.com is deployed).
+// (Cloudflare Pages / Vercel / wherever app.lyfos.in is deployed).
 //
 // Set in deployment env:
-//   VITE_PLAUSIBLE_DOMAIN=lyfos.signorvale.com
+//   VITE_PLAUSIBLE_DOMAIN=app.lyfos.in
 //   VITE_SENTRY_DSN=https://...@sentry.io/...
 //
 // Both are evaluated at BUILD time by Vite. If unset, this module does nothing —

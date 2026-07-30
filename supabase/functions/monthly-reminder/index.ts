@@ -20,8 +20,8 @@
 //   SUPABASE_URL                   (auto)
 //   SUPABASE_SERVICE_ROLE_KEY      (auto — DO NOT log)
 //   RESEND_API_KEY                 (you set via `supabase secrets set`)
-//   FROM_EMAIL                     (you set; defaults to "Lyfos <hello@lyfos.signorvale.com>")
-//   APP_URL                        (you set; defaults to "https://lyfos.signorvale.com")
+//   FROM_EMAIL                     (you set; defaults to "Lyfos <hello@lyfos.in>")
+//   APP_URL                        (you set; defaults to "https://app.lyfos.in")
 
 // @ts-ignore Deno-style imports work at deploy time; types are unavailable locally
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
@@ -35,9 +35,9 @@ const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // @ts-ignore
 const RESEND_KEY   = Deno.env.get("RESEND_API_KEY") ?? "";
 // @ts-ignore
-const FROM_EMAIL   = Deno.env.get("FROM_EMAIL") ?? "Lyfos <hello@lyfos.signorvale.com>";
+const FROM_EMAIL   = Deno.env.get("FROM_EMAIL") ?? "Lyfos <hello@lyfos.in>";
 // @ts-ignore
-const APP_URL      = Deno.env.get("APP_URL") ?? "https://lyfos.signorvale.com";
+const APP_URL      = Deno.env.get("APP_URL") ?? "https://app.lyfos.in";
 
 const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false }

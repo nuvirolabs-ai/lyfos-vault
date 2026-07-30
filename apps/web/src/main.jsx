@@ -2278,7 +2278,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
                 <span>Lyfos · Beta · Locally encrypted on this device.</span>
                 <div className="flex items-center gap-4">
                   <button type="button" onClick={() => setShowTour(true)} className="hover:text-[var(--ink)]">Tour</button>
-                  <a href="mailto:hello@lyfos.signorvale.com?subject=Lyfos%20help" className="hover:text-[var(--ink)]">Help</a>
+                  <a href="mailto:hello@lyfos.in?subject=Lyfos%20help" className="hover:text-[var(--ink)]">Help</a>
                   <a href="/legal/beta-disclaimer.html" className="hover:text-[var(--ink)]">Beta disclaimer</a>
                   <a href="/legal/privacy.html" className="hover:text-[var(--ink)]">Privacy</a>
                   <a href="/legal/terms.html" className="hover:text-[var(--ink)]">Terms</a>
