@@ -86,6 +86,7 @@ import {
   startRecoveryKeyReplacement
 } from "./lib/stage2RecoveryKey.js";
 import { getBackupSizeWarning } from "./lib/stage2BackupSize.js";
+import { deriveHomeHealth, getPrimaryHomeAction } from "./lib/homeHealth.js";
 import "./styles.css";
 
 const AREAS = [
@@ -559,8 +560,7 @@ function deriveAttention(vault) {
   });
 
   items.forEach((it) => {
-    const hasContent = it.secret || it.bankDetails || it.cardDetails || it.email || (it.notes && it.notes.length > 12) || (it.attachments?.length);
-    if (it.title && !hasContent) {
+    if (it.title && !recordHasContent(it)) {
       out.push({
         key: `incomplete-${it.id}`,
         tone: "info",
@@ -1428,8 +1428,8 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
   }
 
   const entryTrustCopy = hasVault
-    ? "Your vault phrase unwraps the encrypted vault on this device. Signing into your account alone cannot decrypt records."
-    : "Your vault phrase is the master key for everything you put in Lyfos. We never see it and we cannot recover it for you. Write down the 24-word recovery phrase too — it's the only way back if you forget the vault phrase.";
+    ? "Your vault phrase opens the encrypted vault on this device. Your account alone cannot decrypt records."
+    : "Create a private vault for the details your family should never have to search for. Your passphrase stays with you; Lyfos never sees it.";
 
   const recoveryMode = hasVault && unlockMode === "recovery";
 
@@ -1450,9 +1450,9 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
         </div>
 
         <div className="mt-5 text-center">
-          <h1 className="text-[26px] font-semibold tracking-tight text-[var(--ink)]">{hasVault ? "Welcome back" : "Create your vault"}</h1>
+          <h1 className="text-[26px] font-semibold tracking-tight text-[var(--ink)]">{hasVault ? "Welcome back" : "Start your vault"}</h1>
           <p className="mt-2 text-[14px] leading-relaxed text-[var(--ink-2)]">
-            {hasVault ? "Enter your passphrase to open your vault." : "Pick a phrase you'll remember. It encrypts everything on this device — we never see it."}
+            {hasVault ? "Enter your passphrase to open your vault." : "One phrase. One recovery key. Everything important, protected locally."}
           </p>
         </div>
 
@@ -1570,7 +1570,7 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
 }
 
 function recordHasContent(it) {
-  return Boolean(it.secret || it.bankDetails || it.cardDetails || it.email || (it.notes && it.notes.length > 12) || (it.attachments && it.attachments.length));
+  return Boolean(it.username || it.secret || it.bankDetails || it.cardDetails || it.email || (it.notes && it.notes.length > 12) || (it.attachments && it.attachments.length));
 }
 
 const AREA_ICON = {
@@ -1591,7 +1591,75 @@ function greeting() {
   return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
 }
 
-function HomeDashboard({ vault, onNavigate, onOpenRecord, backupHealth, onPreviewRecovery }) {
+function FamilyHomeDashboard({ vault, onNavigate, onOpenRecord, onOpenArea }) {
+  const health = useMemo(() => deriveHomeHealth(vault), [vault]);
+  const primaryAction = useMemo(() => getPrimaryHomeAction(vault, health), [vault, health]);
+  const items = vault.items ?? [];
+  const financial = getFinancialSnapshot(items);
+  const recent = useMemo(() => [...items].sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)).slice(0, 5), [items]);
+  const lastUpdated = recent[0]?.updatedAt ? timeAgo(recent[0].updatedAt) : "Not yet";
+  const action = () => {
+    if (primaryAction.id === "area") return onOpenArea(primaryAction.areaId);
+    if (primaryAction.id === "nominee-email" || primaryAction.id === "release") return onNavigate("release");
+    if (primaryAction.id === "capture") return onNavigate("capture");
+    return onNavigate("home");
+  };
+  const headline = items.length === 0
+    ? "Start with what your family should never lose."
+    : health.completion >= 80
+      ? "Your family vault is in good shape."
+      : "Your family vault is taking shape.";
+
+  return (
+    <div className="space-y-10">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-[12px] font-medium uppercase tracking-[0.16em] text-[var(--ink-3)]">Family vault</p>
+          <h1 className="mt-3 max-w-2xl text-[36px] font-semibold leading-[1.08] tracking-tight text-[var(--ink)] md:text-[46px]">{headline}</h1>
+        </div>
+        <p className="text-right text-[13px] leading-5 text-[var(--ink-3)]">{greeting()}<br />{new Intl.DateTimeFormat("en-IN", { dateStyle: "long" }).format(new Date())}</p>
+      </header>
+
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(260px,.7fr)]">
+        <div className="flex min-h-[300px] items-center gap-8 rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-7 md:gap-12 md:p-10">
+          <div className="grid h-40 w-40 shrink-0 place-items-center rounded-full" style={{ background: `conic-gradient(var(--accent) ${health.completion}%, var(--surface-3) ${health.completion}% 100%)` }}>
+            <div className="grid h-32 w-32 place-items-center rounded-full bg-[var(--surface)] text-[38px] font-semibold tracking-tight text-[var(--ink)]">{health.completion}%</div>
+          </div>
+          <div className="max-w-md">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--ink-3)]">Family cover</p>
+            <h2 className="mt-3 text-[22px] font-semibold leading-tight text-[var(--ink)]">{health.protectedCount} of {health.totalAreas} areas protected</h2>
+            <p className="mt-3 text-[14px] leading-6 text-[var(--ink-2)]">{health.reviewCount ? `${health.reviewCount} area${health.reviewCount === 1 ? " needs" : "s need"} a review.` : health.exposedCount ? `${health.exposedCount} area${health.exposedCount === 1 ? " is" : "s are"} still waiting for a first record.` : "Most of what matters is protected."}</p>
+            <button onClick={() => onNavigate("home")} className="mt-5 text-[13px] font-semibold text-[var(--green-ink)] hover:underline">View vault health <span aria-hidden="true">›</span></button>
+          </div>
+        </div>
+
+        <button onClick={action} className="group flex min-h-[300px] flex-col justify-between rounded-3xl border border-[var(--line)] bg-[var(--surface-2)] p-7 text-left transition hover:border-[var(--line-2)] hover:bg-[var(--surface)] md:p-8">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--ink-3)]">{primaryAction.id === "healthy" ? "Today" : "One thing to finish"}</p>
+            <h2 className="mt-4 max-w-xs text-[22px] font-semibold leading-tight text-[var(--ink)]">{primaryAction.label}</h2>
+            <p className="mt-3 max-w-xs text-[13px] leading-5 text-[var(--ink-2)]">{primaryAction.id === "nominee-email" ? "Your nominee needs an email so Lyfos can send the key when it matters." : primaryAction.id === "release" ? "Five trusted people hold keys. Three are needed to release the vault." : primaryAction.id === "capture" ? "Add one important record and your vault health will begin to reflect what matters." : "Keep the areas your family depends on current."}</p>
+          </div>
+          <span className="text-[13px] font-semibold text-[var(--green-ink)]">{primaryAction.id === "healthy" ? "Open vault" : "Continue"} <span className="text-xl align-[-2px] transition group-hover:translate-x-1">›</span></span>
+        </button>
+      </section>
+
+      <section className="grid gap-3 md:grid-cols-3">
+        {[["Trust circle", `${health.holderCount} of 5 ready`, "release"], ["Balance sheet", formatMoney(financial.assets - financial.liabilities), "money"], ["Last updated", lastUpdated, "records"]].map(([label, value, screen]) => (
+          <button key={label} onClick={() => onNavigate(screen)} className="flex items-center justify-between rounded-2xl border border-[var(--line)] bg-[var(--surface)] px-5 py-4 text-left transition hover:border-[var(--line-2)] hover:bg-[var(--surface-2)]"><span className="text-[13px] text-[var(--ink-2)]">{label}</span><span className="text-[14px] font-semibold text-[var(--ink)]">{value}</span></button>
+        ))}
+      </section>
+
+      <section>
+        <div className="mb-3 flex items-baseline justify-between"><h2 className="text-[16px] font-semibold text-[var(--ink)]">Recently added</h2><button onClick={() => onNavigate("records")} className="text-[12px] font-medium text-[var(--green-ink)] hover:underline">View all {items.length} <span aria-hidden="true">›</span></button></div>
+        <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)]">
+          {recent.length ? recent.map((item, index) => <button key={item.id || index} onClick={() => onOpenRecord(item)} className={cx("flex w-full items-center gap-4 px-5 py-4 text-left hover:bg-[var(--surface-2)]", index > 0 && "border-t border-[var(--line)]")}><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--green-soft)] text-[var(--green-ink)]">{(item.title || typeLabel(item.type)).slice(0, 1).toUpperCase()}</span><span className="min-w-0 flex-1"><span className="block truncate text-[13.5px] font-medium text-[var(--ink)]">{item.title || typeLabel(item.type)}</span><span className="block text-[12px] text-[var(--ink-3)]">{getAreaForType(item.type).label}</span></span><span className="text-[12px] text-[var(--ink-4)]">{timeAgo(item.updatedAt)}</span></button>) : <div className="px-5 py-8 text-center text-[13px] text-[var(--ink-3)]">Records you add will appear here.</div>}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function HomeDashboard({ vault, onNavigate, onOpenRecord, onOpenArea, backupHealth, onPreviewRecovery }) {
   const items = vault.items ?? [];
   const total = items.length;
   const now = Date.now();
@@ -1605,26 +1673,39 @@ function HomeDashboard({ vault, onNavigate, onOpenRecord, backupHealth, onPrevie
   return (
     <div>
       <div className="mb-7">
-        <h1 className="text-[28px] font-semibold tracking-tight text-[var(--ink)]">{total === 0 ? "Welcome to your vault" : greeting()}</h1>
-        <p className="mt-1 text-[14px] text-[var(--ink-2)]">{total === 0 ? "Let's add the first few things that matter. It only takes a minute." : attention.length ? "A few things could use a moment. Everything else is taken care of." : "Everything is in order. Here's where things stand today."}</p>
+        <h1 className="text-[28px] font-semibold tracking-tight text-[var(--ink)]">{total === 0 ? "Your vault is ready" : greeting()}</h1>
+        <p className="mt-1 text-[14px] text-[var(--ink-2)]">{total === 0 ? "Start with one thing your family should never lose." : attention.length ? "A few important gaps remain. The rest is protected." : "Everything important is easy to find."}</p>
       </div>
 
       {/* First-run quick start — the most important next action on an empty vault */}
       {total === 0 && (
-        <div className="mb-7 rounded-2xl border border-[var(--accent)]/30 bg-[var(--green-soft)] p-6">
-          <p className="text-[15px] font-semibold text-[var(--ink)]">Add your first record</p>
-          <p className="mt-1 text-[13px] text-[var(--ink-2)]">Start with whatever's on your mind — it's encrypted on this device the moment you save it.</p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {[["Password", "password"], ["Bank account", "bank"], ["ID / passport", "identity"], ["Insurance", "insurance"]].map(([label]) => (
-              <button key={label} onClick={() => onNavigate("capture")} className="rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--ink-2)] transition hover:text-[var(--ink)]">{label}</button>
+        <div className="mb-7 overflow-hidden rounded-[1.75rem] border border-[var(--accent)]/25 bg-[linear-gradient(135deg,var(--green-soft),var(--surface)_68%)] p-6 shadow-[0_18px_70px_rgba(22,163,74,0.10)]">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+            <div className="max-w-md">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--green-ink)]">First record</p>
+              <h2 className="mt-2 text-[24px] font-semibold tracking-tight text-[var(--ink)]">Secure what matters.</h2>
+              <p className="mt-2 text-[13.5px] leading-6 text-[var(--ink-2)]">One bank account. One policy. One password. Add anything important in under a minute.</p>
+            </div>
+            <button onClick={() => onNavigate("capture")} className="h-12 rounded-full bg-[var(--accent)] px-6 text-[14px] font-semibold text-white shadow-[0_10px_30px_rgba(22,163,74,0.22)] transition hover:translate-y-[-1px] hover:opacity-95">Add first record</button>
+          </div>
+          <div className="mt-5 flex flex-wrap gap-2">
+            {["Password", "Bank account", "ID / passport", "Insurance"].map((label) => (
+              <button key={label} onClick={() => onNavigate("capture")} className="rounded-full border border-[var(--line-2)] bg-white/70 px-3.5 py-1.5 text-[12.5px] font-medium text-[var(--ink-2)] transition hover:border-[var(--accent)] hover:text-[var(--ink)]">{label}</button>
             ))}
           </div>
-          <button onClick={() => onNavigate("capture")} className="mt-4 rounded-full bg-[var(--accent)] px-5 py-2 text-[13.5px] font-semibold text-white transition hover:opacity-90">Add a record →</button>
         </div>
       )}
 
+      {total > 0 && (
+        <VaultOverview
+          vault={vault}
+          onOpenArea={onOpenArea}
+          onOpenRecord={onOpenRecord}
+        />
+      )}
+
       {/* The promise, previewable — the dry run is the product's aha moment */}
-      <button data-tour="dryrun" onClick={onPreviewRecovery} className="mb-7 flex w-full items-center gap-4 rounded-2xl border border-[var(--line)] bg-[var(--surface)] px-6 py-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition hover:bg-[var(--surface-2)]">
+      <button data-tour="dryrun" onClick={onPreviewRecovery} className={cx("mb-5 flex w-full items-center gap-4 rounded-2xl border border-[var(--line)] bg-[var(--surface)] px-6 py-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition hover:bg-[var(--surface-2)]", total > 0 && "mt-6")}>
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[var(--green-soft)]">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" /><circle cx="12" cy="12" r="2.6" /></svg>
         </span>
@@ -1636,12 +1717,12 @@ function HomeDashboard({ vault, onNavigate, onOpenRecord, backupHealth, onPrevie
       </button>
 
       {/* Records overview */}
-      <div className="mb-7 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
-        <div className="grid grid-cols-3 gap-5">
+      <div className="mb-7 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+        <div className="grid grid-cols-3 gap-3">
           {[["Records kept safe", total, "var(--ink-4)"], ["Updated recently", fresh, "var(--green)"], ["Started, unfinished", unfinished, "var(--rose,#c0335e)"]].map(([label, n, c]) => (
-            <div key={label} className="border-l-[3px] pl-3.5" style={{ borderColor: c }}>
-              <div className="text-[30px] font-bold leading-none text-[var(--ink)]">{n}</div>
-              <div className="mt-1.5 text-[12px] text-[var(--ink-3)]">{label}</div>
+            <div key={label} className="border-l-[2px] pl-3" style={{ borderColor: c }}>
+              <div className="text-[22px] font-bold leading-none text-[var(--ink)]">{n}</div>
+              <div className="mt-1 text-[11.5px] text-[var(--ink-3)]">{label}</div>
             </div>
           ))}
         </div>
@@ -2146,8 +2227,9 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
             <button onClick={() => setScreen("settings")} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", screen === "settings" ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]")}>Settings</button>
           </div>
           {/* Mobile: a persistent "add" affordance for the most common action */}
-          <button onClick={() => setScreen("capture")} aria-label="Add a record" className="fixed bottom-5 right-5 z-30 grid h-14 w-14 place-items-center rounded-full bg-[var(--accent)] text-white shadow-[0_8px_24px_rgba(0,0,0,0.22)] lg:hidden">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5 V19 M5 12 H19" /></svg>
+          <button onClick={() => setScreen("capture")} aria-label="Add a record" className="fixed bottom-5 right-5 z-30 inline-flex h-14 items-center gap-2 rounded-full bg-[var(--accent)] px-5 text-white shadow-[0_10px_28px_rgba(22,163,74,0.28)] transition hover:translate-y-[-1px] lg:hidden">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5 V19 M5 12 H19" /></svg>
+            <span className="text-[13px] font-semibold">Add record</span>
           </button>
 
           {notice && <div className="mb-5 rounded-2xl border border-[#34c759]/20 bg-[#34c759]/10 px-5 py-4 text-sm font-semibold text-[var(--green-ink)]">{notice}</div>}
@@ -2166,9 +2248,9 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
           {backupSizeWarning?.level !== "none" && <BackupSizeNotice warning={backupSizeWarning} />}
           {session && screen === "release" && <ActiveReleaseBanner onNavigateRelease={() => setScreen("release")} />}
 
-          <div className={cx("mx-auto flex gap-8", screen === "home" ? "max-w-[1140px] items-start" : "max-w-3xl")}>
+          <div className={cx("mx-auto flex gap-8", screen === "home" ? "max-w-[1280px] items-start" : "max-w-3xl")}>
             <div className="min-w-0 flex-1">
-              {screen === "home"    && <HomeDashboard vault={vault} onNavigate={setScreen} onOpenRecord={openRecord} backupHealth={backupHealth} onPreviewRecovery={() => { setReleaseAutoPreview(true); setScreen("release"); }} />}
+              {screen === "home"    && <FamilyHomeDashboard vault={vault} onNavigate={setScreen} onOpenArea={openArea} onOpenRecord={openRecord} />}
               {screen === "records" && <AllRecords vault={vault} onOpenRecord={openRecord} />}
               {screen === "money"   && <HomeScreen vault={vault} onSave={onSave} onNavigate={setScreen} backupHealth={backupHealth} onExport={onExport} />}
               {screen === "setup"   && <SetupScreen vault={vault} onSave={onSave} onNavigate={setScreen} />}
@@ -2190,11 +2272,6 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
               </footer>
             </div>
 
-            {screen === "home" && (
-              <aside className="hidden w-[300px] shrink-0 xl:block">
-                <AtAGlance vault={vault} backupHealth={backupHealth} onOpenArea={openArea} onNavigate={setScreen} />
-              </aside>
-            )}
           </div>
         </section>
       </div>
@@ -2683,9 +2760,9 @@ function NeedsALook({ items, onNavigate }) {
   if (!items || items.length === 0) return null;
   return (
     <section className="mt-14">
-      <div className="mb-3 flex items-baseline justify-between">
-        <h2 className="text-base font-semibold text-[var(--ink)]">Needs a look</h2>
-        <span className="text-[12px] text-[var(--ink-3)]">Lyfos keeps an eye on your records so you don't have to</span>
+      <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+        <h2 className="text-base font-semibold text-[var(--ink)]">Complete your vault</h2>
+        <span className="text-[12px] text-[var(--ink-3)]">A short path to a vault your family can actually use</span>
       </div>
       <div className="flex flex-col gap-2.5">
         {items.map((it) => {
@@ -2704,6 +2781,86 @@ function NeedsALook({ items, onNavigate }) {
               <span className={cx("shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold", tone.chip)}>{it.when}</span>
               <span className="shrink-0 text-[var(--ink-4)] transition group-hover:text-[var(--ink-2)]" aria-hidden>→</span>
             </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function areaReadyLabel(area, records) {
+  if (!records.length) return { label: "Missing", className: "bg-[var(--rose,#c0335e)]/8 text-[var(--rose,#c0335e)]" };
+  if (records.some((record) => record.title && !recordHasContent(record))) return { label: "Needs detail", className: "bg-[var(--amber-soft)] text-[var(--amber-ink)]" };
+  if (records.some((record) => !record.emergencyEligible)) return { label: "Private", className: "bg-[var(--surface-3)] text-[var(--ink-3)]" };
+  return { label: "Ready", className: "bg-[var(--green-soft)] text-[var(--green-ink)]" };
+}
+
+function recordPreviewText(record) {
+  return record.username || record.email || record.bankDetails || record.cardDetails || record.notes || typeLabel(record.type);
+}
+
+function VaultOverview({ vault, onOpenArea, onOpenRecord }) {
+  const areas = AREAS.map((area) => {
+    const records = (vault.items ?? [])
+      .filter((item) => area.types.includes(item.type))
+      .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+    return { ...area, records, status: areaReadyLabel(area, records) };
+  });
+  const filled = areas.filter((area) => area.records.length).length;
+
+  return (
+    <section className="mt-0">
+      <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ink-3)]">Vault overview</p>
+          <h2 className="mt-1 text-[22px] font-semibold tracking-tight text-[var(--ink)]">Your vault at a glance.</h2>
+        </div>
+        <p className="text-[12.5px] text-[var(--ink-3)]">{filled} of {AREAS.length} life areas have records.</p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {areas.map((area) => {
+          const tone = AREA_TONE[area.id] || "var(--ink-4)";
+          const records = area.records.slice(0, 2);
+          return (
+            <article
+              key={area.id}
+              className="group rounded-[1.25rem] border border-[var(--line)] bg-[var(--surface)] p-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition hover:border-[var(--line-2)] hover:shadow-[0_14px_42px_rgba(0,0,0,0.06)]"
+            >
+              <button onClick={() => onOpenArea(area.id)} className="flex w-full items-start gap-3 text-left">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px]" style={{ background: "color-mix(in srgb, " + tone + " 13%, transparent)" }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={tone} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={AREA_ICON[area.id]} /></svg>
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span className="truncate text-[15px] font-semibold text-[var(--ink)]">{area.label}</span>
+                    <span className={cx("shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-semibold", area.status.className)}>{area.status.label}</span>
+                  </span>
+                  <span className="mt-1 block truncate text-[12.5px] text-[var(--ink-3)]">{area.records.length ? `${area.records.length} record${area.records.length === 1 ? "" : "s"}` : area.promise}</span>
+                </span>
+                <span className="mt-1 text-[var(--ink-4)] transition group-hover:translate-x-0.5 group-hover:text-[var(--ink-2)]">→</span>
+              </button>
+
+              <div className="mt-3 space-y-2">
+                {records.length ? records.map((record) => (
+                  <button
+                    key={record.id}
+                    onClick={() => onOpenRecord(record)}
+                    className="flex w-full items-center gap-2.5 rounded-xl border border-transparent bg-[var(--surface-2)] px-3 py-2.5 text-left transition hover:border-[var(--line-2)] hover:bg-[var(--surface)]"
+                  >
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: tone }} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13.5px] font-medium text-[var(--ink)]">{record.title || typeLabel(record.type)}</span>
+                      <span className="mt-0.5 block truncate text-[11.5px] text-[var(--ink-4)]">{recordPreviewText(record)}</span>
+                    </span>
+                  </button>
+                )) : (
+                  <button onClick={() => onOpenArea(area.id)} className="w-full rounded-xl border border-dashed border-[var(--line-2)] px-3 py-3 text-left text-[12.5px] text-[var(--ink-3)] transition hover:border-[var(--accent)] hover:text-[var(--ink-2)]">
+                    Add {area.suggested[0].toLowerCase()}
+                  </button>
+                )}
+              </div>
+            </article>
           );
         })}
       </div>
@@ -4580,35 +4737,15 @@ function CaptureScreen({ vault, onSave, onNavigate }) {
     if (!remainingDrafts.length) onNavigate("life");
   }
 
-  const [showManual, setShowManual] = useState(false);
+  const [showManual, setShowManual] = useState(true);
   const [showManualMore, setShowManualMore] = useState(false);
 
   return (
     <section className="mx-auto max-w-2xl">
       <div className="text-center">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Capture</p>
-        <h1 className="mt-3 text-[36px] font-semibold leading-[1.1] tracking-tight md:text-[44px]">Drop in the mess.</h1>
-      </div>
-
-      <textarea
-        className="mt-8 min-h-44 w-full rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5 text-[15px] leading-7 outline-none transition focus:border-[var(--ink)]"
-        placeholder="Paste record details"
-        value={messyText}
-        onChange={(event) => setMessyText(event.target.value)}
-      />
-
-      <div className="mt-3 flex items-center justify-between gap-3">
-        <label className="cursor-pointer text-[12px] text-[var(--ink-2)] underline-offset-4 hover:text-[var(--ink)] hover:underline">
-          <input className="hidden" type="file" accept="image/*,.txt,.csv,.md,application/pdf" onChange={handleUpload} />
-          {ocrBusy ? "Reading locally…" : "Upload screenshot or file"}
-        </label>
-        <button
-          onClick={structure}
-          disabled={ocrBusy || !messyText.trim()}
-          className="rounded-full bg-[#1d1d1f] px-6 py-2.5 text-xs font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-30"
-        >
-          Structure this
-        </button>
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Add record</p>
+        <h1 className="mt-3 text-[34px] font-semibold leading-[1.1] tracking-tight md:text-[42px]">Secure what matters.</h1>
+        <p className="mx-auto mt-3 max-w-md text-[14px] leading-6 text-[var(--ink-2)]">Add one important thing. Lyfos keeps it private, organized, and ready when your family needs clarity.</p>
       </div>
 
       {message && <div className="mt-6 rounded-2xl border border-[#34c759]/20 bg-[#34c759]/8 px-4 py-3 text-[13px] font-medium text-[var(--green-ink)]">{message}</div>}
@@ -4662,12 +4799,15 @@ function CaptureScreen({ vault, onSave, onNavigate }) {
         </div>
       )}
 
-      <div className="mt-12 border-t border-[var(--line)] pt-5">
+      <div className={cx("mt-8 rounded-[1.75rem] border border-[var(--line)] bg-[var(--surface)] p-5 shadow-[0_1px_2px_rgba(0,0,0,0.04)]", hasStructuredDrafts && "opacity-70")}>
         <button
           onClick={() => setShowManual((v) => !v)}
           className="flex w-full items-center justify-between text-left"
         >
-          <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Enter manually</span>
+          <span>
+            <span className="block text-[15px] font-semibold text-[var(--ink)]">{hasStructuredDrafts ? "Edit details" : "Enter details"}</span>
+            <span className="mt-0.5 block text-[12px] text-[var(--ink-3)]">The fastest path: title, type, detail, save.</span>
+          </span>
           <span className={cx("text-[var(--ink-5)] transition", showManual && "rotate-90")}>›</span>
           </button>
         {showManual && (
@@ -4695,13 +4835,39 @@ function CaptureScreen({ vault, onSave, onNavigate }) {
               </>
             )}
             <button
-              onClick={() => { setDrafts([{ ...manual, candidateId: crypto.randomUUID(), confidence: 1, warnings: [], extractedFields: [] }]); setSelectedDraftIndex(0); }}
-              className="md:col-span-2 mt-2 rounded-full border border-[var(--line)] bg-[var(--surface)] px-5 py-2.5 text-xs font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-2)]"
+              onClick={saveRecord}
+              className="md:col-span-2 mt-2 h-12 rounded-full bg-[var(--accent)] px-5 text-[13px] font-semibold text-white shadow-[0_10px_24px_rgba(22,163,74,0.18)] transition hover:translate-y-[-1px] hover:bg-[var(--accent-hover)]"
             >
-              Review record
+              Save protected record
             </button>
           </div>
         )}
+      </div>
+
+      <div className="mt-5 rounded-[1.5rem] border border-dashed border-[var(--line-2)] bg-[var(--surface-2)] p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-[13px] font-semibold text-[var(--ink)]">Have a screenshot or long note?</p>
+            <p className="mt-1 text-[12.5px] leading-5 text-[var(--ink-3)]">Paste it here. Lyfos can structure it before you save.</p>
+          </div>
+          <label className="shrink-0 cursor-pointer rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-4 py-2 text-[12px] font-semibold text-[var(--ink-2)] transition hover:text-[var(--ink)]">
+            <input className="hidden" type="file" accept="image/*,.txt,.csv,.md,application/pdf" onChange={handleUpload} />
+            {ocrBusy ? "Reading locally…" : "Upload file"}
+          </label>
+        </div>
+        <textarea
+          className="mt-4 min-h-28 w-full rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4 text-[14px] leading-6 outline-none transition focus:border-[var(--ink)]"
+          placeholder="Paste details, screenshot text, policy notes, or account instructions"
+          value={messyText}
+          onChange={(event) => setMessyText(event.target.value)}
+        />
+        <button
+          onClick={structure}
+          disabled={ocrBusy || !messyText.trim()}
+          className="mt-3 rounded-full border border-[var(--line)] bg-[var(--surface)] px-5 py-2.5 text-xs font-semibold text-[var(--ink)] transition hover:bg-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-35"
+        >
+          Structure before saving
+        </button>
       </div>
     </section>
   );
@@ -5698,8 +5864,8 @@ function RecoveryKeyPanel({ recoveryKey, recoveryConfirm, onGenerate, onConfirmC
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">Recovery phrase</p>
           <p className="mt-1.5 text-[13px] leading-[1.55] text-[var(--ink-2)]">
             {recoveryKey
-              ? "Save these 24 words somewhere safe. They're the only way back if you forget your passphrase — Lyfos can't show them again."
-              : "A 24-word phrase, separate from your vault phrase. The only way back if you forget the vault phrase."}
+              ? "Write these 24 words down and keep them offline. They are your backup key if the passphrase is ever forgotten."
+              : "Generate a private backup key. It stays with you and gives you a way back if the passphrase is forgotten."}
           </p>
         </div>
         <button
@@ -5735,7 +5901,7 @@ function RecoveryKeyPanel({ recoveryKey, recoveryConfirm, onGenerate, onConfirmC
           </div>
           {isBip39 && (
             <p className="mt-3 rounded-xl bg-[var(--surface-2)] px-3 py-2 text-[12px] leading-5 text-[var(--ink-2)]">
-              Next: save this phrase, tick the checkbox, then answer three word checks.
+              Next: save the phrase, tick the checkbox, then confirm three words.
             </p>
           )}
 
