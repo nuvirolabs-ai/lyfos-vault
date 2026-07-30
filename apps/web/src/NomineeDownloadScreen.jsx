@@ -228,7 +228,7 @@ function Status({ request, sharesCount }) {
     <div className="rounded-2xl border border-black/8 bg-white p-5">
       <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">State</p>
       <p className="mt-1 text-[14px] font-medium">{request.state.replace(/_/g, " ")}</p>
-      <p className="mt-2 text-[12px] text-[#86868b]">{sharesCount} of 5 shares released</p>
+      <p className="mt-2 text-[12px] text-[#86868b]">{sharesCount} of 3 required keys received</p>
       {request.state === "holding" && daysLeft !== null && (
         <p className="mt-2 text-[12px] text-[#86868b]">{daysLeft} day{daysLeft === 1 ? "" : "s"} until the hold expires</p>
       )}

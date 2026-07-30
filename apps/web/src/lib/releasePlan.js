@@ -232,13 +232,20 @@ export async function listReleasesAwaitingMyAction() {
   const releasedSet = new Set((alreadyReleased ?? []).map((r) => `${r.release_request_id}:${r.key_holder_id}`));
 
   // Stitch holder info onto each request
+  const contextByRequest = new Map();
+  await Promise.all(requests.map(async (req) => {
+    const { data, error } = await sb.rpc("holder_release_context", { p_request_id: req.id });
+    if (!error) contextByRequest.set(req.id, data ?? []);
+  }));
+
   return requests.map((req) => {
     const holder = myHolders.find((h) => h.owner_id === req.owner_id);
     return {
       ...req,
       myHolderId: holder?.id,
       myLabel: holder?.label,
-      iAlreadyReleased: holder ? releasedSet.has(`${req.id}:${holder.id}`) : false
+      iAlreadyReleased: holder ? releasedSet.has(`${req.id}:${holder.id}`) : false,
+      holderContext: contextByRequest.get(req.id) ?? []
     };
   });
 }

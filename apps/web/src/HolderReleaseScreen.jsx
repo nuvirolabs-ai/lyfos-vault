@@ -21,6 +21,7 @@ import React, { useEffect, useState } from "react";
 import { AuthScreen } from "./AuthScreen.jsx";
 import { getSession, onAuthStateChange, signOut } from "./lib/auth.js";
 import { listReleasesAwaitingMyAction, releaseMyShare } from "./lib/releasePlan.js";
+import { summarizeReleaseKeys } from "./lib/homeHealth.js";
 
 export function HolderReleaseScreen({ onReturnHome }) {
   const [session, setSession] = useState(null);
@@ -77,7 +78,7 @@ export function HolderReleaseScreen({ onReturnHome }) {
         <div className="flex items-baseline justify-between">
           <div>
             <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Lyfos · Key holder</p>
-            <h1 className="mt-1 text-[28px] font-semibold tracking-tight">Releases awaiting you</h1>
+            <h1 className="mt-1 text-[28px] font-semibold tracking-tight">Help open a family vault</h1>
           </div>
           <button onClick={() => signOut().then(() => setSession(null))} className="text-[12px] text-[#86868b] hover:text-[#1d1d1f]">Sign out</button>
         </div>
@@ -111,6 +112,12 @@ function HolderReleaseCard({ req, onChanged, session }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
+  const releaseSummary = summarizeReleaseKeys((req.holderContext ?? []).map((holder) => ({
+    id: holder.holder_id,
+    label: holder.holder_label,
+    status: holder.holder_status,
+    share_released: holder.share_released
+  })));
 
   if (req.iAlreadyReleased) {
     return (
@@ -156,15 +163,25 @@ function HolderReleaseCard({ req, onChanged, session }) {
   }
 
   return (
-    <div className="rounded-2xl border border-[#c88719]/30 bg-[#fff8eb] p-5">
-      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#7a4b00]">Awaiting your release</p>
-      <h3 className="mt-1 text-[18px] font-semibold tracking-tight">{req.myLabel}</h3>
-      <p className="mt-2 text-[13px] leading-5 text-[#7a4b00]">
-        Filed by <strong>{req.nominee_email_at_request}</strong>. State: {req.state.replace("_", " ")}.
+    <div className="rounded-3xl border border-[#c88719]/30 bg-[#fff8eb] p-6 md:p-7">
+      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#7a4b00]">Someone else's vault</p>
+      <h3 className="mt-2 text-[24px] font-semibold tracking-tight">You are helping open a family vault.</h3>
+      <p className="mt-3 text-[13px] leading-5 text-[#7a4b00]">
+        A release request was filed by <strong>{req.nominee_email_at_request}</strong>. It cannot open with one key: 3 of these 5 trusted people must release their share.
       </p>
-      <p className="mt-2 text-[12px] leading-5 text-[#7a4b00]/85">
-        If you trust this is real, type your release passphrase below. Three of five holders must release before the 14-day owner-protection hold begins — your owner gets daily alerts during that period and can abort.
-      </p>
+
+      <div className="mt-6 rounded-2xl border border-[#c88719]/20 bg-white/70 p-4">
+        <div className="flex items-baseline justify-between gap-4"><p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#7a4b00]">Keys received</p><strong className="text-[14px] text-[#7a4b00]">{releaseSummary.received} of {releaseSummary.required} required</strong></div>
+        <div className="mt-4 grid grid-cols-2 gap-2.5 md:grid-cols-5">
+          {releaseSummary.holders.map((holder) => {
+            const isMine = holder.id === req.myHolderId;
+            const received = holder.released;
+            return <div key={holder.id} className={`min-h-[82px] rounded-xl border p-3 ${isMine ? "border-[#1d1d1f] bg-white" : "border-black/8 bg-white/70"}`}><div className="text-[13px] font-semibold text-[#1d1d1f]">{holder.label}</div><div className={`mt-2 text-[11px] ${received ? "text-[#0b6b3a]" : isMine ? "font-semibold text-[#7a4b00]" : "text-[#86868b]"}`}>{received ? "Key received" : isMine ? "Your key" : "Waiting"}</div></div>;
+          })}
+        </div>
+      </div>
+
+      <p className="mt-5 text-[12px] leading-5 text-[#7a4b00]/85">If you trust this request, release only your own share. The vault stays sealed until the third valid share arrives, then the owner-protection hold begins.</p>
 
       <label className="mt-4 block">
         <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[#7a4b00]">Your release passphrase</span>
