@@ -51,7 +51,7 @@ import { prepareStage2BackupExport } from "./lib/stage2BackupManifest.js";
 import { initTelemetry, registerServiceWorker } from "./lib/telemetry.js";
 import { buildSnapshotsCsv, suggestedCsvFilename } from "./lib/csvExport.js";
 import { formatCurrency, formatCompact, DEFAULT_CURRENCY } from "./lib/currency.js";
-import { listMyKeyHolders, createKeyHolderInvite, revokeKeyHolder, sendInviteEmail, finalizeReleasePlan } from "./lib/releasePlan.js";
+import { listMyKeyHolders, createKeyHolderInvite, revokeKeyHolder, deleteKeyHolder, sendInviteEmail, finalizeReleasePlan } from "./lib/releasePlan.js";
 import { loadMyReleaseSettings, upsertMyReleaseSettings, rotateMyClaimToken, fetchActiveReleaseAgainstMe, ownerAbortRelease, isValidNomineeEmail } from "./lib/releaseClaim.js";
 import { fetchMySubscription, fetchMyBillingEvents, fetchMyBillingProfile, upsertMyBillingProfile, fetchInvoiceUrl, startUpgrade, cancelSubscriptionAtPeriodEnd, resumeSubscription } from "./lib/billing.js";
 import { PLANS, planFor, isPaid, entitlementsFor, daysLeftFor } from "./lib/plans.js";
@@ -5401,6 +5401,16 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
     }
   }
 
+  async function remove(holder) {
+    if (!window.confirm(`Delete ${holder.label}'s invite permanently? This removes the invite so you can send a new one to the same email.`)) return;
+    try {
+      await deleteKeyHolder(holder.id);
+      await refresh();
+    } catch (err) {
+      setError(err?.message || "Couldn't delete the invite.");
+    }
+  }
+
   async function finalize() {
     if (!vaultKey) {
       setError("Unlock your vault first.");
@@ -5454,7 +5464,7 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
             <p className="mt-1 text-[12px] text-[var(--ink-3)]">Invite five people who would help your nominee if something happens to you.</p>
           </div>
         )}
-        {holders.map((h) => <KeyHolderRow key={h.id} holder={h} onRevoke={() => revoke(h)} onResend={() => resendInvite(h)} resending={resendingId === h.id} />)}
+        {holders.map((h) => <KeyHolderRow key={h.id} holder={h} onRevoke={() => revoke(h)} onDelete={() => remove(h)} onResend={() => resendInvite(h)} resending={resendingId === h.id} />)}
       </div>
 
       <div className="mt-8 flex flex-col items-center gap-3">
@@ -5763,7 +5773,7 @@ function FinalizeModal({ acceptedHolders, finalizing, hasVaultKey, onCancel, onC
   );
 }
 
-function KeyHolderRow({ holder, onRevoke, onResend, resending }) {
+function KeyHolderRow({ holder, onRevoke, onDelete, onResend, resending }) {
   const inviteUrl = holder.status === "pending"
     ? `${typeof window !== "undefined" ? window.location.origin : ""}/invite/${holder.invite_token}`
     : null;
@@ -5809,7 +5819,12 @@ function KeyHolderRow({ holder, onRevoke, onResend, resending }) {
       )}
 
       <div className="mt-3 flex items-center justify-end">
-        <button onClick={onRevoke} className="text-[11px] font-medium text-[var(--red-2)] hover:underline">Revoke</button>
+        <div className="flex items-center gap-4">
+          {(["pending", "revoked"].includes(holder.status)) && (
+            <button onClick={onDelete} className="text-[11px] font-medium text-[var(--red-2)] hover:underline">Delete</button>
+          )}
+          <button onClick={onRevoke} className="text-[11px] font-medium text-[var(--red-2)] hover:underline">Revoke</button>
+        </div>
       </div>
     </div>
   );

@@ -73,6 +73,17 @@ export async function revokeKeyHolder(holderId) {
   if (error) throw error;
 }
 
+export async function deleteKeyHolder(holderId) {
+  if (!isSupabaseConfigured()) return;
+  const sb = getSupabase();
+  const { error } = await sb
+    .from("key_holders")
+    .delete()
+    .eq("id", holderId)
+    .in("status", ["pending", "revoked"]);
+  if (error) throw error;
+}
+
 /**
  * Send the invite email via the send-key-holder-invite Edge Function.
  * If the function isn't deployed yet (404), we surface the invite URL
