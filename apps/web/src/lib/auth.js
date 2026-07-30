@@ -136,7 +136,10 @@ function requireSupabase() {
 
 function emailRedirect() {
   if (typeof window === "undefined") return undefined;
-  return `${window.location.origin}/`;
+  const origin = window.location.origin;
+  const isLocalOrigin = /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
+  if (isLocalOrigin) return "https://app.lyfos.in/";
+  return `${origin}/`;
 }
 
 export { isSupabaseConfigured };
