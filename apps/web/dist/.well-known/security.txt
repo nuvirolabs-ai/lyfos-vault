@@ -1,9 +1,0 @@
-Contact: mailto:security@lyfos.signorvale.com
-Contact: https://lyfos.signorvale.com/security
-Expires: 2027-05-28T00:00:00.000Z
-Encryption: https://lyfos.signorvale.com/.well-known/pgp-key.txt
-Preferred-Languages: en
-Canonical: https://lyfos.signorvale.com/.well-known/security.txt
-Policy: https://lyfos.signorvale.com/security/disclosure
-Acknowledgments: https://lyfos.signorvale.com/security/hall-of-fame
-Hiring: https://lyfos.signorvale.com/careers

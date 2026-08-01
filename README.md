@@ -1,32 +1,58 @@
-# OS-One Vault Workspace
+# Lyfos Vault
 
-This workspace keeps the landing page separate from the product app.
+Lyfos is a local-first, zero-knowledge family vault for the records, money notes, IDs, insurance details, and recovery instructions a family may need one day.
 
-## Product App
+This repository is the **Free Forever** version: open source, self-hostable, and designed to run locally without paid infrastructure. The hosted free product is limited to 11 vault entries.
 
-Run locally:
+The **Paid Vault** is Nuviro Labs' private commercial version. Paid-only capabilities such as unlimited entries, personal balance sheet, cloud release workflow, and Circle of Trust release service launch separately.
+
+Repository: https://github.com/nuvirolabs-ai/lyfos-vault
+
+## What Is Open Source
+
+- Local-first encrypted vault experience.
+- Free Forever product surface.
+- Static marketing site and product app source.
+- Local development and self-hosting path.
+
+## What Stays Private
+
+- Paid Vault release service.
+- Commercial billing and paid entitlement logic.
+- Production operations, private keys, and hosted Supabase/Vercel credentials.
+
+## Run Locally
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Start the web app:
 
 ```bash
 npm run dev:web
 ```
 
-Build and package downloadable static web app:
+Run checks:
 
 ```bash
-npm run package:web
+npm run check -w @os-one/web
 ```
 
-Output:
+## Environment
 
-```text
-build/os-one-vault-web.zip
-```
+Copy `apps/web/.env.example` when you want connected auth, sync, waitlist, or email behavior. Without production Supabase credentials, the free app should remain usable for local-only testing.
 
-Current security boundary:
+Production secrets must stay outside Git. Do not commit `.env`, Supabase service-role keys, Resend keys, Razorpay keys, or Vercel tokens.
 
-- Local-first encrypted vault.
-- Passphrase-derived AES-GCM encryption before browser storage.
-- Encrypted backup export/import.
-- No cloud sync of secrets yet.
+## Security Boundary
 
-Do not market this as bank-grade or use it with real sensitive data until independent security review, native secure storage, audited recovery, and signed desktop builds are complete.
+- Vault contents are encrypted before browser storage.
+- Cloud sync and release features require correctly configured Supabase and Edge Functions.
+- This code still needs independent security review before being marketed for high-risk legal, medical, or financial custody.
+
+## Public Launch Notes
+
+Before making the repository public, choose and add a license. For an open-core product where the hosted paid service remains private, AGPL-3.0 is a common starting point, but confirm with legal counsel before publishing.

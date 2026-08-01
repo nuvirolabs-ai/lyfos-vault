@@ -1,8 +1,0 @@
-REPLACE THIS FILE.
-
-Generate a PGP key for security@lyfos.signorvale.com with:
-
-  gpg --quick-generate-key "Lyfos Security <security@lyfos.signorvale.com>" rsa4096 default 2y
-  gpg --armor --export security@lyfos.signorvale.com > apps/web/public/.well-known/pgp-key.txt
-
-Then commit the rebuilt dist bundle.
