@@ -2675,8 +2675,8 @@ function BillingSection({ subscription, entitlements, session, onSubscriptionCha
                     {p.bullets.map((b) => <li key={b}>{b}</li>)}
                   </ul>
                   <div className="mt-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
-                    <p className="text-[12px] font-medium text-[var(--ink)]">Vault is not opening on day one.</p>
-                    <p className="mt-1 text-[11px] leading-5 text-[var(--ink-3)]">Leave your email and we will tell you when paid Vault opens this fall.</p>
+                    <p className="text-[12px] font-medium text-[var(--ink)]">Launching this fall.</p>
+                    <p className="mt-1 text-[11px] leading-5 text-[var(--ink-3)]">Submit your email id and we will save it in the Vault launch list.</p>
                     <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                       <input
                         type="email"
@@ -2690,7 +2690,7 @@ function BillingSection({ subscription, entitlements, session, onSubscriptionCha
                         disabled={busy || !interestEmail.trim()}
                         className="rounded-full bg-[#1d1d1f] px-4 py-2 text-[12px] font-semibold text-white disabled:opacity-40"
                       >
-                        {busy ? "Saving…" : "Notify me"}
+                        {busy ? "Saving…" : "Submit email"}
                       </button>
                     </div>
                     {interestSaved && <p className="mt-2 text-[11px] font-medium text-[var(--green-ink)]">You are on the list. Vault launches this fall.</p>}

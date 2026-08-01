@@ -85,7 +85,7 @@
       <p style="margin: 16px 0 10px; color: var(--green); font-size: 13px; font-weight: 700;">Coming this fall</p>
       <form class="signup-row" data-vault-interest-form data-source="vault-fall-interest-marketing-pricing" novalidate style="margin-top: 10px;">
         <input type="email" name="email" placeholder="you@example.com" autocomplete="email" required />
-        <button class="btn primary cta" type="submit">Notify me</button>
+        <button class="btn primary cta" type="submit">Submit email</button>
       </form>
       <p id="vaultPayStatus" class="pay-status" data-vault-interest-status role="status" aria-live="polite"></p>
     </div>
@@ -159,11 +159,10 @@
       const email=(input&&input.value||'').trim(); if(!RE.test(email)){ show('Please enter a valid email address.',false); input&&input.focus(); return; }
       const configured=endpoint && !/YOUR-PROJECT/.test(endpoint);
       function done(){ form.hidden=true; show('You’re on the list. Vault launches this fall.',true); }
-      function fallback(){ const s=encodeURIComponent('Notify me when Lyfos Vault launches'); const b=encodeURIComponent('Please add '+email+' to the Lyfos Vault fall launch list.'); try{ window.location.href='mailto:hello@nuvirolabs.com?subject='+s+'&body='+b; }catch(_){} done(); }
-      if(!configured){ fallback(); return; }
+      if(!configured){ show('Email capture is not configured. Please try again in a few minutes.',false); return; }
       if(btn){ btn.disabled=true; btn.dataset.label=btn.textContent; btn.textContent='Saving…'; }
       try{ const r=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email,source:form.dataset.source||'vault-fall-interest-marketing-pricing',referrer:document.referrer||''})}); if(!r.ok) throw 0; done(); }
-      catch(_){ if(btn){ btn.disabled=false; btn.textContent=btn.dataset.label||'Notify me'; } fallback(); }
+      catch(_){ if(btn){ btn.disabled=false; btn.textContent=btn.dataset.label||'Submit email'; } show('Could not submit right now. Please try again.',false); }
     });
   });
 })();
