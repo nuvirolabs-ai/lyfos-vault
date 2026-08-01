@@ -10,54 +10,40 @@
 export const PLANS = {
   free: {
     id: "free",
-    label: "Free",
+    label: "Free Forever",
     amountInr: 0,
     amountUsd: 0,
     interval: "year",
-    vaultItemLimit: 10,
+    vaultItemLimit: 11,
     keyHolderLimit: 0,
+    balanceSheetEnabled: false,
     releaseEnabled: false,
-    summary: "Balance sheet + up to 10 vault records.",
+    summary: "A private starter vault for 11 important entries.",
     bullets: [
-      "Net worth + balance sheet, every feature",
-      "Up to 10 vault records",
+      "Up to 11 vault entries",
       "Encrypted backup + multi-device sync",
-      "No release service — for that, upgrade"
+      "Recovery phrase",
+      "No personal balance sheet",
+      "No Circle of Trust release service"
     ]
   },
   vault: {
     id: "vault",
     label: "Vault",
     amountInr: 99900,    // 999 INR in paise
-    amountUsd: 1500,      // $15 USD in cents
+    amountUsd: 900,       // $9 USD in cents
     interval: "year",
     vaultItemLimit: Infinity,
     keyHolderLimit: 5,
+    balanceSheetEnabled: true,
     releaseEnabled: true,
-    summary: "Unlimited vault + real release service.",
+    summary: "Unlimited family vault with balance sheet and release.",
     bullets: [
-      "Unlimited vault records",
-      "5 verified key holders",
-      "Real release engine with 14-day owner hold",
-      "Multi-channel alerts (email + SMS + WhatsApp)",
-      "Annual death-drill reminder"
-    ]
-  },
-  family: {
-    id: "family",
-    label: "Family",
-    amountInr: 249900,   // 2499 INR in paise
-    amountUsd: 4500,
-    interval: "year",
-    vaultItemLimit: Infinity,
-    keyHolderLimit: 5,
-    releaseEnabled: true,
-    summary: "Up to 4 vaults under one account.",
-    bullets: [
-      "Up to 4 vaults (you, spouse, parents)",
-      "Each vault: unlimited records + full release",
-      "Shared key holders across vaults if you want",
-      "Annual coordinated review with all members"
+      "Unlimited vault entries",
+      "Personal balance sheet",
+      "Circle of Trust with 5 nominees/key holders",
+      "3-of-5 release engine with owner-protection hold",
+      "Invite emails and release alerts"
     ]
   }
 };
@@ -67,7 +53,11 @@ export function planFor(planId) {
 }
 
 export function isPaid(planId) {
-  return planId === "vault" || planId === "family";
+  return planId === "vault";
+}
+
+export function paidPlans() {
+  return [PLANS.vault];
 }
 
 /**
@@ -78,7 +68,8 @@ export function isPaid(planId) {
 export function entitlementsFor(subscription) {
   if (!subscription) return { ...planFor("free"), effective: "free", source: "no_subscription" };
 
-  const planId = subscription.plan ?? "free";
+  const requestedPlanId = subscription.plan ?? "free";
+  const planId = isPaid(requestedPlanId) ? requestedPlanId : "free";
   const status = subscription.status ?? "active";
   const plan   = planFor(planId);
 

@@ -29,7 +29,16 @@
 <link rel="icon" type="image/svg+xml" href="/icon.svg" />
 <!-- Privacy-respecting analytics (no cookies, no personal data). Activates once a
      Plausible account exists for the domain; harmless 404 otherwise. -->
-<!-- Google Analytics (GA4) — replace G-8Q8BTLW0N6 (in BOTH spots) with your Measurement ID --><script async src="https://www.googletagmanager.com/gtag/js?id=G-8Q8BTLW0N6"></script><script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-8Q8BTLW0N6');</script>
+<!-- Google tag (gtag.js) -->
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-B6QDMDNL02"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-B6QDMDNL02');
+</script>
 <!-- Set motion preference before paint: follow the OS by default, allow override. -->
 <script>(function(){try{var m=localStorage.getItem('lyfos-motion')||'on';document.documentElement.setAttribute('data-motion',m);}catch(e){document.documentElement.setAttribute('data-motion','on');}
 /* Always open at the hero — never restore the visitor's last scroll position. */
@@ -813,40 +822,30 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
   <section class="pricing" id="pricing">
     <div class="wrap">
       <span class="eyebrow reveal">Pricing</span>
-      <h2 class="reveal" style="margin-top:12px;">Free in beta. Founder pricing, locked for life.</h2>
-      <p class="reveal" style="max-width:46ch;margin:14px auto 0;color:var(--ink-2);">Everything below is <strong>free for everyone while we're in beta</strong>. These are the prices when we leave beta — join now and yours stay locked, for life.</p>
+      <h2 class="reveal" style="margin-top:12px;">Two versions. Clear forever.</h2>
+      <p class="reveal" style="max-width:46ch;margin:14px auto 0;color:var(--ink-2);">Start with 11 encrypted entries for free. Upgrade only when you want the full family vault: unlimited entries, personal balance sheet, and Circle of Trust release.</p>
       <div class="price-grid">
         <div class="price reveal">
-          <div class="tag">Free</div>
+          <div class="tag">Free Forever</div>
           <div class="amt">₹0<span> / forever</span></div>
           <ul>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> 10 encrypted records</li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Monthly balance sheet</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> 11 encrypted entries</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Encrypted cloud sync</li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> 24-word recovery phrase</li>
           </ul>
           <a class="btn btn-ghost btn-lg" href="https://app.lyfos.in">Start free</a>
         </div>
-        <div class="price reveal">
-          <div class="tag">Vault · for one</div>
-          <div class="amt">₹999<span> / year</span></div>
-          <ul>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Unlimited records</li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> The full release engine</li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Encrypted sync across devices</li>
-          </ul>
-          <button class="btn btn-ghost btn-lg" type="button" data-razorpay-checkout data-amount="99900" data-currency="INR" data-name="Lyfos" data-description="Lyfos Vault annual access" data-receipt="lyfos_vault_annual_home" data-status-target="homeVaultPayStatus">Pay with Razorpay</button>
-          <p id="homeVaultPayStatus" class="pay-status" data-razorpay-status></p>
-        </div>
         <div class="price feature reveal">
-          <div class="tag">Family · most popular</div>
-          <div class="amt">₹2,499<span> / year</span></div>
+          <div class="tag">Vault · full product</div>
+          <div class="amt">₹999<span> / year</span></div>
+          <p class="tiny" style="margin:6px 0 0;color:var(--ink-2);">$9/year internationally</p>
           <ul>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Five vaults, one bill — the whole household</li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Everything in Vault, for each person</li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> One monthly ritual for the family's money</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Unlimited entries</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Personal balance sheet</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Circle of Trust release</li>
           </ul>
-          <button class="btn btn-green btn-lg" type="button" data-razorpay-checkout data-amount="249900" data-currency="INR" data-name="Lyfos" data-description="Lyfos Family annual access" data-receipt="lyfos_family_annual_home" data-status-target="homeFamilyPayStatus">Pay with Razorpay</button>
-          <p id="homeFamilyPayStatus" class="pay-status" data-razorpay-status></p>
+          <button class="btn btn-green btn-lg" type="button" data-razorpay-checkout data-amount="99900" data-currency="INR" data-name="Lyfos" data-description="Lyfos Vault annual access" data-receipt="lyfos_vault_annual_home" data-status-target="homeVaultPayStatus">Pay with Razorpay</button>
+          <p id="homeVaultPayStatus" class="pay-status" data-razorpay-status></p>
         </div>
       </div>
       <p class="tiny reveal" style="margin-top:22px;"><a href="/pricing/" style="color:var(--green-ink);border-bottom:1px solid color-mix(in srgb,var(--green) 35%,transparent);">compare all plans →</a> · GST invoices · cancel anytime</p>

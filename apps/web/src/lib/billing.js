@@ -123,11 +123,11 @@ export async function fetchInvoiceUrl(pdfPath) {
  * backend signature check passes.
  *
  * @param {object} opts
- * @param {string} opts.plan       'vault' | 'family'
+ * @param {string} opts.plan       'vault'
  * @param {string} [opts.provider] 'razorpay' (default) | 'stripe'
  */
 export async function startUpgrade({ plan, provider = "razorpay" }) {
-  if (plan !== "vault" && plan !== "family") throw new Error("plan must be 'vault' or 'family'");
+  if (plan !== "vault") throw new Error("plan must be 'vault'");
   if (provider !== "razorpay") throw new Error("Only Razorpay Standard Checkout is configured");
 
   const selected = planFor(plan);

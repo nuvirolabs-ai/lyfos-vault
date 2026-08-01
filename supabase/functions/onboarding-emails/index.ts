@@ -45,8 +45,8 @@ const EMAILS: Email[] = [
   },
   {
     n: 5, day: 14,
-    subject: "You're almost at the free-tier limit",
-    body: (name) => `Hi ${name},\n\nYou have records approaching the free tier cap of 10. Two short notes:\n\n  → If you only need 10, stay on free forever. No expiry, no nag screens. We mean it.\n\n  → If you want the release plan — the 3-of-5 holders, the 14-day owner-protection hold, the multi-channel alerts — that's on the paid Vault plan at ₹999/year.\n\nThe release plan is the reason most people upgrade.\n\n  → Upgrade: ${APP_URL}/upgrade?plan=vault\n\nIf you're undecided, reply with what's making you hesitate. I'll either help you stay free, or help you decide.\n\n— Founder, Lyfos`,
+    subject: "You're almost at the Free Forever limit",
+    body: (name) => `Hi ${name},\n\nYou have records approaching the Free Forever cap of 11. Two short notes:\n\n  → If you only need 11 entries, stay on Free Forever. No expiry, no nag screens. We mean it.\n\n  → If you want unlimited entries, personal balance sheet, and the Circle of Trust release plan, that's on Vault at ₹999/year in India or $9/year internationally.\n\nThe release plan is the reason most people upgrade.\n\n  → Upgrade: ${APP_URL}/upgrade?plan=vault\n\nIf you're undecided, reply with what's making you hesitate. I'll either help you stay free, or help you decide.\n\n— Founder, Lyfos`,
     condition: (u) => (u.record_count ?? 0) >= 8 && !u.is_paid
   },
   {

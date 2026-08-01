@@ -7,10 +7,9 @@
 // STRIPE_SECRET_KEY is set.
 //
 // Required Razorpay setup (one-time, in Razorpay dashboard):
-//   1. Create two recurring Plans (Settings → Subscriptions → Plans):
-//        - "Lyfos Vault yearly"  · amount 99900 paise  · period yearly
-//        - "Lyfos Family yearly" · amount 249900 paise · period yearly
-//      Note the plan IDs (plan_xxx).
+//   1. Create one recurring Plan (Settings → Subscriptions → Plans):
+//        - "Lyfos Vault yearly" · amount 99900 paise · period yearly
+//      Note the plan ID (plan_xxx).
 //   2. Configure webhook: <project>.supabase.co/functions/v1/razorpay-webhook
 //      Subscribe to: subscription.activated, subscription.charged,
 //                    subscription.halted, subscription.cancelled,
@@ -21,13 +20,11 @@
 //   RAZORPAY_KEY_ID         (from API Keys page)
 //   RAZORPAY_KEY_SECRET     (from API Keys page)
 //   RAZORPAY_PLAN_VAULT     (plan_xxx for the Vault yearly plan)
-//   RAZORPAY_PLAN_FAMILY    (plan_xxx for the Family yearly plan)
 //   APP_URL                 (already set from Phase 2)
 //
 // Optional Stripe:
 //   STRIPE_SECRET_KEY
 //   STRIPE_PRICE_VAULT
-//   STRIPE_PRICE_FAMILY
 
 // @ts-ignore Deno
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
@@ -48,14 +45,12 @@ const RZP_SECRET   = Deno.env.get("RAZORPAY_KEY_SECRET") ?? "";
 // @ts-ignore
 const RZP_PLAN_VAULT  = Deno.env.get("RAZORPAY_PLAN_VAULT")  ?? "";
 // @ts-ignore
-const RZP_PLAN_FAMILY = Deno.env.get("RAZORPAY_PLAN_FAMILY") ?? "";
 
 // @ts-ignore
 const STRIPE_KEY = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 // @ts-ignore
 const STRIPE_PRICE_VAULT  = Deno.env.get("STRIPE_PRICE_VAULT")  ?? "";
 // @ts-ignore
-const STRIPE_PRICE_FAMILY = Deno.env.get("STRIPE_PRICE_FAMILY") ?? "";
 
 serve(async (req) => {
   if (req.method !== "POST") return json({ ok: false, error: "method not allowed" }, 405);
@@ -73,7 +68,7 @@ serve(async (req) => {
   try { body = await req.json(); } catch { body = {}; }
   const plan = body?.plan;
   const provider = body?.provider ?? "razorpay";
-  if (plan !== "vault" && plan !== "family") return json({ ok: false, error: "plan must be 'vault' or 'family'" }, 400);
+  if (plan !== "vault") return json({ ok: false, error: "plan must be 'vault'" }, 400);
 
   // Reject if already on a paid plan (active or trialing). We allow
   // upgrade from past_due so the user can fix payment.
@@ -86,7 +81,7 @@ serve(async (req) => {
     if (!RZP_KEY || !RZP_SECRET) {
       return json({ ok: false, error: "razorpay not configured on this deployment" }, 503);
     }
-    const planId = plan === "vault" ? RZP_PLAN_VAULT : RZP_PLAN_FAMILY;
+    const planId = RZP_PLAN_VAULT;
     if (!planId) return json({ ok: false, error: "razorpay plan id missing for " + plan }, 503);
     return await createRazorpaySubscription({ admin, user, plan, planId });
   }
@@ -95,7 +90,7 @@ serve(async (req) => {
     if (!STRIPE_KEY) {
       return json({ ok: false, error: "stripe not configured on this deployment" }, 503);
     }
-    const priceId = plan === "vault" ? STRIPE_PRICE_VAULT : STRIPE_PRICE_FAMILY;
+    const priceId = STRIPE_PRICE_VAULT;
     if (!priceId) return json({ ok: false, error: "stripe price id missing for " + plan }, 503);
     return await createStripeSession({ admin, user, plan, priceId });
   }

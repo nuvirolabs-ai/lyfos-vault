@@ -54,7 +54,7 @@ import { formatCurrency, formatCompact, DEFAULT_CURRENCY } from "./lib/currency.
 import { listMyKeyHolders, createKeyHolderInvite, revokeKeyHolder, deleteKeyHolder, sendInviteEmail, finalizeReleasePlan, summarizeKeyHolders, buildTrustRosterSlots, listKeysIHeld, summarizeHeldKeys } from "./lib/releasePlan.js";
 import { loadMyReleaseSettings, upsertMyReleaseSettings, rotateMyClaimToken, fetchActiveReleaseAgainstMe, ownerAbortRelease, isValidNomineeEmail } from "./lib/releaseClaim.js";
 import { fetchMySubscription, fetchMyBillingEvents, fetchMyBillingProfile, upsertMyBillingProfile, fetchInvoiceUrl, startUpgrade, cancelSubscriptionAtPeriodEnd, resumeSubscription } from "./lib/billing.js";
-import { PLANS, planFor, isPaid, entitlementsFor, daysLeftFor } from "./lib/plans.js";
+import { planFor, entitlementsFor, daysLeftFor, paidPlans } from "./lib/plans.js";
 import { isSupabaseConfigured } from "./lib/supabaseClient.js";
 import { getSession, onAuthStateChange, signOut, appendServerAuditEvent, ensureDeviceToken, getDeviceToken, deleteAccount } from "./lib/auth.js";
 import {
@@ -1873,15 +1873,36 @@ function AllRecords({ vault, onOpenRecord }) {
   );
 }
 
-function RailItem({ active, onClick, icon, label, count, dot, dataTour, pulse, collapsed = false }) {
+function RailItem({ active, onClick, icon, label, count, dot, dataTour, pulse, locked = false, collapsed = false }) {
   return (
-    <button data-tour={dataTour} onClick={onClick} aria-label={label} title={collapsed ? label : undefined} className={cx("flex w-full items-center gap-3 rounded-[10px] py-2 text-[14px] transition", collapsed ? "justify-center px-2" : "px-2.5", active ? "bg-[var(--green-soft)] font-medium text-[var(--ink)]" : "text-[var(--ink-2)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]", pulse && "tour-pulse")}>
+    <button data-tour={dataTour} onClick={onClick} aria-label={label} title={collapsed ? label : undefined} className={cx("flex w-full items-center gap-3 rounded-[10px] py-2 text-[14px] transition", collapsed ? "justify-center px-2" : "px-2.5", active ? "bg-[var(--green-soft)] font-medium text-[var(--ink)]" : "text-[var(--ink-2)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]", locked && !active && "opacity-60", pulse && "tour-pulse")}>
       {dot ? <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: dot }} /> : (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={active ? "var(--accent)" : "var(--ink-3)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d={icon} /></svg>
       )}
       {!collapsed && <span className="flex-1 truncate text-left">{label}</span>}
+      {!collapsed && locked && <span className="text-[11px] text-[var(--ink-4)]">Lock</span>}
       {!collapsed && count != null && <span className={cx("text-[12px] tabular-nums", count === 0 ? "text-[var(--rose,#c0335e)]" : "text-[var(--ink-4)]")}>{count}</span>}
     </button>
+  );
+}
+
+function PaidFeatureLock({ feature, body, onOpenSettings }) {
+  return (
+    <section className="mx-auto max-w-xl py-8 text-center">
+      <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-[var(--green-soft)]">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+          <rect x="5" y="11" width="14" height="10" rx="2.5" />
+        </svg>
+      </div>
+      <p className="mt-6 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Paid feature</p>
+      <h1 className="mt-3 text-[34px] font-semibold leading-[1.1] tracking-tight md:text-[42px]">{feature}</h1>
+      <p className="mx-auto mt-4 max-w-md text-[14px] leading-6 text-[var(--ink-2)]">{body}</p>
+      <button onClick={onOpenSettings} className="mt-7 rounded-full bg-[#1d1d1f] px-6 py-3 text-[13px] font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition hover:bg-black">
+        Upgrade to Vault
+      </button>
+      <p className="mt-3 text-[11px] text-[var(--ink-4)]">Free Forever includes 11 vault entries. Vault is ₹999/year in India or $9/year internationally.</p>
+    </section>
   );
 }
 
@@ -2221,14 +2242,23 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
   const hasBalance = (vault.balanceSheet?.accounts?.length ?? 0) > 0;
   const holdersFilled = (vault.releaseSettings?.keyHolders ?? []).filter((h) => h.trim()).length;
   const hasRelease = Boolean(vault.releaseSettings?.mainNominee?.trim()) && holdersFilled >= RELEASE_POLICY.requiredKeys;
-  const nextAction = !hasRecords ? "capture" : !hasBalance ? "money" : !hasRelease ? "release" : null;
+  const canUseBalanceSheet = entitlements?.balanceSheetEnabled ?? false;
+  const canUseRelease = entitlements?.releaseEnabled ?? false;
+  const freeLimitReached = Number.isFinite(entitlements?.vaultItemLimit) && vault.items.length >= entitlements.vaultItemLimit;
+  const nextAction = !hasRecords
+    ? "capture"
+    : canUseBalanceSheet && !hasBalance
+      ? "money"
+      : canUseRelease && !hasRelease
+        ? "release"
+        : null;
   const hint = (id) => !showTour && nextAction === id && screen !== id;
 
   const railWorkspace = [
     { id: "home", label: "Home", icon: "M4 11 L12 4 L20 11 M6 9.5 V20 H18 V9.5" },
     { id: "records", label: "All records", icon: "M4 4 h16 v16 H4 Z M4 9 H20", count: vault.items.length },
-    { id: "money", label: "Balance sheet", icon: "M3 18 L9 11 L13 15 L21 6 M21 6 H16 M21 6 V11" },
-    { id: "release", label: "Circle of trust", icon: "M12 3 L20 6 V12 C 20 17 16 20 12 21 C 8 20 4 17 4 12 V6 Z M9 12 l2 2 l4 -4" }
+    { id: "money", label: "Balance sheet", icon: "M3 18 L9 11 L13 15 L21 6 M21 6 H16 M21 6 V11", locked: !canUseBalanceSheet },
+    { id: "release", label: "Circle of trust", icon: "M12 3 L20 6 V12 C 20 17 16 20 12 21 C 8 20 4 17 4 12 V6 Z M9 12 l2 2 l4 -4", locked: !canUseRelease }
   ];
 
   return (
@@ -2257,7 +2287,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
           </button>
           {!railCollapsed && <div className="px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">Workspace</div>}
           <div className="mt-1.5 space-y-0.5">
-            {railWorkspace.map((n) => <RailItem key={n.id} collapsed={railCollapsed} active={screen === n.id} onClick={() => setScreen(n.id)} icon={n.icon} label={n.label} count={n.count} dataTour={n.id === "release" ? "trust" : undefined} pulse={hint(n.id)} />)}
+            {railWorkspace.map((n) => <RailItem key={n.id} collapsed={railCollapsed} active={screen === n.id} onClick={() => setScreen(n.id)} icon={n.icon} label={n.label} count={n.count} locked={n.locked} dataTour={n.id === "release" ? "trust" : undefined} pulse={hint(n.id)} />)}
           </div>
           {!railCollapsed && <div className="mt-6 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">Life areas</div>}
           <div className="mt-1.5 space-y-0.5">
@@ -2265,7 +2295,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
           </div>
           {!railCollapsed && <div className="mt-6 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">You</div>}
           <div className="mt-1.5 space-y-0.5">
-            <RailItem collapsed={railCollapsed} active={screen === "capture"} onClick={() => setScreen("capture")} icon="M12 5 V19 M5 12 H19" label="Add a record" dataTour="add" pulse={hint("capture")} />
+            <RailItem collapsed={railCollapsed} active={screen === "capture"} onClick={() => setScreen("capture")} icon="M12 5 V19 M5 12 H19" label="Add a record" count={freeLimitReached ? `${vault.items.length}/${entitlements.vaultItemLimit}` : undefined} dataTour="add" pulse={hint("capture")} />
             <RailItem collapsed={railCollapsed} active={screen === "settings"} onClick={() => setScreen("settings")} icon="M12 9 a3 3 0 1 0 0 6 a3 3 0 0 0 0-6 Z M12 2 v3 M12 19 v3 M5 5 l2 2 M17 17 l2 2 M2 12 h3 M19 12 h3 M5 19 l2-2 M17 7 l2-2" label="Settings" />
           </div>
         </aside>
@@ -2275,7 +2305,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
           {/* Mobile nav — must include Add a record + Settings (no rail on phones) */}
           <div className="mb-5 flex gap-2 overflow-x-auto pb-1 lg:hidden">
             {railWorkspace.map((n) => (
-              <button key={n.id} onClick={() => setScreen(n.id)} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", screen === n.id ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]", hint(n.id) && "tour-pulse")}>{n.label}</button>
+              <button key={n.id} onClick={() => setScreen(n.id)} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", screen === n.id ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]", n.locked && screen !== n.id && "opacity-60", hint(n.id) && "tour-pulse")}>{n.label}{n.locked ? " · Locked" : ""}</button>
             ))}
             <button onClick={() => setScreen("capture")} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", screen === "capture" ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]", hint("capture") && "tour-pulse")}>+ Add</button>
             <button onClick={() => setScreen("settings")} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", screen === "settings" ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]")}>Settings</button>
@@ -2306,11 +2336,11 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
             <div className="min-w-0 flex-1">
               {screen === "home"    && <FamilyHomeDashboard vault={vault} onNavigate={setScreen} onOpenArea={openArea} onOpenRecord={openRecord} />}
               {screen === "records" && <AllRecords vault={vault} onOpenRecord={openRecord} />}
-              {screen === "money"   && <BalanceSheetDashboard vault={vault} onSave={onSave} onNavigate={setScreen} />}
+              {screen === "money"   && (canUseBalanceSheet ? <BalanceSheetDashboard vault={vault} onSave={onSave} onNavigate={setScreen} /> : <PaidFeatureLock feature="Personal balance sheet" body="Free Forever keeps your first 11 vault entries safe. Upgrade when you want assets, liabilities, net worth history, and the calm financial view inside Lyfos." onOpenSettings={() => setScreen("settings")} />)}
               {screen === "setup"   && <SetupScreen vault={vault} onSave={onSave} onNavigate={setScreen} />}
               {screen === "update"  && <UpdateScreen vault={vault} onSave={onSave} onNavigate={setScreen} />}
-              {screen === "capture" && <CaptureScreen vault={vault} onSave={onSave} onNavigate={(s) => setScreen(s === "life" ? "home" : s)} />}
-              {screen === "release" && <ReleaseScreen vault={vault} onSave={onSave} session={session} vaultKey={vaultKey} entitlements={entitlements} autoPreview={releaseAutoPreview} />}
+              {screen === "capture" && <CaptureScreen vault={vault} onSave={onSave} entitlements={entitlements} onNavigate={(s) => setScreen(s === "life" ? "home" : s)} />}
+              {screen === "release" && (canUseRelease ? <ReleaseScreen vault={vault} onSave={onSave} session={session} vaultKey={vaultKey} entitlements={entitlements} autoPreview={releaseAutoPreview} /> : <PaidFeatureLock feature="Circle of Trust" body="The nominee release service is a paid feature because it needs verified key holders, invite email delivery, owner-protection holds, and release alerts." onOpenSettings={() => setScreen("settings")} />)}
               {screen === "area"    && <CategoryWorkspace vault={vault} area={selectedArea} initialRecordId={pendingRecordId} onSave={onSave} onCapture={() => setScreen("capture")} onClose={() => setScreen("home")} entitlements={entitlements} onOpenSettings={() => setScreen("settings")} />}
             {screen === "settings" && <SettingsPage vault={vault} onExport={onExport} onReset={onReset} onLoadDemo={loadDemoData} session={session} onShowAuthScreen={onShowAuthScreen} onSignOut={onSignOut} subscription={subscription} entitlements={entitlements} onSubscriptionChange={onSubscriptionChange} autoLockMs={autoLockMs} onAutoLockChange={onAutoLockChange} />}
 
@@ -2605,7 +2635,7 @@ function BillingSection({ subscription, entitlements, onSubscriptionChange }) {
             <p className="text-[14px] font-semibold text-[var(--ink)]">Lyfos {plan.label}</p>
             <p className="mt-0.5 text-[12px] text-[var(--ink-3)]">
               {subscription?.plan === "free" || !subscription
-                ? "Free tier · upgrade to enable the release service"
+                ? "Free Forever · 11 entries, upgrade for balance sheet and release"
                 : subscription.status === "active"  ? `Active${renewal !== null ? ` · renews in ${renewal} day${renewal === 1 ? "" : "s"}` : ""}`
                 : subscription.status === "past_due" ? `Past due · grace period ends in ${renewal ?? "?"} days`
                 : subscription.status === "trialing" ? `Trialing${renewal !== null ? ` · ${renewal} day${renewal === 1 ? "" : "s"} left` : ""}`
@@ -2639,8 +2669,8 @@ function BillingSection({ subscription, entitlements, onSubscriptionChange }) {
 
         {showPlans && (
           <div className="mt-4 space-y-3 border-t border-[var(--line)] pt-4">
-            {["vault", "family"].map((pid) => {
-              const p = planFor(pid);
+            {paidPlans().map((p) => {
+              const pid = p.id;
               return (
                 <div key={pid} className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-4">
                   <div className="flex items-baseline justify-between gap-3">
@@ -4821,7 +4851,7 @@ function AttachmentGrid({ attachments, onDelete, onReplace, onExtract, tone = "l
   );
 }
 
-function CaptureScreen({ vault, onSave, onNavigate }) {
+function CaptureScreen({ vault, onSave, entitlements, onNavigate }) {
   const [messyText, setMessyText] = useState("");
   const [drafts, setDrafts] = useState([]);
   const [selectedDraftIndex, setSelectedDraftIndex] = useState(0);
@@ -4831,6 +4861,8 @@ function CaptureScreen({ vault, onSave, onNavigate }) {
   const [ocrBusy, setOcrBusy] = useState(false);
   const activeDraft = drafts[selectedDraftIndex] ?? manual;
   const hasStructuredDrafts = drafts.length > 0;
+  const itemLimit = entitlements?.vaultItemLimit;
+  const limitReached = Number.isFinite(itemLimit) && vault.items.length >= itemLimit;
 
   async function handleUpload(event) {
     const file = event.target.files?.[0];
@@ -4870,6 +4902,10 @@ function CaptureScreen({ vault, onSave, onNavigate }) {
   }
 
   async function saveRecord() {
+    if (limitReached) {
+      setMessage(`Free Forever includes ${itemLimit} entries. Upgrade to Vault for unlimited entries, balance sheet, and Circle of Trust release.`);
+      return;
+    }
     const title = activeDraft.title?.trim();
     if (!title) {
       setMessage("Add a clear title before saving.");
@@ -4914,7 +4950,13 @@ function CaptureScreen({ vault, onSave, onNavigate }) {
         <p className="mx-auto mt-3 max-w-md text-[14px] leading-6 text-[var(--ink-2)]">Add one important thing. Lyfos keeps it private, organized, and ready when your family needs clarity.</p>
       </div>
 
-      {message && <div className="mt-6 rounded-2xl border border-[#34c759]/20 bg-[#34c759]/8 px-4 py-3 text-[13px] font-medium text-[var(--green-ink)]">{message}</div>}
+      {limitReached && (
+        <div className="mt-6 rounded-2xl border border-[#c88719]/30 bg-[var(--amber-soft)] px-4 py-3 text-[13px] leading-5 text-[var(--amber-ink)]">
+          <strong>Free Forever limit reached.</strong> You have {vault.items.length} of {itemLimit} entries. Existing entries stay editable; upgrade to Vault to add more.
+        </div>
+      )}
+
+      {message && <div className={cx("mt-6 rounded-2xl border px-4 py-3 text-[13px] font-medium", message.includes("Free Forever") ? "border-[#c88719]/30 bg-[var(--amber-soft)] text-[var(--amber-ink)]" : "border-[#34c759]/20 bg-[#34c759]/8 text-[var(--green-ink)]")}>{message}</div>}
 
       {hasStructuredDrafts && drafts.length > 1 && (
         <div className="mt-8">
@@ -5605,7 +5647,7 @@ function FreeReleaseUpgradePrompt() {
         Finalizing splits your vault key into 5 cryptographic shares and turns on the live release service. It's the central paid feature.
       </p>
       <p className="mt-3 text-[13px] leading-5 text-[var(--amber-ink)]">
-        Open <strong>Settings → Billing</strong> to upgrade to Lyfos Vault (₹999/yr) or Family (₹2,499/yr).
+        Open <strong>Settings → Billing</strong> to upgrade to Lyfos Vault (₹999/year in India or $9/year internationally).
       </p>
     </div>
   );
