@@ -1,0 +1,45 @@
+name: Bug report
+description: Report a problem in the Free Forever Lyfos Vault.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Do not include real vault contents, secrets, or private user data.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the problem clearly.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the smallest set of steps that reproduces the issue.
+      placeholder: |
+        1. Open...
+        2. Click...
+        3. See...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Browser, OS, and whether this is local or hosted.
+      placeholder: "Safari 18, macOS, local dev"
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Add safe screenshots or logs. Redact private information.

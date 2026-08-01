@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest an improvement for the Free Forever Lyfos Vault.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please keep requests focused on the public Free Forever product. Paid Vault service features may stay private.
+  - type: textarea
+    id: need
+    attributes:
+      label: User need
+      description: What real user problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe the smallest calm version of the feature.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Product area
+      options:
+        - Vault records
+        - Backup and restore
+        - Privacy or security
+        - Accessibility
+        - Documentation
+        - Local development
+        - Other
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Add any constraints, examples, or alternatives.
