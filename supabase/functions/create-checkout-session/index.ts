@@ -37,6 +37,8 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // @ts-ignore
 const APP_URL      = Deno.env.get("APP_URL") ?? "https://app.lyfos.in";
+// @ts-ignore
+const PAID_LAUNCH_LOCKED = (Deno.env.get("PAID_LAUNCH_LOCKED") ?? "true") !== "false";
 
 // @ts-ignore
 const RZP_KEY      = Deno.env.get("RAZORPAY_KEY_ID") ?? "";
@@ -54,6 +56,13 @@ const STRIPE_PRICE_VAULT  = Deno.env.get("STRIPE_PRICE_VAULT")  ?? "";
 
 serve(async (req) => {
   if (req.method !== "POST") return json({ ok: false, error: "method not allowed" }, 405);
+
+  if (PAID_LAUNCH_LOCKED) {
+    return json({
+      ok: false,
+      error: "Vault launches this fall. Join the launch list instead."
+    }, 423);
+  }
 
   const auth = req.headers.get("Authorization") ?? "";
   if (!auth.startsWith("Bearer ")) return json({ ok: false, error: "missing bearer" }, 401);

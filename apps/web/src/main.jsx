@@ -53,7 +53,7 @@ import { buildSnapshotsCsv, suggestedCsvFilename } from "./lib/csvExport.js";
 import { formatCurrency, formatCompact, DEFAULT_CURRENCY } from "./lib/currency.js";
 import { listMyKeyHolders, createKeyHolderInvite, revokeKeyHolder, deleteKeyHolder, sendInviteEmail, finalizeReleasePlan, summarizeKeyHolders, buildTrustRosterSlots, listKeysIHeld, summarizeHeldKeys } from "./lib/releasePlan.js";
 import { loadMyReleaseSettings, upsertMyReleaseSettings, rotateMyClaimToken, fetchActiveReleaseAgainstMe, ownerAbortRelease, isValidNomineeEmail } from "./lib/releaseClaim.js";
-import { fetchMySubscription, fetchMyBillingEvents, fetchMyBillingProfile, upsertMyBillingProfile, fetchInvoiceUrl, startUpgrade, cancelSubscriptionAtPeriodEnd, resumeSubscription } from "./lib/billing.js";
+import { fetchMySubscription, fetchMyBillingEvents, fetchMyBillingProfile, upsertMyBillingProfile, fetchInvoiceUrl, joinVaultFallWaitlist, cancelSubscriptionAtPeriodEnd, resumeSubscription } from "./lib/billing.js";
 import { planFor, entitlementsFor, daysLeftFor, paidPlans } from "./lib/plans.js";
 import { isSupabaseConfigured } from "./lib/supabaseClient.js";
 import { getSession, onAuthStateChange, signOut, appendServerAuditEvent, ensureDeviceToken, getDeviceToken, deleteAccount } from "./lib/auth.js";
@@ -2083,7 +2083,7 @@ function SettingsPage({ vault, onExport, onReset, onLoadDemo, session, onShowAut
       )) : (
         <Card><Row title="Local-only vault" hint="This deployment keeps your vault on this device." last><span className="text-[13px] text-[var(--ink-3)]">On this device</span></Row></Card>
       )}
-      {supabaseOn && session && <div className="mt-3"><BillingSection subscription={subscription} entitlements={entitlements} onSubscriptionChange={onSubscriptionChange} /><HeldKeysSection /><DeviceListSection /></div>}
+      {supabaseOn && session && <div className="mt-3"><BillingSection subscription={subscription} entitlements={entitlements} session={session} onSubscriptionChange={onSubscriptionChange} /><HeldKeysSection /><DeviceListSection /></div>}
 
       <Label>Your vault</Label>
       <Card>
@@ -2546,12 +2546,14 @@ function DeleteAccountButton({ onDone }) {
   );
 }
 
-function BillingSection({ subscription, entitlements, onSubscriptionChange }) {
+function BillingSection({ subscription, entitlements, session, onSubscriptionChange }) {
   const [events, setEvents] = useState([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [showPlans, setShowPlans] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [interestEmail, setInterestEmail] = useState(() => session?.user?.email ?? "");
+  const [interestSaved, setInterestSaved] = useState(false);
 
   async function loadEvents() {
     setLoadingEvents(true);
@@ -2562,27 +2564,14 @@ function BillingSection({ subscription, entitlements, onSubscriptionChange }) {
 
   useEffect(() => { loadEvents(); }, []);
 
-  async function upgrade(plan) {
+  async function joinPaidLaunchList() {
     setError("");
     setBusy(true);
     try {
-      const result = await startUpgrade({ plan, provider: "razorpay" });
-      // The Edge Function returns { provider, checkoutUrl } OR a Razorpay
-      // subscription_id we hand to the Razorpay Checkout JS widget. For
-      // now we redirect to checkoutUrl (Razorpay's hosted page) — the
-      // widget version lands when we test with real keys.
-      if (result?.checkoutUrl) {
-        window.location.assign(result.checkoutUrl);
-        return;
-      }
-      if (result?.verified) {
-        setError("Payment verified. We will activate paid access shortly.");
-        setShowPlans(false);
-        return;
-      }
-      setError("Upgrade started but no checkout confirmation returned. Try again or contact support.");
+      await joinVaultFallWaitlist({ email: interestEmail, source: "vault-fall-interest-app" });
+      setInterestSaved(true);
     } catch (err) {
-      setError(err?.message || "Couldn't start upgrade.");
+      setError(err?.message || "Couldn't save your email.");
     } finally {
       setBusy(false);
     }
@@ -2670,12 +2659,14 @@ function BillingSection({ subscription, entitlements, onSubscriptionChange }) {
         {showPlans && (
           <div className="mt-4 space-y-3 border-t border-[var(--line)] pt-4">
             {paidPlans().map((p) => {
-              const pid = p.id;
               return (
-                <div key={pid} className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-4">
+                <div key={p.id} className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-4">
                   <div className="flex items-baseline justify-between gap-3">
                     <div>
-                      <p className="text-[14px] font-semibold">Lyfos {p.label}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-[14px] font-semibold">Lyfos {p.label}</p>
+                        {!p.checkoutEnabled && <span className="rounded-full bg-[var(--green-soft)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--green-ink)]">Coming this fall</span>}
+                      </div>
                       <p className="mt-0.5 text-[11px] text-[var(--ink-3)]">{p.summary}</p>
                     </div>
                     <p className="text-[15px] font-semibold tabular-nums">{formatCurrency(p.amountInr / 100, "INR")}<span className="text-[10px] font-normal text-[var(--ink-3)]"> / year</span></p>
@@ -2683,13 +2674,27 @@ function BillingSection({ subscription, entitlements, onSubscriptionChange }) {
                   <ul className="mt-3 list-disc space-y-1 pl-4 text-[12px] leading-5 text-[var(--ink-2)]">
                     {p.bullets.map((b) => <li key={b}>{b}</li>)}
                   </ul>
-                  <button
-                    onClick={() => upgrade(pid)}
-                    disabled={busy}
-                    className="mt-3 w-full rounded-full bg-[#1d1d1f] px-4 py-2 text-[12px] font-semibold text-white disabled:opacity-40"
-                  >
-                    {busy ? "Opening checkout…" : `Choose ${p.label}`}
-                  </button>
+                  <div className="mt-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
+                    <p className="text-[12px] font-medium text-[var(--ink)]">Vault is not opening on day one.</p>
+                    <p className="mt-1 text-[11px] leading-5 text-[var(--ink-3)]">Leave your email and we will tell you when paid Vault opens this fall.</p>
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                      <input
+                        type="email"
+                        value={interestEmail}
+                        onChange={(e) => { setInterestEmail(e.target.value); setInterestSaved(false); setError(""); }}
+                        placeholder="you@example.com"
+                        className="min-w-0 flex-1 rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[12px] text-[var(--ink)] outline-none focus:border-[var(--green)]"
+                      />
+                      <button
+                        onClick={joinPaidLaunchList}
+                        disabled={busy || !interestEmail.trim()}
+                        className="rounded-full bg-[#1d1d1f] px-4 py-2 text-[12px] font-semibold text-white disabled:opacity-40"
+                      >
+                        {busy ? "Saving…" : "Notify me"}
+                      </button>
+                    </div>
+                    {interestSaved && <p className="mt-2 text-[11px] font-medium text-[var(--green-ink)]">You are on the list. Vault launches this fall.</p>}
+                  </div>
                 </div>
               );
             })}

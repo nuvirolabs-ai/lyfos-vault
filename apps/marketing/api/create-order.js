@@ -1,9 +1,14 @@
 import { applyCors, createRazorpayOrder, normalizeAmount, readJson, sendJson } from "./_razorpay.js";
 
+const PAID_LAUNCH_LOCKED = (process.env.PAID_LAUNCH_LOCKED ?? "true") !== "false";
+
 export default async function handler(req, res) {
   applyCors(req, res);
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "POST") return sendJson(res, 405, { error: "Method not allowed" });
+  if (PAID_LAUNCH_LOCKED) {
+    return sendJson(res, 423, { error: "Vault launches this fall. Join the launch list instead." });
+  }
 
   try {
     const body = await readJson(req);

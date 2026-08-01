@@ -9,6 +9,7 @@
 <meta property="og:image" content="https://lyfos.in/og.png" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:image" content="https://lyfos.in/og.png" />
+<meta name="lyfos-waitlist-endpoint" content="https://rifooyrwepkrhprakdec.supabase.co/functions/v1/waitlist" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -81,8 +82,12 @@
         <li>3-of-5 release function for nominees</li>
         <li>Owner-protection hold and release alerts</li>
       </ul>
-      <button class="btn primary cta" data-razorpay-checkout data-amount="99900" data-currency="INR" data-name="Lyfos" data-description="Lyfos Vault annual access" data-receipt="lyfos_vault_annual" data-status-target="vaultPayStatus">Pay securely with Razorpay</button>
-      <p id="vaultPayStatus" class="pay-status" data-razorpay-status></p>
+      <p style="margin: 16px 0 10px; color: var(--green); font-size: 13px; font-weight: 700;">Coming this fall</p>
+      <form class="signup-row" data-vault-interest-form data-source="vault-fall-interest-marketing-pricing" novalidate style="margin-top: 10px;">
+        <input type="email" name="email" placeholder="you@example.com" autocomplete="email" required />
+        <button class="btn primary cta" type="submit">Notify me</button>
+      </form>
+      <p id="vaultPayStatus" class="pay-status" data-vault-interest-status role="status" aria-live="polite"></p>
     </div>
 
   </div>
@@ -97,7 +102,7 @@
       <tr><td>Vault</td><td>₹999/yr</td><td>$9/yr</td><td>Unlimited</td><td>Yes</td></tr>
     </tbody>
   </table>
-  <p style="color: var(--ink2); font-size: 14px;">Indian checkout runs through Razorpay at ₹999/year. International pricing is $9/year; if checkout is not available in your country yet, email hello@nuvirolabs.com.</p>
+  <p style="color: var(--ink2); font-size: 14px;">Vault launches this fall. Free Forever is live now; leave your email on the Vault card if you want first notice when paid access opens.</p>
 </section>
 
 <section class="row">
@@ -141,7 +146,27 @@
     <div><h4>Legal</h4><ul><li><a href="/privacy/">Privacy</a></li><li><a href="/terms/">Terms</a></li><li><a href="/refund-cancellation/">Refunds</a></li><li><a href="/shipping-delivery/">Delivery</a></li><li><a href="/contact/">Contact</a></li></ul></div>
   </div>
 </footer>
-<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-<script src="/razorpay-checkout.js?v=20260723-1" defer></script>
+<script>
+(function(){
+  const endpoint=(document.querySelector('meta[name="lyfos-waitlist-endpoint"]')||{}).content||'';
+  const RE=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  document.querySelectorAll('[data-vault-interest-form]').forEach(form=>{
+    const input=form.querySelector('input[type="email"]');
+    const btn=form.querySelector('button[type="submit"]');
+    const status=form.parentElement.querySelector('[data-vault-interest-status]');
+    function show(m,ok){ if(!status) return; status.textContent=m; status.dataset.tone=ok?'success':'error'; }
+    form.addEventListener('submit',async e=>{ e.preventDefault();
+      const email=(input&&input.value||'').trim(); if(!RE.test(email)){ show('Please enter a valid email address.',false); input&&input.focus(); return; }
+      const configured=endpoint && !/YOUR-PROJECT/.test(endpoint);
+      function done(){ form.hidden=true; show('You’re on the list. Vault launches this fall.',true); }
+      function fallback(){ const s=encodeURIComponent('Notify me when Lyfos Vault launches'); const b=encodeURIComponent('Please add '+email+' to the Lyfos Vault fall launch list.'); try{ window.location.href='mailto:hello@nuvirolabs.com?subject='+s+'&body='+b; }catch(_){} done(); }
+      if(!configured){ fallback(); return; }
+      if(btn){ btn.disabled=true; btn.dataset.label=btn.textContent; btn.textContent='Saving…'; }
+      try{ const r=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email,source:form.dataset.source||'vault-fall-interest-marketing-pricing',referrer:document.referrer||''})}); if(!r.ok) throw 0; done(); }
+      catch(_){ if(btn){ btn.disabled=false; btn.textContent=btn.dataset.label||'Notify me'; } fallback(); }
+    });
+  });
+})();
+</script>
 </body>
 </html>

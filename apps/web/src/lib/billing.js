@@ -9,6 +9,10 @@ import { getSupabase, isSupabaseConfigured } from "./supabaseClient.js";
 import { planFor } from "./plans.js";
 
 const BILLING_API_BASE = (import.meta.env.VITE_BILLING_API_BASE || "").replace(/\/$/, "");
+const WAITLIST_ENDPOINT =
+  import.meta.env.VITE_WAITLIST_ENDPOINT ||
+  "https://rifooyrwepkrhprakdec.supabase.co/functions/v1/waitlist";
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 async function postBillingJson(path, payload) {
   const response = await fetch(`${BILLING_API_BASE}${path}`, {
@@ -128,6 +132,7 @@ export async function fetchInvoiceUrl(pdfPath) {
  */
 export async function startUpgrade({ plan, provider = "razorpay" }) {
   if (plan !== "vault") throw new Error("plan must be 'vault'");
+  if (!planFor(plan).checkoutEnabled) throw new Error("Vault launches this fall. Join the launch list instead.");
   if (provider !== "razorpay") throw new Error("Only Razorpay Standard Checkout is configured");
 
   const selected = planFor(plan);
@@ -147,6 +152,24 @@ export async function startUpgrade({ plan, provider = "razorpay" }) {
   });
 
   return { provider: "razorpay", verified: true, ...verified };
+}
+
+export async function joinVaultFallWaitlist({ email, source = "vault-fall-interest-app" } = {}) {
+  const cleaned = String(email ?? "").trim().toLowerCase();
+  if (!EMAIL_RE.test(cleaned) || cleaned.length > 254) throw new Error("Enter a valid email address.");
+
+  const response = await fetch(WAITLIST_ENDPOINT, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      email: cleaned,
+      source,
+      referrer: typeof location !== "undefined" ? location.href : ""
+    })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "Could not save your email.");
+  return data;
 }
 
 /**

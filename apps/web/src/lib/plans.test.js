@@ -23,6 +23,8 @@ test("vault is the only paid plan and enables the complete product", () => {
   assert.equal(vault.releaseEnabled, true);
   assert.equal(vault.amountInr, 99900);
   assert.equal(vault.amountUsd, 900);
+  assert.equal(vault.launchState, "coming_fall");
+  assert.equal(vault.checkoutEnabled, false);
 });
 
 test("unknown or retired plans fall back to free entitlements", () => {

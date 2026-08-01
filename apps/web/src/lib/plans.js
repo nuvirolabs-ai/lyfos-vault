@@ -33,6 +33,8 @@ export const PLANS = {
     amountInr: 99900,    // 999 INR in paise
     amountUsd: 900,       // $9 USD in cents
     interval: "year",
+    launchState: "coming_fall",
+    checkoutEnabled: false,
     vaultItemLimit: Infinity,
     keyHolderLimit: 5,
     balanceSheetEnabled: true,

@@ -43,9 +43,27 @@ async function waitlistCount(sb: any): Promise<number> {
   return count ?? 0;
 }
 
-async function sendConfirmation(to: string, _position: number): Promise<void> {
+function isVaultFallInterest(source: string): boolean {
+  return source.startsWith("vault-fall-interest");
+}
+
+async function sendConfirmation(to: string, _position: number, source: string): Promise<void> {
   if (!RESEND_KEY) return; // best-effort
-  const text =
+  const vaultFall = isVaultFallInterest(source);
+  const subject = vaultFall ? "Lyfos Vault launches this fall" : "Welcome to Lyfos — your vault's ready";
+  const text = vaultFall ?
+`Hi,
+
+You are on the list for Lyfos Vault.
+
+Free Forever is live now. Paid Vault — unlimited entries, personal balance sheet, and Circle of Trust release — opens this fall.
+
+When Vault opens, we will email you first:
+
+  ${APP_URL}
+
+— Founder, Lyfos`
+:
 `Hi,
 
 Thanks for joining the Lyfos founding members — welcome.
@@ -67,7 +85,7 @@ From here on you'll only hear from me with the occasional founder note — no sp
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${RESEND_KEY}`, "content-type": "application/json" },
-      body: JSON.stringify({ from: FROM_EMAIL, to, subject: "Welcome to Lyfos — your vault's ready", text }),
+      body: JSON.stringify({ from: FROM_EMAIL, to, subject, text }),
     });
     if (!res.ok) console.error("[waitlist] confirmation email failed:", res.status, await res.text());
   } catch (e) {
@@ -120,6 +138,16 @@ Deno.serve(async (req: Request) => {
   // 23505 = unique violation → already on the list; treat as success, no re-email.
   if (error) {
     if ((error as any).code === "23505") {
+      if (isVaultFallInterest(source)) {
+        await sb
+          .from("waitlist")
+          .update({
+            source,
+            referrer,
+            user_agent: (req.headers.get("user-agent") || "").slice(0, 300),
+          })
+          .ilike("email", email);
+      }
       return json({ ok: true, already: true, position: await waitlistCount(sb) });
     }
     console.error("[waitlist] insert error:", error.message);
@@ -130,7 +158,7 @@ Deno.serve(async (req: Request) => {
 
   // Confirm new waitlist signups (but not checklist lead-magnet downloads).
   if (source !== "checklist") {
-    await sendConfirmation(email, position);
+    await sendConfirmation(email, position, source);
   }
 
   return json({ ok: true, position });
