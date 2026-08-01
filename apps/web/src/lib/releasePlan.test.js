@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { summarizeKeyHolders } from "./releasePlan.js";
+import { buildTrustRosterSlots, summarizeHeldKeys, summarizeKeyHolders } from "./releasePlan.js";
 
 test("accepted holders with release public keys count as verified-ready", () => {
   const summary = summarizeKeyHolders([
@@ -26,4 +26,33 @@ test("revoked holders are not shown as active invite slots", () => {
 
   assert.equal(summary.invited, 1);
   assert.deepEqual(summary.activeHolders.map((h) => h.id), ["new"]);
+});
+
+test("buildTrustRosterSlots keeps real invites and fills empty invite slots", () => {
+  const slots = buildTrustRosterSlots([
+    { id: "1", label: "Neha", holder_email: "neha@example.com", status: "accepted" },
+    { id: "2", label: "Rahul", holder_email: "rahul@example.com", status: "pending" }
+  ]);
+
+  assert.equal(slots.length, 5);
+  assert.equal(slots[0].kind, "holder");
+  assert.equal(slots[0].displayName, "Neha");
+  assert.equal(slots[0].email, "neha@example.com");
+  assert.equal(slots[0].statusLabel, "Accepted");
+  assert.equal(slots[2].kind, "empty");
+  assert.equal(slots[2].slotNumber, 3);
+});
+
+test("summarizeHeldKeys reports trusted relationships without exposing secret keys", () => {
+  const summary = summarizeHeldKeys([
+    { owner_email: "a@example.com", label: "Neha", status: "accepted", release_pubkey: "pub" },
+    { owner_email: "b@example.com", label: "Neha", status: "pending", release_pubkey: null },
+    { owner_email: "c@example.com", label: "Neha", status: "revoked", release_pubkey: "pub" }
+  ]);
+
+  assert.equal(summary.total, 2);
+  assert.equal(summary.ready, 1);
+  assert.equal(summary.relationships[0].ownerLabel, "a");
+  assert.equal(summary.relationships[0].statusLabel, "Ready");
+  assert.equal(summary.relationships[0].secretVisible, false);
 });

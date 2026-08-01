@@ -51,7 +51,7 @@ import { prepareStage2BackupExport } from "./lib/stage2BackupManifest.js";
 import { initTelemetry, registerServiceWorker } from "./lib/telemetry.js";
 import { buildSnapshotsCsv, suggestedCsvFilename } from "./lib/csvExport.js";
 import { formatCurrency, formatCompact, DEFAULT_CURRENCY } from "./lib/currency.js";
-import { listMyKeyHolders, createKeyHolderInvite, revokeKeyHolder, deleteKeyHolder, sendInviteEmail, finalizeReleasePlan, summarizeKeyHolders } from "./lib/releasePlan.js";
+import { listMyKeyHolders, createKeyHolderInvite, revokeKeyHolder, deleteKeyHolder, sendInviteEmail, finalizeReleasePlan, summarizeKeyHolders, buildTrustRosterSlots, listKeysIHeld, summarizeHeldKeys } from "./lib/releasePlan.js";
 import { loadMyReleaseSettings, upsertMyReleaseSettings, rotateMyClaimToken, fetchActiveReleaseAgainstMe, ownerAbortRelease, isValidNomineeEmail } from "./lib/releaseClaim.js";
 import { fetchMySubscription, fetchMyBillingEvents, fetchMyBillingProfile, upsertMyBillingProfile, fetchInvoiceUrl, startUpgrade, cancelSubscriptionAtPeriodEnd, resumeSubscription } from "./lib/billing.js";
 import { PLANS, planFor, isPaid, entitlementsFor, daysLeftFor } from "./lib/plans.js";
@@ -2062,7 +2062,7 @@ function SettingsPage({ vault, onExport, onReset, onLoadDemo, session, onShowAut
       )) : (
         <Card><Row title="Local-only vault" hint="This deployment keeps your vault on this device." last><span className="text-[13px] text-[var(--ink-3)]">On this device</span></Row></Card>
       )}
-      {supabaseOn && session && <div className="mt-3"><BillingSection subscription={subscription} entitlements={entitlements} onSubscriptionChange={onSubscriptionChange} /><DeviceListSection /></div>}
+      {supabaseOn && session && <div className="mt-3"><BillingSection subscription={subscription} entitlements={entitlements} onSubscriptionChange={onSubscriptionChange} /><HeldKeysSection /><DeviceListSection /></div>}
 
       <Label>Your vault</Label>
       <Card>
@@ -2694,6 +2694,50 @@ function BillingSection({ subscription, entitlements, onSubscriptionChange }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function HeldKeysSection() {
+  const [summary, setSummary] = useState(() => summarizeHeldKeys([]));
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    listKeysIHeld()
+      .then((rows) => { if (!cancelled) setSummary(summarizeHeldKeys(rows)); })
+      .catch((err) => { if (!cancelled) setError(err?.message || "Couldn't load held keys."); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) return null;
+  if (!summary.total && !error) return null;
+
+  return (
+    <section className="mt-8">
+      <h2 className="mb-3 text-base font-semibold text-[var(--ink)]">Keys you hold</h2>
+      <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)]">
+        {error && <div className="px-5 py-4 text-[13px] text-[var(--red-2)]">{error}</div>}
+        {!error && summary.relationships.map((rel, index) => (
+          <div key={rel.id ?? `${rel.ownerEmail}-${index}`} className={cx("flex items-center gap-4 px-5 py-4", index < summary.relationships.length - 1 && "border-b border-[var(--line)]")}>
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[var(--green-soft)] text-[var(--accent)]">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3 L20 6 V12 C20 17 16 20 12 21 C8 20 4 17 4 12 V6 Z" /><path d="M9 12 l2 2 l4 -4" /></svg>
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[14px] font-medium text-[var(--ink)]">You hold a key for {rel.ownerLabel}'s vault</div>
+              <div className="mt-0.5 truncate text-[12.5px] text-[var(--ink-3)]">
+                {rel.ownerEmail || "Vault owner"} · no plain key is shown or stored
+              </div>
+            </div>
+            <span className={cx("shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider", rel.ready ? "bg-[#34c759]/10 text-[var(--green-ink)]" : "bg-[var(--amber-soft)] text-[var(--amber-ink)]")}>
+              {rel.statusLabel}
+            </span>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -5325,6 +5369,7 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
 
   const holderSummary = useMemo(() => summarizeKeyHolders(holders), [holders]);
   const { activeHolders, readyHolders, invited, accepted, verified, finalized } = holderSummary;
+  const rosterSlots = useMemo(() => buildTrustRosterSlots(holders), [holders]);
   const planActive = finalized >= 5;
   const canPay = entitlements ? entitlements.releaseEnabled : false;
   const canFinalize = !planActive && invited === 5 && verified === 5 && canPay;
@@ -5456,7 +5501,7 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
           {planActive ? "Your circle is active." : "Build your circle of five."}
         </h1>
         <p className="mx-auto mt-4 max-w-md text-[14px] leading-6 text-[var(--ink-2)]">
-          Five trusted humans. Three of them, plus a 14-day hold, are required to release your vault to your nominee. Each is invited by email and accepts on their own device — Lyfos never sees their share of your key.
+          Invite five trusted nominees/key holders. Three of them, plus a 14-day hold, are required to release your vault. Each accepts by email on their own account — Lyfos never sees their encrypted share.
         </p>
       </div>
 
@@ -5470,14 +5515,28 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
       {error && <div className="mt-4 rounded-xl bg-[#ff453a]/8 px-4 py-3 text-[13px] font-medium text-[var(--red-2)]">{error}</div>}
       {inviteFeedback && <InviteFeedback feedback={inviteFeedback} onClose={() => setInviteFeedback(null)} />}
 
-      <div className="mt-8 space-y-2">
-        {activeHolders.length === 0 && !loading && (
-          <div className="rounded-2xl border border-dashed border-[var(--line-2)] bg-[var(--surface)] p-6 text-center">
-            <p className="text-[14px] font-medium text-[var(--ink)]">No key holders yet.</p>
-            <p className="mt-1 text-[12px] text-[var(--ink-3)]">Invite five people who would help your nominee if something happens to you.</p>
-          </div>
-        )}
-        {activeHolders.map((h) => <KeyHolderRow key={h.id} holder={h} onRevoke={() => revoke(h)} onDelete={() => remove(h)} onResend={() => resendInvite(h)} resending={resendingId === h.id} />)}
+      <div className="mt-8 overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)]">
+        <div className="grid grid-cols-[44px_1fr_1fr_112px] gap-3 border-b border-[var(--line)] px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">
+          <span>#</span>
+          <span>Name</span>
+          <span>Email</span>
+          <span className="text-right">Status</span>
+        </div>
+        {loading ? (
+          <div className="px-4 py-8 text-center text-[13px] text-[var(--ink-3)]">Loading trust circle…</div>
+        ) : rosterSlots.map((slot) => slot.kind === "holder" ? (
+          <KeyHolderRow
+            key={slot.holder.id}
+            slot={slot}
+            holder={slot.holder}
+            onRevoke={() => revoke(slot.holder)}
+            onDelete={() => remove(slot.holder)}
+            onResend={() => resendInvite(slot.holder)}
+            resending={resendingId === slot.holder.id}
+          />
+        ) : (
+          <EmptyTrustSlot key={`empty-${slot.slotNumber}`} slot={slot} onInvite={() => setShowInvite(true)} disabled={showInvite || planActive} />
+        ))}
       </div>
 
       <div className="mt-8 flex flex-col items-center gap-3">
@@ -5486,14 +5545,14 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
             onClick={() => setShowInvite(true)}
             className="rounded-full bg-[#1d1d1f] px-7 py-3 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition hover:bg-black"
           >
-            Invite key holder {invited + 1} of 5
+            Invite trusted nominee {invited + 1} of 5
           </button>
         )}
         {showInvite && (
           <InviteForm busy={busy} onCancel={() => setShowInvite(false)} onSubmit={handleInviteCreated} />
         )}
         {invited === 5 && accepted < 5 && (
-          <p className="text-[12px] text-[var(--ink-3)]">Waiting on {5 - accepted} {5 - accepted === 1 ? "holder" : "holders"} to accept.</p>
+          <p className="text-[12px] text-[var(--ink-3)]">Waiting on {5 - accepted} trusted {5 - accepted === 1 ? "person" : "people"} to accept.</p>
         )}
         {canFinalize && (
           <>
@@ -5786,22 +5845,19 @@ function FinalizeModal({ acceptedHolders, finalizing, hasVaultKey, onCancel, onC
   );
 }
 
-function KeyHolderRow({ holder, onRevoke, onDelete, onResend, resending }) {
+function KeyHolderRow({ slot, holder, onRevoke, onDelete, onResend, resending }) {
   const inviteUrl = holder.status === "pending"
     ? `${typeof window !== "undefined" ? window.location.origin : ""}/invite/${holder.invite_token}`
     : null;
   const [showUrl, setShowUrl] = useState(false);
 
   return (
-    <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[14px] font-medium text-[var(--ink)]">{holder.label}</div>
-          <div className="mt-0.5 truncate text-[12px] text-[var(--ink-3)]">{holder.holder_email}</div>
-        </div>
-        <div className="shrink-0 text-right">
-          <KeyHolderStatusPill holder={holder} />
-        </div>
+    <div className="border-b border-[var(--line)] px-4 py-3 last:border-b-0">
+      <div className="grid grid-cols-[44px_1fr_1fr_112px] items-center gap-3">
+        <div className="text-[12px] font-semibold text-[var(--ink-3)]">{slot?.slotNumber ?? ""}</div>
+        <div className="min-w-0 truncate text-[14px] font-medium text-[var(--ink)]">{holder.label}</div>
+        <div className="min-w-0 truncate text-[12px] text-[var(--ink-3)]">{holder.holder_email}</div>
+        <div className="shrink-0 text-right"><KeyHolderStatusPill holder={holder} /></div>
       </div>
 
       {holder.status === "pending" && inviteUrl && (
@@ -5843,6 +5899,25 @@ function KeyHolderRow({ holder, onRevoke, onDelete, onResend, resending }) {
   );
 }
 
+function EmptyTrustSlot({ slot, onInvite, disabled }) {
+  return (
+    <div className="grid grid-cols-[44px_1fr_1fr_112px] items-center gap-3 border-b border-[var(--line)] px-4 py-3 last:border-b-0">
+      <div className="text-[12px] font-semibold text-[var(--ink-3)]">{slot.slotNumber}</div>
+      <div className="text-[13px] text-[var(--ink-4)]">Name</div>
+      <div className="text-[13px] text-[var(--ink-4)]">Email address</div>
+      <div className="text-right">
+        <button
+          onClick={onInvite}
+          disabled={disabled}
+          className="rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-3 py-1 text-[11px] font-semibold text-[var(--ink-2)] transition hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Invite
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function KeyHolderStatusPill({ holder }) {
   const status = holder?.status;
   const displayStatus = status === "accepted" && holder?.release_pubkey ? "verified" : status;
@@ -5867,7 +5942,7 @@ function InviteForm({ busy, onCancel, onSubmit }) {
 
   return (
     <form onSubmit={submit} className="w-full max-w-md rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5">
-      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">Invite a key holder</p>
+      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">Invite a trusted nominee</p>
       <label className="mt-3 block">
         <span className="text-[11px] text-[var(--ink-3)]">Label</span>
         <input
@@ -5915,7 +5990,7 @@ function InviteForm({ busy, onCancel, onSubmit }) {
 }
 
 function holderWhatsAppUrl(inviteUrl) {
-  const msg = `I'm naming you as one of my trusted key-holders on Lyfos — the people who could help my family recover everything if something ever happened to me. It takes two minutes to accept, and you never see anything while I'm fine.\n\n${inviteUrl}`;
+  const msg = `I'm naming you as one of my trusted nominees/key holders on Lyfos — the people who could help my family recover everything if something ever happened to me. It takes two minutes to accept, and you never see anything while I'm fine.\n\n${inviteUrl}`;
   return `https://wa.me/?text=${encodeURIComponent(msg)}`;
 }
 

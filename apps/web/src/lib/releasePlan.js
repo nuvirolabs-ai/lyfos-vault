@@ -113,6 +113,62 @@ export function summarizeKeyHolders(holders = []) {
   };
 }
 
+export function buildTrustRosterSlots(holders = [], slotCount = 5) {
+  const active = holders.filter((h) => h?.status !== "revoked").slice(0, slotCount);
+  const holderSlots = active.map((holder, index) => ({
+    kind: "holder",
+    slotNumber: index + 1,
+    holder,
+    displayName: holder.label || holder.holder_email?.split("@")[0] || `Trusted person ${index + 1}`,
+    email: holder.holder_email || "",
+    statusLabel: statusLabelForHolder(holder),
+    ready: (holder.status === "accepted" || holder.status === "verified") && Boolean(holder.release_pubkey)
+  }));
+  const emptySlots = Array.from({ length: Math.max(0, slotCount - holderSlots.length) }, (_, i) => ({
+    kind: "empty",
+    slotNumber: holderSlots.length + i + 1,
+    displayName: "",
+    email: "",
+    statusLabel: "Not invited",
+    ready: false
+  }));
+  return [...holderSlots, ...emptySlots];
+}
+
+export function summarizeHeldKeys(rows = []) {
+  const relationships = rows
+    .filter((row) => row?.status !== "revoked")
+    .map((row) => {
+      const ownerEmail = row.owner_email || row.owner?.email || "";
+      const ownerLabel = ownerEmail.split("@")[0] || "Vault owner";
+      const ready = (row.status === "accepted" || row.status === "verified") && Boolean(row.release_pubkey);
+      return {
+        id: row.id,
+        ownerEmail,
+        ownerLabel,
+        holderLabel: row.label || "Trusted nominee",
+        status: row.status,
+        statusLabel: ready ? "Ready" : statusLabelForHolder(row),
+        secretVisible: false,
+        ready
+      };
+    });
+
+  return {
+    relationships,
+    total: relationships.length,
+    ready: relationships.filter((r) => r.ready).length
+  };
+}
+
+export async function listKeysIHeld() {
+  if (!isSupabaseConfigured()) return [];
+  const sb = getSupabase();
+  const { data, error } = await sb.rpc("my_held_keys");
+  if (error) throw error;
+  return data ?? [];
+}
+
 /**
  * Send the invite email via the send-key-holder-invite Edge Function.
  * If the function isn't deployed yet (404), we surface the invite URL
@@ -220,6 +276,15 @@ export async function acceptInvite({ token, releasePubkey }) {
 
 function isEmail(s) {
   return typeof s === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+}
+
+function statusLabelForHolder(holder) {
+  if (!holder) return "Not invited";
+  if (holder.status === "verified") return "Verified";
+  if (holder.status === "accepted") return holder.release_pubkey ? "Accepted" : "Accepted";
+  if (holder.status === "pending") return "Invited";
+  if (holder.status === "revoked") return "Revoked";
+  return "Invited";
 }
 
 function makeInviteToken() {

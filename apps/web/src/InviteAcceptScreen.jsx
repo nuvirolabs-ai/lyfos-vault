@@ -104,9 +104,12 @@ export function InviteAcceptScreen({ token, onReturnHome }) {
     return (
       <Frame>
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#0b6b3a]">Accepted</p>
-        <h1 className="mt-3 text-[32px] font-semibold leading-tight tracking-tight">You're set up.</h1>
+        <h1 className="mt-3 text-[32px] font-semibold leading-tight tracking-tight">You hold a key.</h1>
         <p className="mt-5 max-w-md text-[14px] leading-6 text-[#6e6e73]">
-          {invite.owner_email.split("@")[0]} has been notified. They'll finalize their release plan and provision your share. After that, your status will move from "Accepted" to "Verified".
+          {invite.owner_email.split("@")[0]} has been notified. When they finalize their circle, Lyfos will seal one encrypted share of their vault key to your account. No plain key is shown, emailed, or stored.
+        </p>
+        <p className="mt-3 max-w-md text-[14px] leading-6 text-[#6e6e73]">
+          You can see this relationship later in <strong>Settings → Keys you hold</strong>. After finalization, your status moves from "Accepted" to "Verified".
         </p>
         <p className="mt-3 max-w-md text-[14px] leading-6 text-[#6e6e73]">
           If they ever need to release the vault — death or incapacity — you'll get an email and a notification with one tap to approve or refuse.
@@ -143,7 +146,7 @@ export function InviteAcceptScreen({ token, onReturnHome }) {
             Label: <strong>{invite.label}</strong>
           </p>
           <p className="mt-4 text-[13px] leading-5 text-[#86868b]">
-            Sign in or create your Lyfos account using <strong>{invite.holder_email}</strong> to continue. Three of five key holders are required for a release; you'd be one of them.
+            Sign in or create your Lyfos account using <strong>{invite.holder_email}</strong> to continue. Three of five trusted nominees/key holders are required for a release; you'd be one of them.
           </p>
         </div>
         <div className="mt-6">
@@ -161,7 +164,7 @@ export function InviteAcceptScreen({ token, onReturnHome }) {
         Set up your release key.
       </h1>
       <p className="mt-4 text-[14px] leading-6 text-[#6e6e73]">
-        Type the passphrase you use (or will use) to open your own Lyfos vault. We use it to derive a release key — Lyfos never sees the passphrase or the key.
+        Type the passphrase you use (or will use) to open your own Lyfos vault. We use it on this device to create your release keypair — Lyfos never sees the passphrase or a raw key.
       </p>
 
       <form onSubmit={submit} className="mt-8 space-y-3">
@@ -179,7 +182,7 @@ export function InviteAcceptScreen({ token, onReturnHome }) {
         </label>
 
         <p className="rounded-xl bg-[#fff8eb] px-4 py-3 text-[12px] leading-5 text-[#7a4b00]">
-          <strong>Remember this passphrase.</strong> If you forget it, you cannot release {invite.owner_email.split("@")[0]}'s vault when needed — your share becomes inert. Lyfos cannot recover it for you.
+          <strong>Remember this passphrase.</strong> If you forget it, you cannot release {invite.owner_email.split("@")[0]}'s vault when needed. Lyfos cannot recover it for you.
         </p>
 
         {error && <div className="rounded-xl bg-[#ff453a]/8 px-4 py-3 text-[13px] font-medium text-[#b42318]">{error}</div>}

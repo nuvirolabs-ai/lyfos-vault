@@ -73,7 +73,7 @@ serve(async (req) => {
   }
 
   const inviteUrl = `${APP_URL}/invite/${invite.invite_token}`;
-  const subject = `${ownerName} asked you to be a key holder on Lyfos`;
+  const subject = `${ownerName} nominated you on Lyfos`;
   const result = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${RESEND_KEY}`, "content-type": "application/json" },
@@ -109,11 +109,11 @@ function json(body: unknown, status = 200) {
 
 function buildText({ ownerName, label, inviteUrl }: { ownerName: string; label: string; inviteUrl: string }) {
   return [
-    `${ownerName} has invited you to be a key holder on Lyfos.`,
+    `${ownerName} has invited you to be a trusted nominee/key holder on Lyfos.`,
     "",
-    `You'd be one of five trusted humans. If something happens to ${ownerName} — death or incapacity — three of you, plus a 14-day owner-protection hold, would be required to release their vault to their nominee.`,
+    `You'd be one of five trusted people. If something happens to ${ownerName} — death or incapacity — three of you, plus a 14-day owner-protection hold, would be required to release their emergency vault.`,
     "",
-    `Lyfos never sees your share. The math means even three of you can recover ${ownerName}'s life only when the time is right.`,
+    `Lyfos never emails or shows you a plain unlock key. When you accept, your account creates a cryptographic release key. Later, ${ownerName}'s vault share is sealed to that key.`,
     "",
     `Label: ${label}`,
     `Accept: ${inviteUrl}`,
@@ -128,13 +128,13 @@ function buildHtml({ ownerName, label, inviteUrl }: { ownerName: string; label: 
   return `<!doctype html><html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:48px 24px;background:#fbfbfd;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif;color:#1d1d1f;-webkit-font-smoothing:antialiased">
   <div style="max-width:520px;margin:0 auto">
-    <p style="font-size:11px;font-weight:600;letter-spacing:0.18em;color:#86868b;text-transform:uppercase;margin:0 0 16px">Key holder invite</p>
-    <h1 style="font-size:36px;font-weight:600;letter-spacing:-0.01em;line-height:1.15;margin:0 0 20px">${escape(ownerName)} asked you to hold a key.</h1>
+    <p style="font-size:11px;font-weight:600;letter-spacing:0.18em;color:#86868b;text-transform:uppercase;margin:0 0 16px">Trusted nominee invite</p>
+    <h1 style="font-size:36px;font-weight:600;letter-spacing:-0.01em;line-height:1.15;margin:0 0 20px">${escape(ownerName)} nominated you.</h1>
     <p style="font-size:15px;line-height:1.65;margin:0 0 20px">
-      ${escape(ownerName)} uses Lyfos to keep her sensitive records safe. She's asked five trusted humans to act as key holders. If something happens to her, three of you (plus a 14-day owner-protection hold) would be required to release her vault to her nominee.
+      ${escape(ownerName)} uses Lyfos to keep sensitive records safe. They asked five trusted people to hold cryptographic shares. If something happens, three of you plus a 14-day owner-protection hold would be required to release the emergency vault.
     </p>
     <p style="font-size:15px;line-height:1.65;margin:0 0 32px">
-      Your label: <strong>${escape(label)}</strong>. Lyfos never sees your share — even three of you together cannot recover her life until the proper process runs and she has been given 14 days of daily alerts to abort.
+      Your label: <strong>${escape(label)}</strong>. Lyfos never emails or shows a plain unlock key. Your account creates a release keypair, and later one encrypted share can be sealed to it.
     </p>
     <p style="margin:0 0 36px"><a href="${escape(inviteUrl)}" style="display:inline-block;padding:12px 22px;border-radius:9999px;background:#1d1d1f;color:#fff;text-decoration:none;font-size:14px;font-weight:600">Accept invite</a></p>
     <hr style="border:none;border-top:1px solid rgba(0,0,0,0.08);margin:36px 0" />
