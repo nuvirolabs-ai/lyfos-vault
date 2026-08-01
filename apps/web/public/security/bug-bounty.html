@@ -1,33 +1,34 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Lyfos · Bug Bounty</title><link rel="stylesheet" href="/legal/style.css" /></head>
+<title>Lyfos · Bug Bounty</title><link rel="stylesheet" href="/legal/style.css" /><!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-B6QDMDNL02"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-B6QDMDNL02');
+</script>
+</head>
 <body><main>
 <a class="back" href="/security/">← Back to Security</a>
 <h1>Bug Bounty</h1>
-<p class="lede">Self-funded, paid in INR (or USD/EUR/GBP equivalent). Effective 28 May 2026.</p>
+<p class="lede">Lyfos welcomes responsible security reports. A paid bug bounty is not active right now.</p>
 
-<h2>Severity bands</h2>
-<table>
-<thead><tr><th>Severity</th><th>Example</th><th>Payout (INR)</th></tr></thead>
-<tbody>
-<tr><td>Critical</td><td>Decrypt a vault you don't own; forge a release; bypass the 14-day hold; auth bypass to admin; RCE</td><td>₹1,00,000 – ₹3,00,000</td></tr>
-<tr><td>High</td><td>Lock out another user; trigger alerts on someone else's vault; tamper with audit log; bypass free-tier; XSS with session theft</td><td>₹25,000 – ₹75,000</td></tr>
-<tr><td>Medium</td><td>CSRF on state-changing endpoint; high-precision account enumeration; IDOR on non-secret resources</td><td>₹5,000 – ₹20,000</td></tr>
-<tr><td>Low</td><td>Open redirect; reflected XSS on logged-out pages; security-header weakness with demo</td><td>₹1,000 – ₹5,000</td></tr>
-</tbody></table>
-
-<h2>Multipliers</h2>
-<ul>
-<li><strong>+50%</strong> with a working fix we accept</li>
-<li><strong>+50%</strong> for protocol-level breaks (crypto, release engine, Shamir)</li>
-<li><strong>+100%</strong> for demonstrated multi-user compromise</li>
-<li><strong>-50%</strong> if the precondition is a documented risk (e.g. sharing the master passphrase)</li>
-<li><strong>-50%</strong> for duplicates within 72 hours</li>
-</ul>
-
-<h2>Payment</h2>
-<p>Within 30 days of fix deployment via UPI / bank transfer (India) or Wise (international). Indian recipients above ₹30,000/year receive a TDS Form 16A per IT Act §194J.</p>
+<h2>What to report</h2>
+<p>Send reports that show a real impact on Lyfos users, vault data, authentication, release flows, billing controls, or public infrastructure. Include clear reproduction steps, affected URLs, expected impact, and any suggested fix.</p>
 
 <h2>Out of scope</h2>
-<p>See the <a href="/security/disclosure">disclosure policy</a>.</p>
+<ul>
+<li>Automated scanner output without a demonstrated exploit path</li>
+<li>Social engineering, spam, denial-of-service, or physical attacks</li>
+<li>Issues in third-party platforms unless the bug is in our integration</li>
+<li>Missing headers or best-practice notes without practical impact</li>
+</ul>
+
+<h2>Recognition</h2>
+<p>Valid reports may be credited in the <a href="/security/hall-of-fame">Hall of Fame</a> unless the researcher opts out. No monetary reward is promised unless agreed in writing before testing.</p>
+
+<h2>Report</h2>
+<p>Email <strong>hello@nuvirolabs.com</strong>. Please follow the <a href="/security/disclosure">responsible disclosure policy</a>.</p>
 </main></body></html>

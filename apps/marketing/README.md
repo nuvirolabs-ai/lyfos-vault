@@ -1,6 +1,6 @@
 # Lyfos — Marketing Site
 
-Static site for `https://lyfos.com` (the marketing surface, separate from
+Static site for `https://lyfos.in` (the marketing surface, separate from
 the app at `https://app.lyfos.in`).
 
 ## What's in here
@@ -33,10 +33,10 @@ cd apps/marketing
 vercel --prod
 ```
 
-Point `lyfos.com` (and `www.lyfos.com`) at the Vercel project. Configure
+Point `lyfos.in` (and `www.lyfos.in`) at the Vercel project. Configure
 the redirects:
-- `lyfos.com` → `lyfos.com` (canonical)
-- `www.lyfos.com` → 301 → `lyfos.com`
+- `lyfos.in` → `lyfos.in` (canonical)
+- `www.lyfos.in` → 301 → `lyfos.in`
 
 Add a `_headers` file for security headers:
 
@@ -86,18 +86,12 @@ For SEO, add `sitemap.xml` and `robots.txt` at the root:
 # robots.txt
 User-agent: *
 Allow: /
-Sitemap: https://lyfos.com/sitemap.xml
+Sitemap: https://lyfos.in/sitemap.xml
 ```
 
 ## Analytics
 
-Privacy-first only. Recommended: **Plausible** (`plausible.io`) or
-**Umami** (self-hosted). Add the script tag to each `<head>` block
-manually — do not introduce a build pipeline just for this.
-
-```html
-<script defer data-domain="lyfos.com" src="https://plausible.io/js/script.js"></script>
-```
+Privacy-first only. If you add analytics, keep it minimal and document it in the privacy page.
 
 ## OpenGraph image
 

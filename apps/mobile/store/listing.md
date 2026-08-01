@@ -36,11 +36,11 @@ Lyfos is two things in one calm app:
 
 2. A zero-knowledge vault for the sensitive records your family would need if something happened to you. Passwords, bank account details, insurance policies, locker codes, Aadhaar / passport scans. Encrypted on your device with a passphrase only you know.
 
-When you upgrade to Lyfos Vault, you can also build a Release Plan: five trusted humans hold encrypted shares of your vault key. If something happens to you, your nominee files a claim, three of the five release their shares, and after a mandatory 14-day owner-protection hold during which you receive daily abort alerts, your nominee can download an emergency bundle.
+When Lyfos Vault launches, paid users will be able to build a Release Plan: five trusted humans hold encrypted shares of your vault key. If something happens to you, your nominee files a claim, three of the five release their shares, and after a mandatory owner-protection hold, your nominee can download an emergency bundle.
 
 Designed in India for India:
-• ₹999/yr for the full vault
-• ₹2,499/yr for the family plan (up to 4 vaults)
+• Free Forever for essential vault entries
+• Lyfos Vault launching this fall
 • GST-compliant tax invoices
 • Multi-channel release alerts (email + SMS + WhatsApp + push)
 
@@ -48,13 +48,13 @@ Lyfos cannot read your vault. Even if our servers were breached, your ciphertext
 
 If Lyfos as a company ever shuts down, your encrypted vault export is a portable JSON envelope you can hold and move yourself.
 
-For our security model, roadmap, and the public death-simulation runbook we run quarterly, see:
-https://lyfos.signorvale.com
+For our security model, see:
+https://lyfos.in/security/
 
 Legal:
-• Privacy Policy: https://lyfos.signorvale.com/legal/privacy.html
-• Terms of Service: https://lyfos.signorvale.com/legal/terms.html
-• Beta Disclaimer: https://lyfos.signorvale.com/legal/beta-disclaimer.html
+• Privacy Policy: https://app.lyfos.in/legal/privacy.html
+• Terms of Service: https://app.lyfos.in/legal/terms.html
+• Beta Disclaimer: https://app.lyfos.in/legal/beta-disclaimer.html
 ```
 
 ## Keywords (iOS, 100 chars max, comma-separated)
@@ -103,7 +103,7 @@ Build these from a populated demo vault (use the web `?demo=1` flag to seed equi
 2. **Update flow** — bulk edit, sticky save bar at bottom
 3. **Vault → Life Map** — 6 dossier cards in a 2-col grid
 4. **Release plan** — your circle of five, status pills, "Finalize plan"
-5. **Settings → Billing** — plan tier, invoice list (skip if not yet on a paid plan in the demo)
+5. **Settings → Billing** — current plan and upgrade interest
 
 iPhone 6.7" (1290×2796) is the primary; export the same screens at:
 - iPhone 5.5" (1242×2208) — required by Apple for older device coverage
@@ -117,9 +117,9 @@ Lyfos is a personal-data vault + financial tracker for individuals in India.
 
 Test account (TestFlight reviewers): username/email and password provided via App Review messaging.
 
-The Release feature (visible from Vault → Release) is a paid feature gated to the Vault / Family plans. Reviewers can test the full path without paying using the staging Razorpay test keys — instructions provided via App Review messaging.
+The Release feature is planned as a paid Lyfos Vault feature. It is not required to test the Free Forever app experience.
 
-We use Razorpay for payments (recurring annual subscriptions) and Resend for transactional emails. Auth is via Supabase (Postgres + email/password / magic link). No advertising SDKs, no tracking SDKs.
+We use Resend for transactional emails. Auth is via Supabase (Postgres + email/password / magic link). No advertising SDKs, no tracking SDKs.
 
 Encryption / export compliance: declared via ITSAppUsesNonExemptEncryption=NO in Info.plist. Our cryptography is standard (AES-256-GCM, X25519 Curve, SHA-256, BIP39, Shamir's Secret Sharing) implemented with open-source libraries (@noble/ciphers, tweetnacl, @scure/bip39, secrets.js-grempe).
 
@@ -132,19 +132,18 @@ There is NO health / medical / location data collected.
 - [ ] Adaptive icon background + foreground (Play)
 - [ ] Screenshots × 5 for each device class
 - [ ] App preview videos (optional but boosts conversion)
-- [ ] Privacy policy URL: https://lyfos.signorvale.com/legal/privacy.html
-- [ ] Support URL: https://lyfos.signorvale.com (set up `support@` mailbox first)
-- [ ] Marketing URL: https://lyfos.signorvale.com
+- [ ] Privacy policy URL: https://app.lyfos.in/legal/privacy.html
+- [ ] Support URL: https://lyfos.in
+- [ ] Marketing URL: https://lyfos.in
 - [ ] Reviewer notes (above)
-- [ ] In-app purchases? **No** — Razorpay handles billing externally. Submit with "In-app purchases: No" and disclose Razorpay in App Review notes. (For iOS this is essential — Apple requires IAP for consumable digital goods; Lyfos's annual subscription qualifies, but for the beta we ship as "Reader" / external commerce per the recent EU + US regulations. Confirm with Apple's review team before public launch.)
+- [ ] In-app purchases? **No** — paid Lyfos Vault is not active in this build.
 - [ ] App Store privacy nutrition labels filled (see Privacy questionnaire above)
 - [ ] Encryption export classification answered (Standard cryptography — TSU exception)
-- [ ] TestFlight beta runs at least 7 days before submitting to public release
-- [ ] Run the death-simulation runbook end-to-end with the build that will ship
+- [ ] TestFlight beta review completed before public release
 
 ## TestFlight / Internal track invite list
 
 | Role      | Name | Email | Notes |
 |-----------|------|-------|-------|
 | Founder   |      |       |       |
-| Beta wave |      |       | 30 close users for the first 2 weeks |
+| Beta wave |      |       | Early testers |

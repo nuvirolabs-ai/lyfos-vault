@@ -41,6 +41,8 @@ Run checks:
 npm run check -w @os-one/web
 ```
 
+For connected auth, sync, waitlist, and email behavior, see [SELF_HOSTING.md](SELF_HOSTING.md).
+
 ## Environment
 
 Copy `apps/web/.env.example` when you want connected auth, sync, waitlist, or email behavior. Without production Supabase credentials, the free app should remain usable for local-only testing.

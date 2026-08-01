@@ -33,7 +33,7 @@ Set the per-channel env vars in EAS:
 ```bash
 eas env:create --environment production EXPO_PUBLIC_SUPABASE_URL=...
 eas env:create --environment production EXPO_PUBLIC_SUPABASE_ANON_KEY=...
-eas env:create --environment production EXPO_PUBLIC_APP_URL=https://lyfos.signorvale.com
+eas env:create --environment production EXPO_PUBLIC_APP_URL=https://app.lyfos.in
 ```
 
 Build for stores:
@@ -71,11 +71,11 @@ these URLs opens the right route:
 
 | URL                                          | Route                       |
 |----------------------------------------------|-----------------------------|
-| `https://lyfos.signorvale.com/invite/:token` | `app/invite/[token].tsx`    |
-| `https://lyfos.signorvale.com/claim/:token`  | `app/claim/[token].tsx`     |
-| `https://lyfos.signorvale.com/release/abort` | `app/release/abort.tsx`     |
-| `https://lyfos.signorvale.com/hold-release`  | `app/hold-release.tsx`      |
-| `https://lyfos.signorvale.com/download`      | `app/download.tsx`          |
+| `https://app.lyfos.in/invite/:token` | `app/invite/[token].tsx`    |
+| `https://app.lyfos.in/claim/:token`  | `app/claim/[token].tsx`     |
+| `https://app.lyfos.in/release/abort` | `app/release/abort.tsx`     |
+| `https://app.lyfos.in/hold-release`  | `app/hold-release.tsx`      |
+| `https://app.lyfos.in/download`      | `app/download.tsx`          |
 | `lyfos://...` (custom scheme)                | Same paths as above         |
 
 The web's matching public routes (in `apps/web`) are still served at
