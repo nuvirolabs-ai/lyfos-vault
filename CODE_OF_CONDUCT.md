@@ -22,6 +22,6 @@ Maintainers may edit, hide, or remove comments and may restrict participation wh
 
 To report a conduct issue, email:
 
-`hello@nuvirolabs.com`
+`hello@lyfos.in`
 
 Security vulnerabilities should be reported through [SECURITY.md](SECURITY.md), not through public issues.

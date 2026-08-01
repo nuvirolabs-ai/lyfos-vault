@@ -103,8 +103,8 @@
     function fallback(email){
       var s=encodeURIComponent('Add me to the Lyfos early-access list');
       var b=encodeURIComponent('Please add '+email+' to the early-access list.');
-      try{ window.location.href='mailto:hello@nuvirolabs.com?subject='+s+'&body='+b; }catch(e){}
-      f.style.display='none'; show('Opening your email app to finish — or write to hello@nuvirolabs.com.','ok');
+      try{ window.location.href='mailto:hello@lyfos.in?subject='+s+'&body='+b; }catch(e){}
+      f.style.display='none'; show('Opening your email app to finish — or write to hello@lyfos.in.','ok');
     }
     f.addEventListener('submit', async function(e){
       e.preventDefault();

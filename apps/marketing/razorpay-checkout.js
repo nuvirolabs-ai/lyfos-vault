@@ -21,7 +21,7 @@
   function customerSafeError(error) {
     var message = error && error.message ? error.message : "";
     if (/auth|credential|configured|key|secret/i.test(message)) {
-      return "Checkout is temporarily unavailable. Please email hello@nuvirolabs.com and we will help you activate Lyfos.";
+      return "Checkout is temporarily unavailable. Please email hello@lyfos.in and we will help you activate Lyfos.";
     }
     return message || "Could not start checkout. Please try again.";
   }

@@ -8,7 +8,7 @@ Use GitHub's private vulnerability reporting for this repository when available.
 
 If private reporting is unavailable, email:
 
-`hello@nuvirolabs.com`
+`hello@lyfos.in`
 
 Use the subject:
 
