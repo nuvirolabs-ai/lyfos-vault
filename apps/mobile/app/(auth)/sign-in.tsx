@@ -98,7 +98,7 @@ export default function SignInScreen() {
 
             <View style={{ alignItems: "center", marginTop: 36 }}>
               <Footnote style={{ textAlign: "center" }}>
-                By continuing you agree to the Terms, Privacy and Beta disclaimer.
+                By continuing you agree to the Terms, Privacy and Product disclaimer.
               </Footnote>
             </View>
           </ScrollView>

@@ -172,7 +172,7 @@ export async function listKeysIHeld() {
 /**
  * Send the invite email via the send-key-holder-invite Edge Function.
  * If the function isn't deployed yet (404), we surface the invite URL
- * so the owner can share it manually during the beta.
+ * so the owner can share it manually in this release.
  */
 export async function sendInviteEmail(inviteId) {
   if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");

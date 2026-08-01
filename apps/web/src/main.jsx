@@ -1575,7 +1575,7 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
             By continuing you agree to the{" "}
             <a href="/legal/terms.html" className="underline">Terms</a>,{" "}
             <a href="/legal/privacy.html" className="underline">Privacy</a> and{" "}
-            <a href="/legal/beta-disclaimer.html" className="underline">Beta disclaimer</a>.
+            <a href="/legal/product-disclaimer.html" className="underline">Product disclaimer</a>.
           </p>
           <p className="mt-3">Lyfos · Locally encrypted on this device.</p>
         </footer>
@@ -2345,11 +2345,11 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
             {screen === "settings" && <SettingsPage vault={vault} onExport={onExport} onReset={onReset} onLoadDemo={loadDemoData} session={session} onShowAuthScreen={onShowAuthScreen} onSignOut={onSignOut} subscription={subscription} entitlements={entitlements} onSubscriptionChange={onSubscriptionChange} autoLockMs={autoLockMs} onAutoLockChange={onAutoLockChange} />}
 
               <footer className="mt-14 flex flex-wrap items-center justify-between gap-4 border-t border-[var(--line)] py-6 text-[11px] font-medium text-[var(--ink-4)]">
-                <span>Lyfos · Beta · Locally encrypted on this device.</span>
+                <span>Lyfos · Locally encrypted on this device.</span>
                 <div className="flex items-center gap-4">
                   <button type="button" onClick={() => setShowTour(true)} className="hover:text-[var(--ink)]">Tour</button>
                   <a href="mailto:hello@lyfos.in?subject=Lyfos%20help" className="hover:text-[var(--ink)]">Help</a>
-                  <a href="/legal/beta-disclaimer.html" className="hover:text-[var(--ink)]">Beta disclaimer</a>
+                  <a href="/legal/product-disclaimer.html" className="hover:text-[var(--ink)]">Product disclaimer</a>
                   <a href="/legal/privacy.html" className="hover:text-[var(--ink)]">Privacy</a>
                   <a href="/legal/terms.html" className="hover:text-[var(--ink)]">Terms</a>
                 </div>
@@ -6511,7 +6511,7 @@ function BackupHealthPanel({ copy, health }) {
 function verificationErrorCopy(result) {
   if (result.code === "wrong_secret") return "This backup did not open with that phrase or recovery key. No local vault data was changed.";
   if (result.code === "corrupted_payload") return "This backup appears damaged or unreadable. Lyfos did not change your local vault.";
-  if (result.code === "unsupported_version") return "This backup format is not supported by this beta. No local vault data was changed.";
+  if (result.code === "unsupported_version") return "This backup format is not supported by this version. No local vault data was changed.";
   return "This does not look like a valid Lyfos encrypted backup. No local vault data was changed.";
 }
 

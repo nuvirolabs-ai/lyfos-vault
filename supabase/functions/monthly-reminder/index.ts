@@ -67,7 +67,7 @@ serve(async (req) => {
 
   // 2. Pull email addresses from auth.users for the affected user_ids.
   //    auth.admin.listUsers paginates; we need only ones with the matching
-  //    id. For Beta scale (<1000 users) a single listUsers page covers
+  //    id. For current scale (<1000 users) a single listUsers page covers
   //    most cases; a real production version paginates fully.
   const emails: Record<string, string> = {};
   const { data: usersResp } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });

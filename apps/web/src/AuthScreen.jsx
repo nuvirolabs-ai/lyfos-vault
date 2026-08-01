@@ -190,9 +190,9 @@ export function AuthScreen({ onSignedIn, onContinueLocalOnly, onNomineeEntry }) 
             By continuing you agree to the{" "}
             <a href="/legal/terms.html" className="underline">Terms</a>,{" "}
             <a href="/legal/privacy.html" className="underline">Privacy</a> and{" "}
-            <a href="/legal/beta-disclaimer.html" className="underline">Beta disclaimer</a>.
+            <a href="/legal/product-disclaimer.html" className="underline">Product disclaimer</a>.
           </p>
-          <p className="mt-3">Lyfos · Beta · Locally encrypted on this device.</p>
+          <p className="mt-3">Lyfos · Locally encrypted on this device.</p>
         </footer>
       </div>
     </main>

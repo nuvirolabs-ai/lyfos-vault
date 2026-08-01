@@ -2,7 +2,7 @@ import { randomId, validateBackupRecord } from "./stage1Crypto.js";
 
 export const STAGE2_BACKUP_KIND = "os-one-encrypted-backup";
 export const STAGE2_BACKUP_SCHEMA_VERSION = 2;
-export const DEFAULT_STAGE2_APP_VERSION = "stage2-beta";
+export const DEFAULT_STAGE2_APP_VERSION = "stage2-release";
 
 export function createStage2BackupManifest({
   encryptedVaultContainer,

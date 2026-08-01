@@ -48,7 +48,6 @@ nav.top .inner {
   display: flex; align-items: center; gap: 22px; padding: 0 24px;
 }
 nav.top .brand { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 600; letter-spacing: -0.02em; }
-.beta-pill { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 999px; background: var(--green-soft); color: var(--green-ink); font-size: 10px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; }
 nav.top .brand .mark { width: 26px; height: 26px; border-radius: 8px; background: var(--green); display: grid; place-items: center; box-shadow: 0 4px 14px var(--green-soft); }
 nav.top .brand .mark svg { width: 15px; height: 15px; color: #fff; }
 nav.top ul { list-style: none; display: flex; gap: 24px; margin: 0 0 0 14px; padding: 0; }

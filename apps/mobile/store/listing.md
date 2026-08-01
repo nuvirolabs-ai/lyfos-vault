@@ -54,7 +54,7 @@ https://lyfos.in/security/
 Legal:
 • Privacy Policy: https://app.lyfos.in/legal/privacy.html
 • Terms of Service: https://app.lyfos.in/legal/terms.html
-• Beta Disclaimer: https://app.lyfos.in/legal/beta-disclaimer.html
+• Product Disclaimer: https://app.lyfos.in/legal/product-disclaimer.html
 ```
 
 ## Keywords (iOS, 100 chars max, comma-separated)
@@ -139,11 +139,11 @@ There is NO health / medical / location data collected.
 - [ ] In-app purchases? **No** — paid Lyfos Vault is not active in this build.
 - [ ] App Store privacy nutrition labels filled (see Privacy questionnaire above)
 - [ ] Encryption export classification answered (Standard cryptography — TSU exception)
-- [ ] TestFlight beta review completed before public release
+- [ ] TestFlight review completed before public release
 
 ## TestFlight / Internal track invite list
 
 | Role      | Name | Email | Notes |
 |-----------|------|-------|-------|
 | Founder   |      |       |       |
-| Beta wave |      |       | Early testers |
+| Early testers |      |       | Early testers |

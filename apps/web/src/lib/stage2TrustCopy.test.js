@@ -7,7 +7,7 @@ import { dirname, resolve } from "node:path";
 const here = dirname(fileURLToPath(import.meta.url));
 const mainSource = readFileSync(resolve(here, "../main.jsx"), "utf8");
 
-test("entry copy does not imply real nominee execution or owner-alert service in private beta", () => {
+test("entry copy does not imply real nominee execution or owner-alert service in product", () => {
   for (const forbidden of [
     "Nominee plus key holders.",
     "14 days of owner alerts."

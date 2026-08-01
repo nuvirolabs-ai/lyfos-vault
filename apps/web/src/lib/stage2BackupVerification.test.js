@@ -31,7 +31,7 @@ test("verifies a Stage 2 manifest backup with the vault phrase without exposing 
     encryptedVaultContainer: record,
     vaultSnapshot: vault,
     exportedAt: "2026-05-04T10:00:00.000Z",
-    appVersion: "stage2-beta-test"
+    appVersion: "stage2-release-test"
   });
 
   const result = await verifyBackup({

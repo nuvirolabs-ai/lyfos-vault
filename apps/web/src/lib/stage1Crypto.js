@@ -4,7 +4,7 @@ import { generateRecoveryPhrase, isValidRecoveryPhrase, normalizeRecoveryPhrase 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-// Legacy KDF (kept readable for backward compat with existing beta vaults).
+// Legacy KDF (kept readable for backward compat with existing vaults).
 const PBKDF2_ITERATIONS = 600000;
 const PBKDF2_NAME = "PBKDF2-SHA256";
 
@@ -151,7 +151,7 @@ export async function updateEncryptedVault(record, vaultKey, vault) {
 
 /**
  * Returns true if the named envelope still uses the legacy PBKDF2 KDF.
- * Pre-Argon2id beta vaults will all return true here; new vaults will
+ * Pre-Argon2id vaults will all return true here; new vaults will
  * return false. Used by the auto-upgrade path.
  */
 export function envelopeIsLegacyKdf(record, kind = "passphrase") {

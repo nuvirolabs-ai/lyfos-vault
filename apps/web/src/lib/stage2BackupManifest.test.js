@@ -70,13 +70,13 @@ test("creates a Stage 2 backup manifest around an existing encrypted Stage 1 vau
     encryptedVaultContainer,
     vaultSnapshot: sensitiveVault,
     exportedAt: "2026-05-04T10:00:00.000Z",
-    appVersion: "stage2-beta-test"
+    appVersion: "stage2-release-test"
   });
 
   assert.equal(manifest.kind, "os-one-encrypted-backup");
   assert.equal(manifest.backupSchemaVersion, 2);
   assert.equal(manifest.exportedAt, "2026-05-04T10:00:00.000Z");
-  assert.equal(manifest.createdByAppVersion, "stage2-beta-test");
+  assert.equal(manifest.createdByAppVersion, "stage2-release-test");
   assert.equal(manifest.recordCount, 2);
   assert.equal(manifest.attachmentCount, 1);
   assert.equal(manifest.auditEventCount, 2);
@@ -100,7 +100,7 @@ test("does not leak sensitive vault metadata into the plaintext manifest", async
     encryptedVaultContainer,
     vaultSnapshot: sensitiveVault,
     exportedAt: "2026-05-04T10:00:00.000Z",
-    appVersion: "stage2-beta-test"
+    appVersion: "stage2-release-test"
   });
   const plaintext = JSON.stringify({
     ...manifest,
@@ -189,7 +189,7 @@ test("prepares an exported Stage 2 manifest instead of a direct Stage 1 backup",
     encryptedVaultContainer,
     vaultSnapshot: sensitiveVault,
     exportedAt: "2026-05-04T11:00:00.000Z",
-    appVersion: "stage2-beta-test"
+    appVersion: "stage2-release-test"
   });
   const parsed = JSON.parse(exportPackage.text);
 

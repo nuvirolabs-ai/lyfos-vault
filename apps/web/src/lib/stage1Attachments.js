@@ -14,7 +14,7 @@ const ACCEPTED_EXTENSIONS = /\.(pdf|png|jpe?g|webp|gif|txt|csv|md|doc|docx)$/i;
 export function validateAttachmentFile(file) {
   if (!file?.name) return { ok: false, reason: "Attachment is missing a filename." };
   if ((file.size ?? 0) > MAX_ATTACHMENT_BYTES) {
-    return { ok: false, reason: `${file.name} is larger than 2 MB. Add a smaller proof file for this Stage 1 beta.` };
+    return { ok: false, reason: `${file.name} is larger than 2 MB. Add a smaller proof file for this local vault.` };
   }
   const type = file.type || "";
   const typeAccepted = ACCEPTED_MIME_TYPES.has(type) || ACCEPTED_MIME_PREFIXES.some((prefix) => type.startsWith(prefix));

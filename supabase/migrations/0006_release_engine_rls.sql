@@ -7,7 +7,7 @@
 --     released to them
 --   - the FOUNDER (admin): reviews pending_review claims; we mark
 --     these out-of-band — there is no users.role column in v1. For
---     the beta we identify admins by their JWT being from a hard-
+--     this release identifies admins by their JWT being from a hard-
 --     coded ADMIN_USER_IDS array, enforced inside SECURITY DEFINER
 --     functions, NOT via RLS.
 --

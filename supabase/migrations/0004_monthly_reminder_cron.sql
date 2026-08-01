@@ -9,7 +9,7 @@
 --        supabase secrets set RESEND_API_KEY=re_xxx
 --   4. Put the function's invocation Bearer token in a Supabase secret
 --      called CRON_BEARER (the same as your SUPABASE_SERVICE_ROLE_KEY
---      works during the beta; rotate for production).
+--      works in this release; rotate when needed).
 --   5. Run this migration. It schedules the cron job.
 --
 -- The job fires at 09:00 UTC on the 1st of every month — early enough

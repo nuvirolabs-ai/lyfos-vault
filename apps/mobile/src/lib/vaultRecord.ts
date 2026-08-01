@@ -129,7 +129,7 @@ async function unwrapVaultKey(envelope: KeyEnvelope, secret: string): Promise<Ui
   return fromBase64(parsed.vaultKey);
 }
 
-// PBKDF2 fallback for legacy beta vaults — pure JS via @noble/hashes
+// PBKDF2 fallback for legacy vaults — pure JS via @noble/hashes
 async function derivePbkdf2Key(secret: string, salt: Uint8Array, iterations: number): Promise<Uint8Array> {
   const { pbkdf2Async } = await import("@noble/hashes/pbkdf2");
   const { sha256 } = await import("@noble/hashes/sha256");

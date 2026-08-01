@@ -68,7 +68,7 @@ When Vault opens, we will email you first:
 
 Thanks for joining the Lyfos founding members — welcome.
 
-Good news: Lyfos is in open beta, so you don't have to wait. You can create your vault right now, free, in your browser:
+Good news: Lyfos is in open release, so you don't have to wait. You can create your vault right now, free, in your browser:
 
   ${APP_URL}
 
