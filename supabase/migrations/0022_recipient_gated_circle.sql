@@ -1,5 +1,4 @@
 -- Recipient-gated Circle of Trust.
--- Local migration only until the production migration ledger is reconciled.
 
 create extension if not exists pgcrypto;
 
@@ -16,7 +15,7 @@ alter table public.key_holders
   add column if not exists circle_generation integer not null default 0;
 
 update public.key_holders
-   set invite_token_hash = encode(digest(convert_to(invite_token, 'UTF8'), 'sha256'), 'hex')
+   set invite_token_hash = encode(extensions.digest(convert_to(invite_token, 'UTF8'), 'sha256'), 'hex')
  where invite_token_hash is null
    and invite_token is not null;
 
@@ -25,11 +24,12 @@ update public.key_holders
  where invite_expires_at is null
    and status = 'pending';
 
+alter table public.key_holders alter column invite_token drop not null;
+
 update public.key_holders
    set invite_token = null
  where invite_token_hash is not null;
 
-alter table public.key_holders alter column invite_token drop not null;
 alter table public.key_holders drop constraint if exists key_holders_role_check;
 alter table public.key_holders
   add constraint key_holders_role_check check (role in ('primary', 'backup', 'trusted'));
@@ -254,7 +254,7 @@ immutable
 strict
 set search_path = public, extensions
 as $$
-  select encode(digest(convert_to(p_token, 'UTF8'), 'sha256'), 'hex');
+  select encode(extensions.digest(convert_to(p_token, 'UTF8'), 'sha256'), 'hex');
 $$;
 
 create or replace function public.create_key_holder_invite(

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   canStartRecovery,
@@ -83,6 +84,20 @@ test("invite rows prefer the newest resend attempt over a late webhook from an o
   ]);
 
   assert.equal(merged[0].delivery_state, "sent");
+});
+
+test("recipient-gated migration resolves pgcrypto from Supabase's extensions schema", () => {
+  const migration = readFileSync(
+    new URL("../../../../supabase/migrations/0022_recipient_gated_circle.sql", import.meta.url),
+    "utf8"
+  );
+
+  assert.equal((migration.match(/extensions\.digest\(/g) ?? []).length, 2);
+  assert.doesNotMatch(migration, /(?<!\.)\bdigest\(/);
+
+  const dropLegacyTokenConstraint = migration.indexOf("alter table public.key_holders alter column invite_token drop not null");
+  const clearLegacyTokens = migration.indexOf("set invite_token = null");
+  assert.ok(dropLegacyTokenConstraint >= 0 && dropLegacyTokenConstraint < clearLegacyTokens);
 });
 
 test("recovered vault contains every record and no mutation capability", () => {
