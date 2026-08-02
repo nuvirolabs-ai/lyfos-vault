@@ -162,13 +162,99 @@ export async function splitVaultKey(rawKey, { totalShares = 5, threshold = 3 } =
  * @param {string[]} shareStrings  at least 3 share strings from splitVaultKey
  * @returns {Promise<Uint8Array>} 32-byte rawKey
  */
-export async function combineShares(shareStrings) {
-  if (!Array.isArray(shareStrings) || shareStrings.length < 3) {
-    throw new Error(`need at least 3 shares to combine, got ${shareStrings?.length ?? 0}`);
+export async function combineShares(shareStrings, { threshold = 3 } = {}) {
+  if (!Number.isInteger(threshold) || threshold < 2) {
+    throw new Error("threshold must be an integer of at least 2");
+  }
+  if (!Array.isArray(shareStrings) || shareStrings.length < threshold) {
+    throw new Error(`need at least ${threshold} shares to combine, got ${shareStrings?.length ?? 0}`);
   }
   const secrets = await readySecrets();
   const hex = secrets.combine(shareStrings);
   return hexToBytes(hex);
+}
+
+// ============================================================
+// Recipient-gated recovery
+// ============================================================
+
+/**
+ * Mask a vault key with a random recipient gate, split the masked key
+ * 2-of-5, and seal the material to the five nominees. The primary or
+ * backup still needs two other nominees because neither gate envelope
+ * contains any part of the masked key.
+ */
+export async function createRecipientGatedPlan({
+  rawVaultKey,
+  holderPublicKeys,
+  primaryPublicKey,
+  backupPublicKey
+}) {
+  if (!(rawVaultKey instanceof Uint8Array) || rawVaultKey.length !== 32) {
+    throw new Error("rawVaultKey must be a 32-byte Uint8Array");
+  }
+  if (!Array.isArray(holderPublicKeys) || holderPublicKeys.length !== 5 || holderPublicKeys.some((key) => !key)) {
+    throw new Error("exactly five holder public keys are required");
+  }
+  if (!primaryPublicKey || !backupPublicKey || primaryPublicKey === backupPublicKey) {
+    throw new Error("distinct primary and backup public keys are required");
+  }
+
+  const gate = crypto.getRandomValues(new Uint8Array(32));
+  const maskedVaultKey = xor32(rawVaultKey, gate);
+  try {
+    const shareStrings = await splitVaultKey(maskedVaultKey, { totalShares: 5, threshold: 2 });
+    const sealedShares = await Promise.all(shareStrings.map((share, index) =>
+      sealShareToPubkey(shareStringToBytes(share), holderPublicKeys[index])
+    ));
+    const [primaryGateEnvelope, backupGateEnvelope] = await Promise.all([
+      sealShareToPubkey(gate, primaryPublicKey),
+      sealShareToPubkey(gate, backupPublicKey)
+    ]);
+    return {
+      algorithm: "recipient-gate-xor-sss-2of5-v1",
+      threshold: 2,
+      totalShares: 5,
+      sealedShares,
+      primaryGateEnvelope,
+      backupGateEnvelope
+    };
+  } finally {
+    gate.fill(0);
+    maskedVaultKey.fill(0);
+  }
+}
+
+export async function recoverRecipientGatedVaultKey({
+  gateEnvelope,
+  releasedShares,
+  recipientSecretKey
+}) {
+  if (!gateEnvelope?.ciphertext || !gateEnvelope?.ephemeralPub) {
+    throw new Error("recipient gate envelope is required");
+  }
+  if (!Array.isArray(releasedShares) || releasedShares.length < 2) {
+    throw new Error("need two supporting shares");
+  }
+  if (!recipientSecretKey) throw new Error("recipient secret key is required");
+
+  const gate = await openSealedShare(gateEnvelope, recipientSecretKey);
+  const openedShares = [];
+  try {
+    for (const sealed of releasedShares.slice(0, 2)) {
+      openedShares.push(await openSealedShare(sealed, recipientSecretKey));
+    }
+    const shareStrings = openedShares.map(bytesToShareString);
+    const maskedVaultKey = await combineShares(shareStrings, { threshold: 2 });
+    try {
+      return xor32(maskedVaultKey, gate);
+    } finally {
+      maskedVaultKey.fill(0);
+    }
+  } finally {
+    gate.fill(0);
+    openedShares.forEach((share) => share.fill(0));
+  }
 }
 
 // ============================================================
@@ -227,6 +313,15 @@ export async function openSealedShare({ ciphertext, ephemeralPub }, recipientSec
 
 function encode(s) {
   return new TextEncoder().encode(s);
+}
+
+function xor32(left, right) {
+  if (!(left instanceof Uint8Array) || !(right instanceof Uint8Array) || left.length !== 32 || right.length !== 32) {
+    throw new Error("XOR inputs must be 32-byte Uint8Arrays");
+  }
+  const out = new Uint8Array(32);
+  for (let index = 0; index < out.length; index += 1) out[index] = left[index] ^ right[index];
+  return out;
 }
 function bytesToHex(bytes) {
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");

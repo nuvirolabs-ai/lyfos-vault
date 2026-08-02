@@ -8,7 +8,9 @@ import {
   sealShareToPubkey,
   openSealedShare,
   shareStringToBytes,
-  bytesToShareString
+  bytesToShareString,
+  createRecipientGatedPlan,
+  recoverRecipientGatedVaultKey
 } from "./shareCrypto.js";
 
 function randomKey() {
@@ -143,4 +145,74 @@ test("end-to-end: 3 holders re-encrypt their shares to a nominee, nominee recove
   // Combine → original vault key
   const recovered = await combineShares(nomineeShares);
   assert.deepEqual(Array.from(recovered), Array.from(ownerKey));
+});
+
+test("recipient gate plus two other nominee shares recovers the vault key", async () => {
+  const vaultKey = randomKey();
+  const nominees = await Promise.all([0, 1, 2, 3, 4].map(() => makeReleaseProcessKeypair()));
+  const plan = await createRecipientGatedPlan({
+    rawVaultKey: vaultKey,
+    holderPublicKeys: nominees.map((nominee) => nominee.publicKey),
+    primaryPublicKey: nominees[0].publicKey,
+    backupPublicKey: nominees[1].publicKey
+  });
+
+  const releasedShares = await Promise.all([1, 3].map(async (index) => {
+    const share = await openSealedShare(plan.sealedShares[index], nominees[index].secretKey);
+    return sealShareToPubkey(share, nominees[0].publicKey);
+  }));
+
+  const recovered = await recoverRecipientGatedVaultKey({
+    gateEnvelope: plan.primaryGateEnvelope,
+    releasedShares,
+    recipientSecretKey: nominees[0].secretKey
+  });
+
+  assert.deepEqual(Array.from(recovered), Array.from(vaultKey));
+});
+
+test("backup gate plus two other nominee shares recovers the vault key", async () => {
+  const vaultKey = randomKey();
+  const nominees = await Promise.all([0, 1, 2, 3, 4].map(() => makeReleaseProcessKeypair()));
+  const plan = await createRecipientGatedPlan({
+    rawVaultKey: vaultKey,
+    holderPublicKeys: nominees.map((nominee) => nominee.publicKey),
+    primaryPublicKey: nominees[0].publicKey,
+    backupPublicKey: nominees[1].publicKey
+  });
+
+  const releasedShares = await Promise.all([2, 4].map(async (index) => {
+    const share = await openSealedShare(plan.sealedShares[index], nominees[index].secretKey);
+    return sealShareToPubkey(share, nominees[1].publicKey);
+  }));
+
+  const recovered = await recoverRecipientGatedVaultKey({
+    gateEnvelope: plan.backupGateEnvelope,
+    releasedShares,
+    recipientSecretKey: nominees[1].secretKey
+  });
+
+  assert.deepEqual(Array.from(recovered), Array.from(vaultKey));
+});
+
+test("recipient gate with only one supporting share cannot recover", async () => {
+  const vaultKey = randomKey();
+  const nominees = await Promise.all([0, 1, 2, 3, 4].map(() => makeReleaseProcessKeypair()));
+  const plan = await createRecipientGatedPlan({
+    rawVaultKey: vaultKey,
+    holderPublicKeys: nominees.map((nominee) => nominee.publicKey),
+    primaryPublicKey: nominees[0].publicKey,
+    backupPublicKey: nominees[1].publicKey
+  });
+  const share = await openSealedShare(plan.sealedShares[2], nominees[2].secretKey);
+  const releasedShare = await sealShareToPubkey(share, nominees[0].publicKey);
+
+  await assert.rejects(
+    () => recoverRecipientGatedVaultKey({
+      gateEnvelope: plan.primaryGateEnvelope,
+      releasedShares: [releasedShare],
+      recipientSecretKey: nominees[0].secretKey
+    }),
+    /two supporting shares/
+  );
 });
