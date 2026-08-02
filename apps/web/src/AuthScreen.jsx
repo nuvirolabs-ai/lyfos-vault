@@ -9,26 +9,42 @@
 // Existing localStorage-only users with a vault land directly on
 // EntryScreen as before — they connect their account later via Settings.
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   signInWithPassword,
   signUpWithPassword,
   signInWithMagicLink,
   resetPasswordEmail,
+  resendSignupConfirmation,
   ensureDeviceToken
 } from "./lib/auth.js";
 
 const MIN_PASSWORD = 12;
 
-export function AuthScreen({ onSignedIn, onContinueLocalOnly, onNomineeEntry }) {
+export function AuthScreen({
+  onSignedIn,
+  onContinueLocalOnly,
+  onNomineeEntry,
+  initialEmail = "",
+  lockedEmail = false,
+  returnPath = "/"
+}) {
   const [mode, setMode] = useState("signin"); // signin | signup | magic
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+  const [activationPending, setActivationPending] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   ensureDeviceToken(); // make sure we have a stable device id before any sign-in
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return undefined;
+    const timer = window.setInterval(() => setResendCooldown((seconds) => Math.max(0, seconds - 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [resendCooldown > 0]);
 
   async function submit(event) {
     event.preventDefault();
@@ -43,14 +59,16 @@ export function AuthScreen({ onSignedIn, onContinueLocalOnly, onNomineeEntry }) 
         if (password.length < MIN_PASSWORD) {
           throw new Error(`Account password must be at least ${MIN_PASSWORD} characters. This is separate from your vault passphrase.`);
         }
-        const data = await signUpWithPassword({ email: email.trim(), password });
+        const data = await signUpWithPassword({ email: email.trim(), password, returnPath });
         if (data?.session) {
           onSignedIn?.(data.session);
         } else {
+          setActivationPending(true);
+          setResendCooldown(60);
           setInfo(`Check your email — we sent a confirmation link to ${email}. Click it to finish setting up your account.`);
         }
       } else if (mode === "magic") {
-        await signInWithMagicLink({ email: email.trim() });
+        await signInWithMagicLink({ email: email.trim(), returnPath });
         setInfo(`Sent a sign-in link to ${email}. Open it on this device to continue.`);
       }
     } catch (err) {
@@ -69,8 +87,22 @@ export function AuthScreen({ onSignedIn, onContinueLocalOnly, onNomineeEntry }) 
     }
     setBusy(true);
     try {
-      await resetPasswordEmail({ email: email.trim() });
+      await resetPasswordEmail({ email: email.trim(), returnPath });
       setInfo(`Sent a password-reset link to ${email}.`);
+    } catch (err) {
+      setError(humanizeAuthError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resendActivation() {
+    setError("");
+    setBusy(true);
+    try {
+      await resendSignupConfirmation({ email: email.trim(), returnPath });
+      setResendCooldown(60);
+      setInfo(`A fresh confirmation link is on its way to ${email}.`);
     } catch (err) {
       setError(humanizeAuthError(err));
     } finally {
@@ -122,8 +154,9 @@ export function AuthScreen({ onSignedIn, onContinueLocalOnly, onNomineeEntry }) 
               autoFocus
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              disabled={lockedEmail}
               placeholder="you@example.com"
-              className="mt-2 w-full rounded-xl border border-black/8 bg-white px-4 py-3 text-[15px] outline-none transition focus:border-[#1d1d1f]"
+              className="mt-2 w-full rounded-xl border border-black/8 bg-white px-4 py-3 text-[15px] outline-none transition focus:border-[#1d1d1f] disabled:bg-[#f5f5f7] disabled:text-[#6e6e73]"
             />
           </label>
 
@@ -158,6 +191,17 @@ export function AuthScreen({ onSignedIn, onContinueLocalOnly, onNomineeEntry }) 
               : "Email me a link"}
           </button>
         </form>
+
+        {activationPending && (
+          <button
+            type="button"
+            onClick={resendActivation}
+            disabled={busy || resendCooldown > 0}
+            className="mt-4 text-center text-[12px] font-medium text-[#6e6e73] hover:text-[#1d1d1f] disabled:text-[#a1a1a6]"
+          >
+            {resendCooldown > 0 ? `Resend available in ${resendCooldown}s` : "Resend activation email"}
+          </button>
+        )}
 
         {mode === "signin" && (
           <button onClick={sendReset} disabled={busy} className="mt-4 text-center text-[12px] text-[#86868b] hover:text-[#1d1d1f]">

@@ -3,9 +3,12 @@
 // the existing local-only flow keeps working in that mode.
 
 import { getSupabase, isSupabaseConfigured } from "./supabaseClient.js";
+import { buildExternalAppUrl } from "./appUrls.js";
 
 const DEVICE_TOKEN_KEY = "lyfos-device-token-v1";
-const PRODUCTION_APP_URL = "https://app.lyfos.in/";
+const PRODUCTION_APP_URL = "https://app.lyfos.in";
+const VITE_ENV = import.meta.env ?? {};
+const PUBLIC_APP_URL = VITE_ENV.VITE_APP_URL || PRODUCTION_APP_URL;
 
 export function ensureDeviceToken() {
   if (typeof window === "undefined") return null;
@@ -45,13 +48,13 @@ export function onAuthStateChange(callback) {
   return () => data.subscription?.unsubscribe();
 }
 
-export async function signUpWithPassword({ email, password }) {
+export async function signUpWithPassword({ email, password, returnPath = "/" }) {
   const sb = requireSupabase();
   const { data, error } = await sb.auth.signUp({
     email,
     password,
     options: {
-      emailRedirectTo: emailRedirect()
+      emailRedirectTo: emailRedirect(returnPath)
     }
   });
   if (error) throw error;
@@ -65,12 +68,12 @@ export async function signInWithPassword({ email, password }) {
   return data;
 }
 
-export async function signInWithMagicLink({ email }) {
+export async function signInWithMagicLink({ email, returnPath = "/" }) {
   const sb = requireSupabase();
   const { data, error } = await sb.auth.signInWithOtp({
     email,
     options: {
-      emailRedirectTo: emailRedirect(),
+      emailRedirectTo: emailRedirect(returnPath),
       shouldCreateUser: true
     }
   });
@@ -84,10 +87,21 @@ export async function signOut() {
   await sb.auth.signOut();
 }
 
-export async function resetPasswordEmail({ email }) {
+export async function resetPasswordEmail({ email, returnPath = "/" }) {
   const sb = requireSupabase();
   const { data, error } = await sb.auth.resetPasswordForEmail(email, {
-    redirectTo: emailRedirect()
+    redirectTo: emailRedirect(returnPath)
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function resendSignupConfirmation({ email, returnPath = "/" }) {
+  const sb = requireSupabase();
+  const { data, error } = await sb.auth.resend({
+    type: "signup",
+    email,
+    options: { emailRedirectTo: emailRedirect(returnPath) }
   });
   if (error) throw error;
   return data;
@@ -135,12 +149,12 @@ function requireSupabase() {
   return sb;
 }
 
-function emailRedirect() {
-  return getAuthEmailRedirect(typeof window === "undefined" ? undefined : window.location.origin);
+function emailRedirect(returnPath = "/") {
+  return getAuthEmailRedirect(returnPath);
 }
 
-export function getAuthEmailRedirect(_origin) {
-  return PRODUCTION_APP_URL;
+export function getAuthEmailRedirect(returnPath = "/") {
+  return buildExternalAppUrl(PUBLIC_APP_URL, returnPath);
 }
 
 export { isSupabaseConfigured };

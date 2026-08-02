@@ -143,7 +143,12 @@ export function ClaimScreen({ token, onReturnHome }) {
           )}
         </div>
         <div className="mt-6">
-          <AuthScreen onSignedIn={(s) => setSession(s)} />
+          <AuthScreen
+            initialEmail={info.nominee_email ?? ""}
+            lockedEmail={Boolean(info.nominee_email)}
+            returnPath={`/claim/${token}`}
+            onSignedIn={(s) => setSession(s)}
+          />
         </div>
       </div>
     );

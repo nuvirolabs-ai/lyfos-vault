@@ -150,7 +150,12 @@ export function InviteAcceptScreen({ token, onReturnHome }) {
           </p>
         </div>
         <div className="mt-6">
-          <AuthScreen onSignedIn={(s) => setSession(s)} />
+          <AuthScreen
+            initialEmail={invite.holder_email}
+            lockedEmail
+            returnPath={`/invite/${token}`}
+            onSignedIn={(s) => setSession(s)}
+          />
         </div>
       </div>
     );
