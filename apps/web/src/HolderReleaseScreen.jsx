@@ -10,8 +10,8 @@
 //   2. She types her passphrase (same one she used at invite-accept).
 //   3. The app derives her release keypair, unwraps her share, and
 //      re-encrypts it to the nominee's release_process_pubkey.
-//   4. holder_release_share RPC inserts the row and advances state
-//      to 'holding' if the 3rd share just dropped.
+//   4. release_supporting_share inserts the row and advances state
+//      to 'holding' when the second independent supporting share arrives.
 //
 // We deliberately keep this its own screen so the holder UX is
 // distinct from the owner UX. A key holder may have her own Lyfos
@@ -21,7 +21,6 @@ import React, { useEffect, useState } from "react";
 import { AuthScreen } from "./AuthScreen.jsx";
 import { getSession, onAuthStateChange, signOut } from "./lib/auth.js";
 import { listReleasesAwaitingMyAction, releaseMyShare } from "./lib/releasePlan.js";
-import { summarizeReleaseKeys } from "./lib/homeHealth.js";
 
 export function HolderReleaseScreen({ onReturnHome }) {
   const [session, setSession] = useState(null);
@@ -112,12 +111,10 @@ function HolderReleaseCard({ req, onChanged, session }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
-  const releaseSummary = summarizeReleaseKeys((req.holderContext ?? []).map((holder) => ({
-    id: holder.holder_id,
-    label: holder.holder_label,
-    status: holder.holder_status,
-    share_released: holder.share_released
-  })));
+  const recipientGated = Boolean(req.recipient_holder_id);
+  const required = recipientGated ? 2 : 3;
+  const received = (req.holderContext ?? []).filter((holder) => holder.share_released).length;
+  const isRecipient = req.myHolderId === req.recipient_holder_id;
 
   if (req.iAlreadyReleased) {
     return (
@@ -125,8 +122,18 @@ function HolderReleaseCard({ req, onChanged, session }) {
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#0b6b3a]">You released — thank you</p>
         <p className="mt-1 text-[14px] font-medium">{req.myLabel}</p>
         <p className="mt-2 text-[12px] leading-5 text-[#6e6e73]">
-          Filed by: {req.nominee_email_at_request}. The request is now {req.state.replace("_", " ")}. The 14-day hold will run automatically.
+          Filed by: {req.nominee_email_at_request}. The request is now {req.state.replaceAll("_", " ")}. The owner-protection hold runs only after two supporting keys match.
         </p>
+      </div>
+    );
+  }
+
+  if (isRecipient || (recipientGated && req.state !== "collecting_support")) {
+    return (
+      <div className="rounded-2xl border border-black/8 bg-white p-5">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">No action needed</p>
+        <p className="mt-2 text-[14px] font-medium">{isRecipient ? "You are the recovery recipient." : "The supporting-key stage has ended."}</p>
+        <p className="mt-2 text-[12px] leading-5 text-[#6e6e73]">{received} of {required} supporting keys matched. A recipient's own share never counts as support.</p>
       </div>
     );
   }
@@ -140,7 +147,8 @@ function HolderReleaseCard({ req, onChanged, session }) {
         requestId: req.id,
         holderId: req.myHolderId,
         ownerId: req.owner_id,
-        releaseProcessPubkey: req.release_process_pubkey,
+        recipientPubkey: req.recipientPubkey,
+        recipientGated,
         passphrase,
         holderUserId: session.user.id
       });
@@ -167,21 +175,22 @@ function HolderReleaseCard({ req, onChanged, session }) {
       <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#7a4b00]">Someone else's vault</p>
       <h3 className="mt-2 text-[24px] font-semibold tracking-tight">You are helping open a family vault.</h3>
       <p className="mt-3 text-[13px] leading-5 text-[#7a4b00]">
-        A release request was filed by <strong>{req.nominee_email_at_request}</strong>. It cannot open with one key: 3 of these 5 trusted people must release their share.
+        A recovery request was filed by <strong>{req.nominee_email_at_request}</strong>. It cannot open with the recipient's key alone: two other nominees must release their shares.
       </p>
 
       <div className="mt-6 rounded-2xl border border-[#c88719]/20 bg-white/70 p-4">
-        <div className="flex items-baseline justify-between gap-4"><p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#7a4b00]">Keys received</p><strong className="text-[14px] text-[#7a4b00]">{releaseSummary.received} of {releaseSummary.required} required</strong></div>
+        <div className="flex items-baseline justify-between gap-4"><p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#7a4b00]">Supporting keys</p><strong className="text-[14px] text-[#7a4b00]">{received} of {required} required</strong></div>
         <div className="mt-4 grid grid-cols-2 gap-2.5 md:grid-cols-5">
-          {releaseSummary.holders.map((holder) => {
-            const isMine = holder.id === req.myHolderId;
-            const received = holder.released;
-            return <div key={holder.id} className={`min-h-[82px] rounded-xl border p-3 ${isMine ? "border-[#1d1d1f] bg-white" : "border-black/8 bg-white/70"}`}><div className="text-[13px] font-semibold text-[#1d1d1f]">{holder.label}</div><div className={`mt-2 text-[11px] ${received ? "text-[#0b6b3a]" : isMine ? "font-semibold text-[#7a4b00]" : "text-[#86868b]"}`}>{received ? "Key received" : isMine ? "Your key" : "Waiting"}</div></div>;
+          {(req.holderContext ?? []).map((holder) => {
+            const isMine = holder.holder_id === req.myHolderId;
+            const released = holder.share_released;
+            const isRecoveryRecipient = holder.holder_id === req.recipient_holder_id;
+            return <div key={holder.holder_id} className={`min-h-[82px] rounded-xl border p-3 ${isMine ? "border-[#1d1d1f] bg-white" : "border-black/8 bg-white/70"}`}><div className="text-[13px] font-semibold text-[#1d1d1f]">{holder.holder_label}</div><div className={`mt-2 text-[11px] ${released ? "text-[#0b6b3a]" : isMine ? "font-semibold text-[#7a4b00]" : "text-[#86868b]"}`}>{isRecoveryRecipient ? "Recipient" : released ? "Key received" : isMine ? "Your key" : "Waiting"}</div></div>;
           })}
         </div>
       </div>
 
-      <p className="mt-5 text-[12px] leading-5 text-[#7a4b00]/85">If you trust this request, release only your own share. The vault stays sealed until the third valid share arrives, then the owner-protection hold begins.</p>
+      <p className="mt-5 text-[12px] leading-5 text-[#7a4b00]/85">Release only if you independently trust this request. Your share is re-encrypted to the selected recipient on this device. The vault stays sealed until a second supporting share arrives, then the owner-protection hold begins.</p>
 
       <label className="mt-4 block">
         <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[#7a4b00]">Your release passphrase</span>

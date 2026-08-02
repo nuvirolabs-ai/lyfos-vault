@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   createStage1VaultRecord,
+  decryptVaultWithRawKey,
   decryptVaultWithPassphrase,
   decryptVaultWithRecoveryKey,
   generateRecoveryKey,
@@ -54,6 +55,20 @@ test("recovery key unwraps the same vault without server escrow", async () => {
 
   assert.deepEqual(unlocked.vault, sampleVault);
   assert.equal(unlocked.usedEnvelope, "recovery");
+});
+
+test("recipient recovery decrypts the entire vault with the unwrapped raw vault key", async () => {
+  const record = await createStage1VaultRecord({
+    vault: sampleVault,
+    passphrase: "correct horse battery staple"
+  });
+  const unlocked = await decryptVaultWithPassphrase(record, "correct horse battery staple");
+  const rawKey = new Uint8Array(await crypto.subtle.exportKey("raw", unlocked.vaultKey));
+
+  const recovered = await decryptVaultWithRawKey(record, rawKey);
+
+  assert.deepEqual(recovered, sampleVault);
+  rawKey.fill(0);
 });
 
 test("updates encrypted vault without rotating key envelopes", async () => {

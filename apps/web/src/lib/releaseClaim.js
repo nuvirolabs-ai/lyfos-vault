@@ -108,6 +108,49 @@ export async function createReleaseRequest({ claimToken, releaseProcessPubkey, d
   return data;
 }
 
+export async function listEntrustedVaults() {
+  if (!isSupabaseConfigured()) return [];
+  const sb = getSupabase();
+  const { data, error } = await sb.rpc("my_entrusted_vaults");
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function createRelationshipRecoveryRequest({
+  holderId,
+  requestKind,
+  fallbackReason,
+  evidenceSummary,
+  evidencePath
+}) {
+  if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
+  const sb = getSupabase();
+  const { data, error } = await sb.rpc("create_relationship_recovery_request", {
+    p_holder_id: holderId,
+    p_request_kind: requestKind,
+    p_fallback_reason: fallbackReason?.trim() || null,
+    p_evidence_summary: evidenceSummary?.trim() || null,
+    p_evidence_path: evidencePath || null
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function getReadyRecoveryMaterial(requestId) {
+  if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
+  const sb = getSupabase();
+  const { data, error } = await sb.rpc("get_ready_recovery_material", { p_request_id: requestId });
+  if (error) throw error;
+  return data;
+}
+
+export async function markRecipientRecoveryOpened(requestId) {
+  if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
+  const sb = getSupabase();
+  const { error } = await sb.rpc("mark_recipient_recovery_opened", { p_request_id: requestId });
+  if (error) throw error;
+}
+
 export async function fetchMyReleaseRequests() {
   // For a nominee: returns the requests SHE raised.
   // For an owner: returns requests against her vault.
@@ -121,7 +164,11 @@ export async function fetchMyReleaseRequests() {
   return data ?? [];
 }
 
-const INFLIGHT_STATES = ["pending_review", "approved", "awaiting_shares", "holding", "ready_to_release"];
+const INFLIGHT_STATES = [
+  "under_review", "collecting_support", "holding", "ready_to_recover",
+  // Keep legacy in-flight rows visible while existing installations migrate.
+  "pending_review", "approved", "awaiting_shares", "ready_to_release"
+];
 
 export async function fetchActiveReleaseAgainstMe() {
   // For an owner: the single in-flight release request against her vault,
@@ -200,6 +247,16 @@ export async function adminApproveRelease(requestId, note) {
     p_admin_note: note ?? null
   });
   if (error) throw error;
+}
+
+export async function sendRecoveryNotifications(requestId) {
+  if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
+  const sb = getSupabase();
+  const { data, error } = await sb.functions.invoke("send-recovery-notifications", {
+    body: { request_id: requestId }
+  });
+  if (error) throw error;
+  return data;
 }
 
 export async function adminRejectRelease(requestId, reason) {

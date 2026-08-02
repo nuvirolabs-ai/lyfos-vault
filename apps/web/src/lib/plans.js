@@ -44,7 +44,7 @@ export const PLANS = {
       "Unlimited vault entries",
       "Personal balance sheet",
       "Circle of Trust with 5 nominees/key holders",
-      "3-of-5 release engine with owner-protection hold",
+      "Primary or backup recipient + 2 supporting nominees",
       "Invite emails and release alerts"
     ]
   }

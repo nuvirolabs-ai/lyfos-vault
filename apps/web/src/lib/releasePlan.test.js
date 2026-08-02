@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildTrustRosterSlots, summarizeHeldKeys, summarizeKeyHolders } from "./releasePlan.js";
+import {
+  buildCircleActivationPayload,
+  buildTrustRosterSlots,
+  summarizeHeldKeys,
+  summarizeKeyHolders
+} from "./releasePlan.js";
+import { makeReleaseProcessKeypair, openSealedShare } from "./shareCrypto.js";
 
 test("accepted holders with release public keys count as verified-ready", () => {
   const summary = summarizeKeyHolders([
@@ -41,6 +47,44 @@ test("buildTrustRosterSlots keeps real invites and fills empty invite slots", ()
   assert.equal(slots[0].statusLabel, "Accepted");
   assert.equal(slots[2].kind, "empty");
   assert.equal(slots[2].slotNumber, 3);
+});
+
+test("buildTrustRosterSlots exposes primary and backup role labels", () => {
+  const slots = buildTrustRosterSlots([
+    { id: "1", role: "primary", label: "Priya", holder_email: "priya@example.com", status: "accepted", release_pubkey: "pk" },
+    { id: "2", role: "backup", label: "Ravi", holder_email: "ravi@example.com", status: "accepted", release_pubkey: "pk" }
+  ]);
+
+  assert.equal(slots[0].roleLabel, "Primary");
+  assert.equal(slots[1].roleLabel, "Backup");
+});
+
+test("buildCircleActivationPayload binds five shares and encrypted instructions to the chosen recipients", async () => {
+  const keypairs = await Promise.all(Array.from({ length: 5 }, () => makeReleaseProcessKeypair()));
+  const holders = keypairs.map((keypair, index) => ({
+    id: `holder-${index + 1}`,
+    label: `Holder ${index + 1}`,
+    status: "accepted",
+    role: index === 0 ? "primary" : index === 1 ? "backup" : "trusted",
+    release_pubkey: keypair.publicKey
+  }));
+  const payload = await buildCircleActivationPayload({
+    rawVaultKey: crypto.getRandomValues(new Uint8Array(32)),
+    holders,
+    instructions: "Call our lawyer before moving any funds."
+  });
+
+  assert.equal(payload.algorithm, "recipient-gate-xor-sss-2of5-v1");
+  assert.equal(payload.shares.length, 5);
+  assert.deepEqual(payload.shares.map((share) => share.holder_id), holders.map((holder) => holder.id));
+  assert.equal(payload.primary.holder_id, holders[0].id);
+  assert.equal(payload.backup.holder_id, holders[1].id);
+
+  const opened = await openSealedShare({
+    ciphertext: payload.primary.instructions_ciphertext,
+    ephemeralPub: payload.primary.instructions_ephemeral_pub
+  }, keypairs[0].secretKey);
+  assert.equal(new TextDecoder().decode(opened), "Call our lawyer before moving any funds.");
 });
 
 test("summarizeHeldKeys reports trusted relationships without exposing secret keys", () => {

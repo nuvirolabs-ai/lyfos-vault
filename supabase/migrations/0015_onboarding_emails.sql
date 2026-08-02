@@ -1,4 +1,4 @@
--- 0014_onboarding_emails.sql
+-- 0015_onboarding_emails.sql
 -- Helper RPC + cron schedule for the 7-email onboarding sequence.
 -- Apply AFTER deploying the `onboarding-emails` Edge Function.
 

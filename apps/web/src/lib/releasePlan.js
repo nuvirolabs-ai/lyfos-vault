@@ -7,12 +7,13 @@
 
 import { getSupabase, isSupabaseConfigured } from "./supabaseClient.js";
 import {
-  splitVaultKey,
+  createRecipientGatedPlan,
   sealShareToPubkey,
   openSealedShare,
   shareStringToBytes,
   deriveHolderKeypairFromPassphrase
 } from "./shareCrypto.js";
+import { CIRCLE_ROLES, mergeLatestInviteDeliveries, validateCircleForActivation } from "./recoveryCeremony.js";
 
 // ============================================================
 // Owner side
@@ -30,46 +31,59 @@ export async function listMyKeyHolders() {
     .neq("status", "revoked")
     .order("created_at", { ascending: true });
   if (error) throw error;
-  return data ?? [];
+  const holders = data ?? [];
+  if (holders.length === 0) return holders;
+  const { data: deliveries, error: deliveryError } = await sb
+    .from("email_deliveries")
+    .select("related_holder_id, state, failure_reason, updated_at")
+    .in("related_holder_id", holders.map((holder) => holder.id))
+    .eq("purpose", "holder_invite")
+    .order("updated_at", { ascending: false });
+  if (deliveryError) throw deliveryError;
+  return mergeLatestInviteDeliveries(holders, deliveries ?? []);
 }
 
-export async function createKeyHolderInvite({ label, holderEmail, holderPhone }) {
+export async function createKeyHolderInvite({ label, holderEmail, holderPhone, role = CIRCLE_ROLES.TRUSTED }) {
   if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
   if (!label?.trim()) throw new Error("Label is required");
   if (!isEmail(holderEmail)) throw new Error("A valid email is required");
+  if (!Object.values(CIRCLE_ROLES).includes(role)) throw new Error("Choose a valid nominee role");
 
   const sb = getSupabase();
-  const { data: userData } = await sb.auth.getUser();
-  if (!userData?.user?.id) throw new Error("Not signed in");
-
-  const normalizedEmail = holderEmail.trim().toLowerCase();
-  await sb
-    .from("key_holders")
-    .delete()
-    .eq("owner_id", userData.user.id)
-    .eq("holder_email", normalizedEmail)
-    .eq("status", "revoked");
-
-  const invite_token = makeInviteToken();
-  const { data, error } = await sb
-    .from("key_holders")
-    .insert({
-      owner_id: userData.user.id,
-      holder_email: normalizedEmail,
-      holder_phone: holderPhone?.trim() || null,
-      label: label.trim(),
-      invite_token,
-      status: "pending"
-    })
-    .select()
-    .single();
+  const { data, error } = await sb.rpc("create_key_holder_invite", {
+    p_holder_email: holderEmail.trim().toLowerCase(),
+    p_holder_phone: holderPhone?.trim() || null,
+    p_label: label.trim(),
+    p_role: role
+  });
   if (error) {
     if (error.code === "23505" || /key_holders_owner_id_holder_email_key/i.test(error.message || "")) {
       throw new Error("This email is already in your trust circle. Open the existing invite and use Send email again.");
     }
     throw error;
   }
-  return data;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.invite_id || !row?.invite_token || !row?.delivery_id) throw new Error("Invite service returned an incomplete response");
+  return {
+    id: row.invite_id,
+    invite_token: row.invite_token,
+    delivery_id: row.delivery_id,
+    label: label.trim(),
+    holder_email: holderEmail.trim().toLowerCase(),
+    holder_phone: holderPhone?.trim() || null,
+    role,
+    status: "pending"
+  };
+}
+
+export async function requeueKeyHolderInvite(holderId) {
+  if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
+  const sb = getSupabase();
+  const { data, error } = await sb.rpc("requeue_key_holder_invite", { p_holder_id: holderId });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.invite_token || !row?.delivery_id) throw new Error("Invite resend returned an incomplete response");
+  return row;
 }
 
 export async function revokeKeyHolder(holderId) {
@@ -121,6 +135,8 @@ export function buildTrustRosterSlots(holders = [], slotCount = 5) {
     holder,
     displayName: holder.label || holder.holder_email?.split("@")[0] || `Trusted person ${index + 1}`,
     email: holder.holder_email || "",
+    role: holder.role || CIRCLE_ROLES.TRUSTED,
+    roleLabel: roleLabelForHolder(holder),
     statusLabel: statusLabelForHolder(holder),
     ready: (holder.status === "accepted" || holder.status === "verified") && Boolean(holder.release_pubkey)
   }));
@@ -174,11 +190,16 @@ export async function listKeysIHeld() {
  * If the function isn't deployed yet (404), we surface the invite URL
  * so the owner can share it manually in this release.
  */
-export async function sendInviteEmail(inviteId) {
+export async function sendInviteEmail({ inviteId, inviteToken, deliveryId }) {
   if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
+  if (!inviteId || !inviteToken || !deliveryId) throw new Error("Complete invite delivery context is required");
   const sb = getSupabase();
   const { data, error } = await sb.functions.invoke("send-key-holder-invite", {
-    body: { invite_id: inviteId }
+    body: {
+      invite_id: inviteId,
+      invite_token: inviteToken,
+      delivery_id: deliveryId
+    }
   });
   if (error) throw error;
   return data;
@@ -193,56 +214,59 @@ export async function sendInviteEmail(inviteId) {
  *   - rawVaultKey: 32-byte Uint8Array (caller exported it from CryptoKey)
  *   - holders: 5 key_holder rows with status accepted/verified and a release_pubkey
  */
-export async function finalizeReleasePlan({ rawVaultKey, holders }) {
+export async function buildCircleActivationPayload({ rawVaultKey, holders, instructions = "" }) {
+  const readiness = validateCircleForActivation(holders);
+  if (!readiness.ok) throw new Error(readiness.reason);
+
+  const primary = holders.find((holder) => holder.role === CIRCLE_ROLES.PRIMARY);
+  const backup = holders.find((holder) => holder.role === CIRCLE_ROLES.BACKUP);
+  const plan = await createRecipientGatedPlan({
+    rawVaultKey,
+    holderPublicKeys: holders.map((holder) => holder.release_pubkey),
+    primaryPublicKey: primary.release_pubkey,
+    backupPublicKey: backup.release_pubkey
+  });
+  const instructionBytes = new TextEncoder().encode(instructions.trim());
+  try {
+    const [primaryInstructions, backupInstructions] = await Promise.all([
+      sealShareToPubkey(instructionBytes, primary.release_pubkey),
+      sealShareToPubkey(instructionBytes, backup.release_pubkey)
+    ]);
+    return {
+      algorithm: plan.algorithm,
+      shares: plan.sealedShares.map((sealed, index) => ({
+        holder_id: holders[index].id,
+        share_index: index + 1,
+        ciphertext: sealed.ciphertext,
+        ephemeral_pub: sealed.ephemeralPub
+      })),
+      primary: {
+        holder_id: primary.id,
+        ciphertext: plan.primaryGateEnvelope.ciphertext,
+        ephemeral_pub: plan.primaryGateEnvelope.ephemeralPub,
+        instructions_ciphertext: primaryInstructions.ciphertext,
+        instructions_ephemeral_pub: primaryInstructions.ephemeralPub
+      },
+      backup: {
+        holder_id: backup.id,
+        ciphertext: plan.backupGateEnvelope.ciphertext,
+        ephemeral_pub: plan.backupGateEnvelope.ephemeralPub,
+        instructions_ciphertext: backupInstructions.ciphertext,
+        instructions_ephemeral_pub: backupInstructions.ephemeralPub
+      }
+    };
+  } finally {
+    instructionBytes.fill(0);
+  }
+}
+
+export async function activateCircleGeneration({ rawVaultKey, holders, instructions = "" }) {
   if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
-  if (!Array.isArray(holders) || holders.length !== 5) {
-    throw new Error("Need exactly 5 accepted holders to finalize");
-  }
-  for (const h of holders) {
-    if (h.status !== "accepted" && h.status !== "verified") {
-      throw new Error(`Holder ${h.label} is in status "${h.status}", expected accepted or verified`);
-    }
-    if (!h.release_pubkey) {
-      throw new Error(`Holder ${h.label} has not uploaded a release public key yet`);
-    }
-  }
-
+  const payload = await buildCircleActivationPayload({ rawVaultKey, holders, instructions });
   const sb = getSupabase();
-  const { data: userData } = await sb.auth.getUser();
-  if (!userData?.user?.id) throw new Error("Not signed in");
-
-  const shareStrings = await splitVaultKey(rawVaultKey);   // 5 SSS shares (hex strings)
-  const ownerId = userData.user.id;
-
-  const rows = [];
-  for (let i = 0; i < 5; i++) {
-    const holder = holders[i];
-    const shareBytes = shareStringToBytes(shareStrings[i]);
-    const sealed = await sealShareToPubkey(shareBytes, holder.release_pubkey);
-    rows.push({
-      owner_id: ownerId,
-      key_holder_id: holder.id,
-      share_index: i + 1,
-      ciphertext: sealed.ciphertext,
-      ephemeral_pub: sealed.ephemeralPub
-    });
-  }
-
-  // Replace any existing shares for this owner (e.g. re-finalizing
-  // after a holder rotation). RLS lets the owner delete her own shares.
-  const { error: delErr } = await sb.from("key_shares").delete().eq("owner_id", ownerId);
-  if (delErr) throw delErr;
-
-  const { error: insErr } = await sb.from("key_shares").insert(rows);
-  if (insErr) throw insErr;
-
-  // Mark each holder verified via the RPC (which checks a key_shares row exists)
-  for (const h of holders) {
-    const { error: vErr } = await sb.rpc("mark_holder_verified", { p_holder_id: h.id });
-    if (vErr) throw vErr;
-  }
-
-  return { sharesUploaded: rows.length };
+  const { data, error } = await sb.rpc("activate_circle_generation", { p_payload: payload });
+  if (error) throw error;
+  return { generationId: data, sharesUploaded: payload.shares.length };
 }
 
 // ============================================================
@@ -255,7 +279,12 @@ export async function peekInvite(token) {
   const { data, error } = await sb.rpc("peek_invite", { p_token: token });
   if (error) throw error;
   if (!data || data.length === 0) return null;
-  return data[0];
+  const row = data[0];
+  return {
+    ...row,
+    label: row.label ?? row.holder_label,
+    role: row.role ?? row.holder_role
+  };
 }
 
 export async function acceptInvite({ token, releasePubkey }) {
@@ -287,15 +316,10 @@ function statusLabelForHolder(holder) {
   return "Invited";
 }
 
-function makeInviteToken() {
-  // ~22 base64url chars = 128 bits of entropy. Plenty for unguessable
-  // single-use tokens; the lookup row is unique-indexed so collisions
-  // are caught.
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  let s = "";
-  for (const b of bytes) s += String.fromCharCode(b);
-  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+function roleLabelForHolder(holder) {
+  if (holder?.role === CIRCLE_ROLES.PRIMARY) return "Primary";
+  if (holder?.role === CIRCLE_ROLES.BACKUP) return "Backup";
+  return "Trusted";
 }
 
 // ============================================================
@@ -316,7 +340,7 @@ export async function listReleasesAwaitingMyAction() {
   // First find my key_holders rows
   const { data: myHolders } = await sb
     .from("key_holders")
-    .select("id, owner_id, label, status")
+    .select("id, owner_id, label, role, status")
     .eq("holder_user_id", userData.user.id)
     .eq("status", "verified");
 
@@ -328,34 +352,28 @@ export async function listReleasesAwaitingMyAction() {
     .from("release_requests")
     .select("*")
     .in("owner_id", ownerIds)
-    .in("state", ["approved", "awaiting_shares", "holding"]);
+    .in("state", ["collecting_support", "holding", "approved", "awaiting_shares"]);
 
   if (!requests) return [];
-
-  // Find which ones I've already released a share for
-  const requestIds = requests.map((r) => r.id);
-  const { data: alreadyReleased } = await sb
-    .from("release_share_releases")
-    .select("release_request_id, key_holder_id")
-    .in("release_request_id", requestIds);
-
-  const releasedSet = new Set((alreadyReleased ?? []).map((r) => `${r.release_request_id}:${r.key_holder_id}`));
 
   // Stitch holder info onto each request
   const contextByRequest = new Map();
   await Promise.all(requests.map(async (req) => {
-    const { data, error } = await sb.rpc("holder_release_context", { p_request_id: req.id });
+    const rpcName = req.recipient_holder_id ? "recipient_gated_holder_context" : "holder_release_context";
+    const { data, error } = await sb.rpc(rpcName, { p_request_id: req.id });
     if (!error) contextByRequest.set(req.id, data ?? []);
   }));
 
   return requests.map((req) => {
     const holder = myHolders.find((h) => h.owner_id === req.owner_id);
+    const context = contextByRequest.get(req.id) ?? [];
     return {
       ...req,
       myHolderId: holder?.id,
       myLabel: holder?.label,
-      iAlreadyReleased: holder ? releasedSet.has(`${req.id}:${holder.id}`) : false,
-      holderContext: contextByRequest.get(req.id) ?? []
+      iAlreadyReleased: Boolean(context.find((item) => item.holder_id === holder?.id)?.share_released),
+      holderContext: context,
+      recipientPubkey: context[0]?.recipient_pubkey ?? req.release_process_pubkey
     };
   });
 }
@@ -372,7 +390,7 @@ export async function listReleasesAwaitingMyAction() {
  * @param {string} params.passphrase           her vault passphrase
  * @param {string} params.holderUserId         auth.uid() — for keypair derivation
  */
-export async function releaseMyShare({ requestId, holderId, ownerId, releaseProcessPubkey, passphrase, holderUserId }) {
+export async function releaseMyShare({ requestId, holderId, ownerId, recipientPubkey, passphrase, holderUserId, recipientGated = true }) {
   if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
   if (!passphrase || passphrase.length < 12) throw new Error("Passphrase required (min 12 chars)");
   const sb = getSupabase();
@@ -402,17 +420,28 @@ export async function releaseMyShare({ requestId, holderId, ownerId, releaseProc
   }
 
   // 4. Re-encrypt the share to the nominee's release_process_pubkey
-  const sealed = await sealShareToPubkey(shareBytes, releaseProcessPubkey);
-  // Zero the decrypted plaintext best-effort
-  for (let i = 0; i < shareBytes.length; i++) shareBytes[i] = 0;
+  if (!recipientPubkey) throw new Error("The recovery recipient key is unavailable");
+  let sealed;
+  try {
+    sealed = await sealShareToPubkey(shareBytes, recipientPubkey);
+  } finally {
+    shareBytes.fill(0);
+  }
 
   // 5. Upload via RPC (atomic: insert + maybe advance state)
-  const { error: rpcErr } = await sb.rpc("holder_release_share", {
-    p_request_id: requestId,
-    p_share_index: shareRow.share_index,
-    p_ciphertext: sealed.ciphertext,
-    p_ephemeral_pub: sealed.ephemeralPub
-  });
+  const rpc = recipientGated
+    ? ["release_supporting_share", {
+        p_request_id: requestId,
+        p_ciphertext: sealed.ciphertext,
+        p_ephemeral_pub: sealed.ephemeralPub
+      }]
+    : ["holder_release_share", {
+        p_request_id: requestId,
+        p_share_index: shareRow.share_index,
+        p_ciphertext: sealed.ciphertext,
+        p_ephemeral_pub: sealed.ephemeralPub
+      }];
+  const { error: rpcErr } = await sb.rpc(rpc[0], rpc[1]);
   if (rpcErr) throw rpcErr;
 
   return { shareIndex: shareRow.share_index };

@@ -55,6 +55,29 @@ Only server-side functions should read provider secrets.
 
 If you use Resend, verify a sending domain you control and add the DNS records Resend gives you. For local testing, you can still use direct invite links when email is not configured.
 
+#### Circle of Trust email preflight
+
+Do not enable real nominee invitations until every item below is true:
+
+1. Set `VITE_APP_URL` in the hosted web build and `APP_URL` in Supabase to the same public HTTPS origin. Localhost and loopback values are intentionally refused by external email functions.
+2. Add that origin and `https://your-app-domain.com/**` to Supabase Auth's redirect allowlist.
+3. Set `RESEND_API_KEY`, `FROM_EMAIL`, `APP_URL`, `SEND_EMAIL_HOOK_SECRET`, and `RESEND_WEBHOOK_SECRET` as Supabase secrets. The sender domain must be verified in Resend.
+4. Deploy `send-key-holder-invite` and `send-recovery-notifications` with JWT verification. Deploy `send-auth-email` and `resend-webhook` without JWT verification; each of those verifies its own signed webhook instead.
+5. In Supabase Auth Hooks, enable the HTTPS **Send Email** hook and point it to `/functions/v1/send-auth-email`. Use the generated `SEND_EMAIL_HOOK_SECRET` unchanged.
+6. In Resend, register `/functions/v1/resend-webhook` for `email.sent`, `email.delivered`, `email.delivery_delayed`, `email.bounced`, `email.suppressed`, and `email.failed` events.
+7. Run a disposable-address ceremony: invite five accounts, confirm every activation returns to the exact invite route, verify the owner sees provider delivery states, complete primary + two-support recovery, repeat with the backup, then test owner abort.
+
+Example deployment commands (run only against the intended Supabase project):
+
+```bash
+supabase functions deploy send-key-holder-invite
+supabase functions deploy send-recovery-notifications
+supabase functions deploy send-auth-email --no-verify-jwt
+supabase functions deploy resend-webhook --no-verify-jwt
+```
+
+`Sent` means Resend accepted the message. Only a signed provider webhook changes the UI to `Delivered`. A bounced, suppressed, delayed, or failed invite should be corrected and resent from the owner's nominee row; resending rotates the public invite token.
+
 ### Payments
 
 The public Free Forever repository does not require payments. If you experiment with billing code, use test-mode credentials only and keep all secrets outside Git.

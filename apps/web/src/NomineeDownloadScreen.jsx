@@ -1,37 +1,44 @@
-// Lyfos — nominee combine + download.
-//
-// Reachable at /download. Shows the active release_request raised by
-// the signed-in user. If state === 'ready_to_release', she can combine
-// the shares released to her, decrypt the owner's vault, filter to
-// emergency-eligible records, and download a JSON bundle.
-//
-// All of this happens client-side. The Lyfos server only ever sees
-// ciphertext at each step.
-
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { AuthScreen } from "./AuthScreen.jsx";
-import { getSession, onAuthStateChange } from "./lib/auth.js";
-import { fetchSharesReleasedFor, fetchMyReleaseRequests } from "./lib/releaseClaim.js";
-import { nomineeReleaseTimeline, RELEASE_KEY_STORAGE_PREFIX, retrieveReleaseProcessSecret } from "./lib/nomineeReleaseFlow.js";
-import { openSealedShare, combineShares, bytesToShareString } from "./lib/shareCrypto.js";
-import { getSupabase } from "./lib/supabaseClient.js";
+import { getSession, onAuthStateChange, signOut } from "./lib/auth.js";
+import {
+  fetchMyReleaseRequests,
+  getReadyRecoveryMaterial,
+  markRecipientRecoveryOpened
+} from "./lib/releaseClaim.js";
+import {
+  deriveHolderKeypairFromPassphrase,
+  openSealedShare,
+  recoverRecipientGatedVaultKey
+} from "./lib/shareCrypto.js";
+import { decryptVaultWithRawKey } from "./lib/stage1Crypto.js";
+import { createRecoveredVaultViewModel } from "./lib/recoveryCeremony.js";
+
+const FIELD_LABELS = [
+  ["username", "Account / reference"],
+  ["secret", "Secret / access detail"],
+  ["bankDetails", "Bank details"],
+  ["cardDetails", "Card details"],
+  ["email", "Email / recovery"],
+  ["notes", "Notes"]
+];
 
 export function NomineeDownloadScreen({ onReturnHome }) {
   const [session, setSession] = useState(null);
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [request, setRequest] = useState(null);
-  const [shares, setShares] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [combining, setCombining] = useState(false);
-  const [done, setDone] = useState(false);
-  const [recordCount, setRecordCount] = useState(0);
+  const [passphrase, setPassphrase] = useState("");
+  const [opening, setOpening] = useState(false);
+  const [recoveredVault, setRecoveredVault] = useState(null);
+  const [ownerInstructions, setOwnerInstructions] = useState("");
 
   useEffect(() => {
     let cancelled = false;
-    getSession()
-      .then((s) => { if (!cancelled) { setSession(s); setSessionLoaded(true); } })
-      .catch(() => { if (!cancelled) setSessionLoaded(true); });
+    getSession().then((next) => {
+      if (!cancelled) { setSession(next); setSessionLoaded(true); }
+    }).catch(() => { if (!cancelled) setSessionLoaded(true); });
     const unsubscribe = onAuthStateChange((next) => {
       if (!cancelled) { setSession(next); setSessionLoaded(true); }
     });
@@ -44,15 +51,10 @@ export function NomineeDownloadScreen({ onReturnHome }) {
     setError("");
     try {
       const all = await fetchMyReleaseRequests();
-      const inflight = all.find((r) => ["pending_review","approved","awaiting_shares","holding","ready_to_release"].includes(r.state));
-      setRequest(inflight ?? all[0] ?? null);
-      if (inflight) {
-        setShares(await fetchSharesReleasedFor(inflight.id));
-      } else {
-        setShares([]);
-      }
+      const recipientRequests = all.filter((item) => item.nominee_user_id === session.user.id && item.recipient_holder_id);
+      setRequest(recipientRequests.find((item) => ["ready_to_recover", "holding"].includes(item.state)) ?? recipientRequests[0] ?? null);
     } catch (err) {
-      setError(err?.message || "Couldn't load.");
+      setError(err?.message || "Couldn't load your recovery request.");
     } finally {
       setLoading(false);
     }
@@ -60,222 +62,254 @@ export function NomineeDownloadScreen({ onReturnHome }) {
 
   useEffect(() => { refresh(); }, [session?.user?.id]);
 
-  async function combineAndDownload() {
-    if (!request) return;
-    setCombining(true);
+  const readyNow = useMemo(() => Boolean(request) && (
+    request.state === "ready_to_recover"
+    || (request.state === "holding" && request.ready_at && new Date(request.ready_at).getTime() <= Date.now())
+  ), [request]);
+
+  async function openVault() {
+    if (!request || passphrase.length < 12) return;
+    setOpening(true);
     setError("");
+    let rawVaultKey = null;
     try {
-      // 1. Get the per-claim release_process secretKey from sessionStorage.
-      //    The claim screen stashed it keyed by the claim_token used at
-      //    file time. We don't have the claim_token here; we stashed
-      //    under the claim_token AND under request_id for resilience.
-      const secretKey = retrieveReleaseProcessSecret({ requestId: request.id });
-      if (!secretKey) {
-        throw new Error("Couldn't find your release process key in this browser session. You must use the same browser tab + session you used when filing the claim.");
-      }
+      const recipientKeypair = await deriveHolderKeypairFromPassphrase(passphrase, session.user.id);
+      const material = await getReadyRecoveryMaterial(request.id);
+      rawVaultKey = await recoverRecipientGatedVaultKey({
+        gateEnvelope: material.gate_envelope,
+        releasedShares: material.released_shares,
+        recipientSecretKey: recipientKeypair.secretKey
+      });
+      const vault = await decryptVaultWithRawKey(material.encrypted_record, rawVaultKey);
 
-      // 2. Decrypt each released share with my secret key
-      const shareStrings = [];
-      for (const s of shares) {
-        const bytes = await openSealedShare(
-          { ciphertext: s.ciphertext, ephemeralPub: s.ephemeral_pub },
-          secretKey
-        );
-        shareStrings.push(bytesToShareString(bytes));
-      }
-
-      if (shareStrings.length < 3) {
-        throw new Error(`Only ${shareStrings.length} shares released so far. Need 3 to combine.`);
-      }
-
-      // 3. Combine via SSS → raw 32-byte vault key
-      const rawVaultKey = await combineShares(shareStrings);
-
-      // 4. Fetch the owner's encrypted vault blob via the nominee_get_vault_blob RPC
-      const sb = getSupabase();
-      const { data: blobRows, error: blobErr } = await sb.rpc("nominee_get_vault_blob", { p_request_id: request.id });
-      if (blobErr) throw blobErr;
-      if (!blobRows || blobRows.length === 0) throw new Error("Couldn't fetch the encrypted vault.");
-      const blob = blobRows[0];
-
-      // 5. Decrypt the vault blob client-side. The encrypted_record is
-      //    a Stage 1 record { encryptedVault: { iv, ciphertext } } whose
-      //    payload is encrypted to rawVaultKey.
-      const cryptoKey = await crypto.subtle.importKey(
-        "raw",
-        rawVaultKey,
-        { name: "AES-GCM", length: 256 },
-        false,
-        ["decrypt"]
-      );
-      // Zero rawVaultKey now that the CryptoKey holds the secret
-      for (let i = 0; i < rawVaultKey.length; i++) rawVaultKey[i] = 0;
-
-      const encryptedVault = blob.encrypted_record?.encryptedVault;
-      if (!encryptedVault?.iv || !encryptedVault?.ciphertext) {
-        throw new Error("Encrypted vault payload missing");
-      }
-      const iv = base64ToBytes(encryptedVault.iv);
-      const ct = base64ToBytes(encryptedVault.ciphertext);
-      const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, cryptoKey, ct);
-      const vault = JSON.parse(new TextDecoder().decode(plaintext));
-
-      // 6. Filter to emergency-eligible records
-      const emergencyItems = (vault.items ?? []).filter((it) => it.emergencyEligible);
-      setRecordCount(emergencyItems.length);
-
-      // 7. Build a single JSON bundle. (ZIP-with-PDFs is a future
-      // enhancement; for v1 we emit one JSON file the nominee can save.)
-      const bundle = {
-        kind: "lyfos-emergency-bundle",
-        version: 1,
-        owner_email: request.nominee_email_at_request, // not strictly the owner email — kept for cross-reference
-        released_at: new Date().toISOString(),
-        items: emergencyItems
+      const instructionsEnvelope = {
+        ciphertext: material.gate_envelope?.instructionsCiphertext,
+        ephemeralPub: material.gate_envelope?.instructionsEphemeralPub
       };
-      const json = JSON.stringify(bundle, null, 2);
-      const blobUrl = URL.createObjectURL(new Blob([json], { type: "application/json" }));
-      const a = document.createElement("a");
-      a.href = blobUrl;
-      a.download = `lyfos-emergency-${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(blobUrl);
+      if (instructionsEnvelope.ciphertext && instructionsEnvelope.ephemeralPub) {
+        const instructionBytes = await openSealedShare(instructionsEnvelope, recipientKeypair.secretKey);
+        try {
+          setOwnerInstructions(new TextDecoder().decode(instructionBytes));
+        } finally {
+          instructionBytes.fill(0);
+        }
+      }
 
-      // 8. Mark the request completed
-      await sb.rpc("nominee_mark_completed", { p_request_id: request.id });
-      // Best-effort cleanup of the session-stashed secret
-      try { sessionStorage.removeItem(RELEASE_KEY_STORAGE_PREFIX + request.id); } catch {}
-      setDone(true);
+      setRecoveredVault(createRecoveredVaultViewModel(vault));
+      setPassphrase("");
+      await markRecipientRecoveryOpened(request.id);
+      setRequest((current) => current ? { ...current, state: "opened" } : current);
     } catch (err) {
-      setError(err?.message || "Couldn't combine.");
+      const message = err?.message || "Couldn't open the recovered vault.";
+      setError(/decrypt|auth|cipher|key/i.test(message)
+        ? "That recovery passphrase did not match the key created when you accepted the invitation."
+        : message);
     } finally {
-      setCombining(false);
+      rawVaultKey?.fill(0);
+      setOpening(false);
     }
   }
 
   if (!sessionLoaded) return <main className="min-h-screen bg-[#fbfbfd]" aria-hidden="true" />;
-
   if (!session) {
     return (
       <div>
         <div className="mx-auto max-w-md px-5 pt-12 text-center">
-          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Nominee download</p>
-          <h1 className="mt-3 text-[28px] font-semibold leading-tight tracking-tight">Check your release request.</h1>
-          <p className="mt-3 text-[13px] text-[#86868b]">Sign in with the nominee email used when the claim was filed.</p>
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Nominee recovery</p>
+          <h1 className="mt-3 text-[30px] font-semibold tracking-tight">Sign in to your own account.</h1>
+          <p className="mt-3 text-[13px] leading-5 text-[#86868b]">Use the exact email that accepted the Circle of Trust invite.</p>
         </div>
-        <div className="mt-6">
-          <AuthScreen onSignedIn={(s) => setSession(s)} />
-        </div>
+        <div className="mt-6"><AuthScreen returnPath="/download" onSignedIn={setSession} /></div>
       </div>
     );
+  }
+
+  if (recoveredVault) {
+    return <RecoveredVault vault={recoveredVault} ownerInstructions={ownerInstructions} onSignOut={() => signOut().then(() => setSession(null))} />;
   }
 
   return (
     <main className="min-h-screen bg-[#fbfbfd] text-[#1d1d1f]">
       <div className="mx-auto max-w-xl px-5 py-12">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Lyfos · Nominee</p>
-        <h1 className="mt-2 text-[30px] font-semibold tracking-tight">Release status</h1>
-        <p className="mt-3 text-[14px] leading-6 text-[#6e6e73]">
-          This is where a nominee follows the release request from review to download. The vault is not opened until 3 trusted people release keys and the owner-protection hold finishes.
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Lyfos · Nominee</p>
+            <h1 className="mt-2 text-[32px] font-semibold tracking-tight">Open the recovered vault</h1>
+          </div>
+          <button onClick={() => signOut().then(() => setSession(null))} className="text-[12px] text-[#86868b]">Sign out</button>
+        </div>
 
-        {loading && <p className="mt-6 text-[14px] text-[#86868b]">Loading…</p>}
+        <SafeOpeningGuide />
+        {loading && <p className="mt-7 text-[14px] text-[#86868b]">Loading…</p>}
+        {error && <div className="mt-5 rounded-xl bg-[#ff453a]/8 px-4 py-3 text-[13px] font-medium text-[#b42318]">{error}</div>}
 
         {!loading && !request && (
-          <div className="mt-8 rounded-2xl border border-dashed border-black/12 bg-white p-6 text-center">
-            <p className="text-[14px] font-medium">No release request found for this account.</p>
-            <button onClick={onReturnHome} className="mt-4 rounded-full bg-[#1d1d1f] px-5 py-2 text-[12px] font-semibold text-white">Go home</button>
+          <div className="mt-7 rounded-2xl border border-dashed border-black/12 bg-white p-6 text-center">
+            <p className="text-[14px] font-medium">No recovery request is linked to this account.</p>
+            <a href="/claim" className="mt-4 inline-block rounded-full bg-[#1d1d1f] px-5 py-2 text-[12px] font-semibold text-white">View entrusted vaults</a>
           </div>
         )}
 
-        {!loading && request && (
-          <div className="mt-8 space-y-4">
-            <Status request={request} sharesCount={shares.length} />
-
-            {error && <div className="rounded-xl bg-[#ff453a]/8 px-4 py-3 text-[13px] font-medium text-[#b42318]">{error}</div>}
-
-            {done ? (
-              <div className="rounded-2xl border border-[#34c759]/30 bg-[#34c759]/8 p-5">
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#0b6b3a]">Download saved</p>
-                <p className="mt-1 text-[14px]">Your emergency bundle was saved to your downloads. It contains {recordCount} record{recordCount === 1 ? "" : "s"} marked emergency-eligible.</p>
-                <p className="mt-3 text-[12px] text-[#0b6b3a]/85">Store this file somewhere safe and offline (an encrypted USB drive, a printed reference, etc.) — Lyfos cannot regenerate it for you.</p>
-              </div>
-            ) : request.state === "ready_to_release" && shares.length >= 3 ? (
-              <button
-                onClick={combineAndDownload}
-                disabled={combining}
-                className="w-full rounded-full bg-[#1d1d1f] px-5 py-3 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] disabled:opacity-50"
-              >
-                {combining ? "Combining…" : "Combine shares and download"}
-              </button>
-            ) : (
-              <div className="rounded-2xl border border-black/8 bg-white p-5">
-                <p className="text-[12px] font-semibold text-[#1d1d1f]">Next</p>
-                <p className="mt-1 text-[12px] leading-5 text-[#86868b]">{waitingCopy(request, shares.length)}</p>
-              </div>
-            )}
+        {!loading && request && !readyNow && (
+          <div className="mt-7 rounded-2xl border border-black/8 bg-white p-5">
+            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Current state</p>
+            <p className="mt-1 text-[17px] font-semibold capitalize">{request.state.replaceAll("_", " ")}</p>
+            <p className="mt-2 text-[13px] leading-5 text-[#6e6e73]">{waitingCopy(request)}</p>
+            <button onClick={refresh} className="mt-4 rounded-full border border-black/10 px-4 py-2 text-[11px] font-semibold">Check again</button>
           </div>
         )}
 
-        <footer className="mt-16 border-t border-black/8 pt-5 text-center text-[11px] text-[#a1a1a6]">
-          <p>Lyfos · <a href="/legal/privacy.html" className="underline">Privacy</a> · <a href="/legal/terms.html" className="underline">Terms</a></p>
-        </footer>
+        {!loading && request && readyNow && (
+          <div className="mt-7 rounded-3xl border border-[#34c759]/25 bg-white p-6">
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#0b6b3a]">Approved and ready</p>
+            <h2 className="mt-2 text-[23px] font-semibold tracking-tight">Three independent keys have matched.</h2>
+            <p className="mt-3 text-[13px] leading-5 text-[#6e6e73]">Type the recovery passphrase you created when accepting the owner's invitation. It is used only on this device.</p>
+            <label className="mt-5 block">
+              <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Your recovery passphrase</span>
+              <input type="password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} autoComplete="current-password" placeholder="Minimum 12 characters" className="mt-2 w-full rounded-xl border border-black/10 bg-[#fbfbfd] px-4 py-3 text-[14px] outline-none focus:border-[#1d1d1f]" />
+            </label>
+            <button onClick={openVault} disabled={opening || passphrase.length < 12} className="mt-4 w-full rounded-full bg-[#1d1d1f] px-5 py-3 text-sm font-semibold text-white disabled:opacity-40">{opening ? "Matching keys…" : "Open entire vault read-only"}</button>
+          </div>
+        )}
+
+        <button onClick={onReturnHome} className="mt-10 text-[12px] text-[#86868b]">Return to Lyfos</button>
       </div>
     </main>
   );
 }
 
-function Status({ request, sharesCount }) {
-  const timeline = nomineeReleaseTimeline(request, sharesCount);
+function SafeOpeningGuide() {
   return (
-    <div className="rounded-2xl border border-black/8 bg-white p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Current state</p>
-          <p className="mt-1 text-[14px] font-medium capitalize">{request.state.replace(/_/g, " ")}</p>
-        </div>
-        <p className="rounded-full bg-[#f5f5f7] px-3 py-1 text-[11px] font-semibold text-[#6e6e73]">{sharesCount}/3 keys</p>
-      </div>
-      <div className="mt-5 space-y-3">
-        {timeline.map((step) => (
-          <div key={step.id} className="flex gap-3">
-            <span className={"mt-1 grid h-5 w-5 shrink-0 place-items-center rounded-full border text-[10px] font-semibold " + (
-              step.status === "done" ? "border-[#1f9d55] bg-[#1f9d55] text-white"
-              : step.status === "active" ? "border-[#1d1d1f] bg-[#1d1d1f] text-white"
-              : "border-black/10 bg-[#f5f5f7] text-[#a1a1a6]"
-            )}>
-              {step.status === "done" ? "✓" : ""}
-            </span>
-            <div>
-              <p className="text-[13px] font-semibold text-[#1d1d1f]">{step.title}</p>
-              <p className="mt-0.5 text-[12px] leading-5 text-[#86868b]">{step.detail}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-      {request.state === "ready_to_release" && sharesCount >= 3 && (
-        <p className="mt-5 rounded-xl bg-[#34c759]/10 px-4 py-3 text-[12px] font-medium text-[#0b6b3a]">
-          The release is ready on this device. Download before closing this browser session.
-        </p>
-      )}
-    </div>
+    <section className="mt-7 rounded-2xl bg-[#fff8eb] p-5 text-[#7a4b00]">
+      <p className="text-[12px] font-semibold">When the vault opens</p>
+      <ol className="mt-2 space-y-1.5 text-[12px] leading-5">
+        <li>1. Read the owner's personal instructions first.</li>
+        <li>2. Preserve an offline copy before contacting institutions.</li>
+        <li>3. Verify documents and account numbers independently.</li>
+        <li>4. Do not move money, close accounts, or share passwords until legal authority is clear.</li>
+      </ol>
+    </section>
   );
 }
 
-function waitingCopy(request, sharesCount) {
-  if (request.state === "pending_review") return "Lyfos is reviewing the death certificate. Check back in a few hours.";
-  if (request.state === "approved") return "The claim is approved. Your owner's key holders are being notified to release their shares.";
-  if (request.state === "awaiting_shares") return `${sharesCount} of 3 minimum shares released. Waiting for the rest.`;
-  if (request.state === "holding") return "Three shares released. The 14-day owner-protection hold is now active.";
-  if (request.state === "cancelled") return "Your owner aborted this release. The vault is sealed.";
-  if (request.state === "rejected") return `Your claim was rejected: ${request.rejection_reason ?? "no reason given"}.`;
-  if (request.state === "completed") return "This release has already been completed.";
-  return "Waiting…";
+function RecoveredVault({ vault, ownerInstructions, onSignOut }) {
+  function downloadCopy() {
+    const payload = JSON.stringify({
+      kind: "lyfos-recipient-recovery",
+      version: 1,
+      recoveredAt: new Date().toISOString(),
+      ownerInstructions,
+      vault
+    }, null, 2);
+    const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `lyfos-recovered-vault-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <main className="min-h-screen bg-[#f5f5f7] text-[#1d1d1f]">
+      <div className="mx-auto max-w-4xl px-5 py-10 md:py-14">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#0b6b3a]">Recovered · Read only</p>
+            <h1 className="mt-2 text-[36px] font-semibold tracking-tight">The entire vault</h1>
+            <p className="mt-2 text-[13px] text-[#6e6e73]">Nothing here can edit, sync, or change the owner's account.</p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={downloadCopy} className="rounded-full bg-[#1d1d1f] px-4 py-2 text-[11px] font-semibold text-white">Save offline copy</button>
+            <button onClick={onSignOut} className="rounded-full border border-black/10 bg-white px-4 py-2 text-[11px] font-semibold">Close vault</button>
+          </div>
+        </div>
+
+        <section className="mt-8 rounded-3xl bg-[#1d1d1f] p-6 text-white md:p-8">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/50">Read this first · From the owner</p>
+          <p className="mt-4 whitespace-pre-wrap text-[17px] leading-7 text-white/90">{ownerInstructions || "No personal instructions were added. Follow the safety steps below and verify legal authority before acting."}</p>
+        </section>
+
+        <SafeOpeningGuide />
+
+        <div className="mt-8 flex items-baseline justify-between">
+          <h2 className="text-[22px] font-semibold">All records</h2>
+          <span className="text-[12px] text-[#86868b]">{vault.items.length} records</span>
+        </div>
+        <div className="mt-4 space-y-3">
+          {vault.items.map((item, index) => <RecoveredRecord key={item.id || `${item.title}-${index}`} item={item} />)}
+          {vault.items.length === 0 && <div className="rounded-2xl bg-white p-6 text-center text-[13px] text-[#86868b]">The vault contains no records.</div>}
+        </div>
+
+        <details className="mt-8 rounded-2xl border border-black/8 bg-white p-5">
+          <summary className="cursor-pointer text-[13px] font-semibold">Vault context and release record</summary>
+          <p className="mt-2 text-[12px] leading-5 text-[#86868b]">Additional read-only data preserved with the vault, including balances, release settings, and audit history.</p>
+          <pre className="mt-4 max-h-[28rem] overflow-auto whitespace-pre-wrap break-words rounded-xl bg-[#f5f5f7] p-4 text-[11px] leading-5">{JSON.stringify({
+            balanceSheet: vault.balanceSheet ?? null,
+            releaseSettings: vault.releaseSettings ?? null,
+            audit: vault.audit ?? null
+          }, null, 2)}</pre>
+        </details>
+      </div>
+    </main>
+  );
 }
 
-function base64ToBytes(b64) {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
+function RecoveredRecord({ item }) {
+  const [open, setOpen] = useState(item.type === "emergency_instruction");
+  return (
+    <article className="overflow-hidden rounded-2xl border border-black/8 bg-white">
+      <button onClick={() => setOpen((value) => !value)} className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#86868b]">{typeLabel(item.type)}</p>
+          <h3 className="mt-1 text-[16px] font-semibold">{item.title || "Untitled record"}</h3>
+        </div>
+        <span className="text-[18px] text-[#86868b]">{open ? "−" : "+"}</span>
+      </button>
+      {open && (
+        <div className="border-t border-black/8 px-5 py-5">
+          <dl className="grid gap-4 md:grid-cols-2">
+            {FIELD_LABELS.filter(([key]) => String(item[key] ?? "").trim()).map(([key, label]) => (
+              <div key={key} className={key === "notes" ? "md:col-span-2" : ""}>
+                <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#86868b]">{label}</dt>
+                <dd className="mt-1 whitespace-pre-wrap break-words text-[13px] leading-5">{item[key]}</dd>
+              </div>
+            ))}
+          </dl>
+          {(item.attachments?.length ?? 0) > 0 && (
+            <div className="mt-5 border-t border-black/8 pt-4">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#86868b]">Attachments</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {item.attachments.map((attachment) => (
+                  <a key={attachment.id || attachment.name} href={attachment.dataUrl} download={attachment.name} className="rounded-full border border-black/10 bg-[#fbfbfd] px-3 py-1.5 text-[11px] font-semibold">Download {attachment.name}</a>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </article>
+  );
+}
+
+function waitingCopy(request) {
+  if (request.state === "under_review") return "Lyfos is reviewing the evidence.";
+  if (request.state === "collecting_support") return "Two other nominees must release their keys.";
+  if (request.state === "holding") return `The owner-protection hold ends ${request.ready_at ? new Date(request.ready_at).toLocaleString() : "after 14 days"}.`;
+  if (request.state === "aborted") return "The owner stopped this recovery. The vault remains sealed.";
+  if (request.state === "rejected") return `The request was rejected${request.rejection_reason ? `: ${request.rejection_reason}` : "."}`;
+  return "Return to the entrusted-vault page for details.";
+}
+
+function typeLabel(type) {
+  return ({
+    bank_account: "Bank / money",
+    password: "Password",
+    pin: "PIN / device code",
+    email_account: "Email account",
+    card: "Card",
+    identity_document: "Identity document",
+    insurance_policy: "Insurance",
+    important_document: "Important document",
+    emergency_instruction: "Emergency instruction"
+  })[type] || String(type || "Record").replaceAll("_", " ");
 }

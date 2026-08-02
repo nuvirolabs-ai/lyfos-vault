@@ -1,71 +1,216 @@
-import React, { useState } from "react";
-import { extractClaimToken } from "./lib/nomineeReleaseFlow.js";
+import React, { useEffect, useMemo, useState } from "react";
+import { AuthScreen } from "./AuthScreen.jsx";
+import { getSession, onAuthStateChange, signOut } from "./lib/auth.js";
+import {
+  createRelationshipRecoveryRequest,
+  fetchMyReleaseRequests,
+  listEntrustedVaults,
+  uploadDeathCertificate
+} from "./lib/releaseClaim.js";
+
+const ACTIVE_STATES = new Set(["under_review", "collecting_support", "holding", "ready_to_recover"]);
 
 export function NomineeEntryScreen({ onReturnHome }) {
-  const [input, setInput] = useState("");
+  const [session, setSession] = useState(null);
+  const [sessionLoaded, setSessionLoaded] = useState(false);
+  const [vaults, setVaults] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  function submit(event) {
-    event.preventDefault();
-    const token = extractClaimToken(input);
-    if (!token) {
-      setError("Paste the claim link shared by the vault owner.");
-      return;
+  useEffect(() => {
+    let cancelled = false;
+    getSession().then((next) => {
+      if (!cancelled) { setSession(next); setSessionLoaded(true); }
+    }).catch(() => { if (!cancelled) setSessionLoaded(true); });
+    const unsubscribe = onAuthStateChange((next) => {
+      if (!cancelled) { setSession(next); setSessionLoaded(true); }
+    });
+    return () => { cancelled = true; unsubscribe(); };
+  }, []);
+
+  async function refresh() {
+    if (!session) return;
+    setLoading(true);
+    setError("");
+    try {
+      const [nextVaults, nextRequests] = await Promise.all([
+        listEntrustedVaults(),
+        fetchMyReleaseRequests()
+      ]);
+      setVaults(nextVaults);
+      setRequests(nextRequests.filter((request) => request.nominee_user_id === session.user.id));
+    } catch (err) {
+      setError(err?.message || "Couldn't load the vaults entrusted to you.");
+    } finally {
+      setLoading(false);
     }
-    window.location.assign(`/claim/${token}`);
+  }
+
+  useEffect(() => { refresh(); }, [session?.user?.id]);
+
+  if (!sessionLoaded) return <main className="min-h-screen bg-[#fbfbfd]" aria-hidden="true" />;
+  if (!session) {
+    return (
+      <div>
+        <Intro />
+        <div className="mt-6"><AuthScreen returnPath="/claim" onSignedIn={setSession} /></div>
+      </div>
+    );
   }
 
   return (
     <main className="min-h-screen bg-[#fbfbfd] text-[#1d1d1f]">
-      <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 py-12">
-        <header className="text-center">
-          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Lyfos nominee</p>
-          <h1 className="mt-4 text-[34px] font-semibold leading-[1.08] tracking-tight md:text-[42px]">
-            Open a family vault request.
-          </h1>
-          <p className="mx-auto mt-4 max-w-sm text-[14px] leading-6 text-[#6e6e73]">
-            Use the private claim link given by the vault owner. Lyfos will ask you to sign in only after the link is recognized.
-          </p>
-        </header>
-
-        <form onSubmit={submit} className="mt-10 rounded-2xl border border-black/8 bg-white p-5 shadow-[0_14px_42px_rgba(0,0,0,0.05)]">
-          <label className="block">
-            <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Claim link or code</span>
-            <input
-              type="text"
-              autoFocus
-              value={input}
-              onChange={(event) => { setInput(event.target.value); setError(""); }}
-              placeholder="https://app.lyfos.in/claim/..."
-              className="mt-2 h-[50px] w-full rounded-xl border border-black/8 bg-[#fbfbfd] px-4 text-[15px] outline-none transition focus:border-[#1d1d1f]"
-            />
-          </label>
-          {error && <div className="mt-3 rounded-xl bg-[#ff453a]/8 px-4 py-3 text-[13px] font-medium text-[#b42318]">{error}</div>}
-          <button
-            type="submit"
-            className="mt-4 h-[50px] w-full rounded-full bg-[#1d1d1f] text-sm font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition hover:bg-black"
-          >
-            Continue
-          </button>
-        </form>
-
-        <div className="mt-8 rounded-2xl border border-black/8 bg-white px-5 py-4">
-          <p className="text-[12px] font-semibold text-[#1d1d1f]">What happens next</p>
-          <div className="mt-3 grid grid-cols-4 gap-2 text-center text-[11px] text-[#86868b]">
-            {["Sign in", "Upload proof", "3 keys", "14-day hold"].map((label) => (
-              <div key={label} className="rounded-xl bg-[#f5f5f7] px-2 py-3">{label}</div>
-            ))}
+      <div className="mx-auto max-w-2xl px-5 py-10 md:py-14">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Lyfos · Nominee</p>
+            <h1 className="mt-2 text-[34px] font-semibold tracking-tight">Vaults entrusted to you</h1>
+            <p className="mt-3 max-w-xl text-[14px] leading-6 text-[#6e6e73]">You always use your own account. You never sign in as the vault owner.</p>
           </div>
+          <button onClick={() => signOut().then(() => setSession(null))} className="shrink-0 text-[12px] text-[#86868b] hover:text-[#1d1d1f]">Sign out</button>
         </div>
 
-        <button onClick={onReturnHome} className="mt-8 text-center text-[12px] text-[#86868b] hover:text-[#1d1d1f]">
-          Go to Lyfos
-        </button>
+        <RecoveryGuide />
+        {error && <div className="mt-5 rounded-xl bg-[#ff453a]/8 px-4 py-3 text-[13px] font-medium text-[#b42318]">{error}</div>}
+        {loading && <p className="mt-8 text-[14px] text-[#86868b]">Loading…</p>}
 
-        <footer className="mt-auto pt-8 text-center text-[11px] text-[#a1a1a6]">
-          <p>Lyfos · <a href="/legal/privacy.html" className="underline">Privacy</a> · <a href="/legal/terms.html" className="underline">Terms</a></p>
-        </footer>
+        {!loading && vaults.length === 0 && (
+          <div className="mt-8 rounded-2xl border border-dashed border-black/12 bg-white p-7 text-center">
+            <p className="text-[15px] font-medium">No active primary or backup vault is linked yet.</p>
+            <p className="mt-2 text-[12px] leading-5 text-[#86868b]">Accept the invitation with this email, then wait for the owner to activate all five nominees. The vault will appear here automatically.</p>
+          </div>
+        )}
+
+        <div className="mt-8 space-y-4">
+          {vaults.map((vault) => (
+            <EntrustedVaultCard
+              key={vault.holder_id}
+              vault={vault}
+              request={requests.find((item) => item.recipient_holder_id === vault.holder_id && ACTIVE_STATES.has(item.state))
+                ?? requests.find((item) => item.recipient_holder_id === vault.holder_id)}
+              onChanged={refresh}
+            />
+          ))}
+        </div>
+
+        <button onClick={onReturnHome} className="mt-10 text-[12px] text-[#86868b] hover:text-[#1d1d1f]">Return to Lyfos</button>
       </div>
     </main>
   );
+}
+
+function Intro() {
+  return (
+    <div className="mx-auto max-w-md px-5 pt-12 text-center">
+      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Lyfos nominee</p>
+      <h1 className="mt-4 text-[34px] font-semibold leading-[1.08] tracking-tight">Recover a vault you were entrusted with.</h1>
+      <p className="mt-4 text-[14px] leading-6 text-[#6e6e73]">Sign in with the same email that accepted the Circle of Trust invitation.</p>
+    </div>
+  );
+}
+
+function RecoveryGuide() {
+  return (
+    <section className="mt-8 rounded-2xl border border-black/8 bg-white p-5">
+      <p className="text-[12px] font-semibold">Before you begin</p>
+      <ol className="mt-3 grid gap-2 text-[12px] leading-5 text-[#6e6e73] md:grid-cols-2">
+        <li className="rounded-xl bg-[#f5f5f7] px-3 py-2.5"><strong className="text-[#1d1d1f]">1. Gather proof.</strong> Use an official death or incapacity document.</li>
+        <li className="rounded-xl bg-[#f5f5f7] px-3 py-2.5"><strong className="text-[#1d1d1f]">2. Submit once.</strong> Lyfos reviews it before anyone is asked for a key.</li>
+        <li className="rounded-xl bg-[#f5f5f7] px-3 py-2.5"><strong className="text-[#1d1d1f]">3. Two people help.</strong> Two other nominees must release their keys.</li>
+        <li className="rounded-xl bg-[#f5f5f7] px-3 py-2.5"><strong className="text-[#1d1d1f]">4. Wait 14 days.</strong> The owner is alerted and can stop the release.</li>
+      </ol>
+      <p className="mt-3 text-[11px] leading-5 text-[#86868b]">After the hold, type the recovery passphrase you created when accepting the invite. The entire vault opens read-only on this device.</p>
+    </section>
+  );
+}
+
+function EntrustedVaultCard({ vault, request, onChanged }) {
+  const [open, setOpen] = useState(false);
+  const [summary, setSummary] = useState("");
+  const [fallbackReason, setFallbackReason] = useState("");
+  const [file, setFile] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const isBackup = vault.holder_role === "backup";
+  const canSubmit = summary.trim().length >= 20 && file && (!isBackup || fallbackReason.trim().length >= 10);
+  const status = useMemo(() => request ? request.state.replaceAll("_", " ") : "ready", [request]);
+
+  async function submit(event) {
+    event.preventDefault();
+    if (!canSubmit) return;
+    setBusy(true);
+    setError("");
+    try {
+      const evidencePath = await uploadDeathCertificate(file);
+      await createRelationshipRecoveryRequest({
+        holderId: vault.holder_id,
+        requestKind: isBackup ? "backup" : "normal",
+        fallbackReason,
+        evidenceSummary: summary,
+        evidencePath
+      });
+      setOpen(false);
+      await onChanged();
+    } catch (err) {
+      setError(err?.message || "Couldn't submit this recovery request.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-3xl border border-black/8 bg-white p-5 md:p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#86868b]">{isBackup ? "Backup nominee" : "Primary nominee"}</p>
+          <h2 className="mt-1 text-[21px] font-semibold">{vault.owner_email?.split("@")[0] || "Vault owner"}'s vault</h2>
+          <p className="mt-1 text-[12px] text-[#86868b]">Your label: {vault.holder_label}</p>
+        </div>
+        <span className="rounded-full bg-[#f5f5f7] px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#6e6e73]">{status}</span>
+      </div>
+
+      {request ? (
+        <div className="mt-5 rounded-2xl bg-[#f5f5f7] p-4">
+          <p className="text-[13px] font-medium">{requestCopy(request)}</p>
+          {request.state === "ready_to_recover" && <a href="/download" className="mt-3 inline-block rounded-full bg-[#1d1d1f] px-5 py-2 text-[12px] font-semibold text-white">Open recovered vault</a>}
+        </div>
+      ) : !open ? (
+        <button onClick={() => setOpen(true)} className="mt-5 rounded-full bg-[#1d1d1f] px-5 py-2.5 text-[12px] font-semibold text-white">Start recovery</button>
+      ) : (
+        <form onSubmit={submit} className="mt-5 space-y-4 border-t border-black/8 pt-5">
+          {isBackup && (
+            <label className="block">
+              <span className="text-[11px] font-medium">Why the primary cannot act</span>
+              <textarea value={fallbackReason} onChange={(event) => setFallbackReason(event.target.value)} rows={2} placeholder="Explain why backup recovery is necessary." className="mt-1.5 w-full rounded-xl border border-black/10 bg-[#fbfbfd] px-3 py-2 text-[13px] outline-none focus:border-[#1d1d1f]" />
+            </label>
+          )}
+          <label className="block">
+            <span className="text-[11px] font-medium">What happened</span>
+            <textarea value={summary} onChange={(event) => setSummary(event.target.value)} rows={3} placeholder="Briefly describe the death or incapacity and your relationship to the owner." className="mt-1.5 w-full rounded-xl border border-black/10 bg-[#fbfbfd] px-3 py-2 text-[13px] outline-none focus:border-[#1d1d1f]" />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-medium">Official evidence · PDF, JPG or PNG</span>
+            <input type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="mt-1.5 block w-full text-[12px] text-[#6e6e73]" />
+          </label>
+          {error && <div className="rounded-xl bg-[#ff453a]/8 px-4 py-3 text-[12px] font-medium text-[#b42318]">{error}</div>}
+          <div className="flex items-center justify-between">
+            <button type="button" onClick={() => setOpen(false)} className="text-[12px] text-[#86868b]">Cancel</button>
+            <button type="submit" disabled={!canSubmit || busy} className="rounded-full bg-[#1d1d1f] px-5 py-2.5 text-[12px] font-semibold text-white disabled:opacity-40">{busy ? "Submitting…" : "Submit for review"}</button>
+          </div>
+        </form>
+      )}
+    </section>
+  );
+}
+
+function requestCopy(request) {
+  if (request.state === "under_review") return "Lyfos is reviewing the evidence. No nominee key has been requested yet.";
+  if (request.state === "collecting_support") return "Approved. Two other nominees are being asked to release their keys.";
+  if (request.state === "holding") return "Two supporting keys matched. The 14-day owner-protection hold is running.";
+  if (request.state === "ready_to_recover") return "The hold is complete. You can now open the entire vault read-only.";
+  if (request.state === "rejected") return `The request was rejected${request.rejection_reason ? `: ${request.rejection_reason}` : "."}`;
+  if (request.state === "aborted") return "The vault owner stopped this recovery. The vault remains sealed.";
+  if (request.state === "opened") return "This vault was recovered and opened read-only.";
+  return `Recovery state: ${request.state.replaceAll("_", " ")}.`;
 }

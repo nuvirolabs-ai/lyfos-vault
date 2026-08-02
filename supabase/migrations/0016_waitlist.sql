@@ -1,4 +1,4 @@
--- 0015_waitlist.sql
+-- 0016_waitlist.sql
 -- Founding-members waitlist captured from the marketing site (apps/marketing).
 -- Rows are written ONLY by the `waitlist` Edge Function using the service role;
 -- RLS is enabled with no anon/authenticated policies, so the table is not

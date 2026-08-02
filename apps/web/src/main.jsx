@@ -51,7 +51,9 @@ import { prepareStage2BackupExport } from "./lib/stage2BackupManifest.js";
 import { initTelemetry, registerServiceWorker } from "./lib/telemetry.js";
 import { buildSnapshotsCsv, suggestedCsvFilename } from "./lib/csvExport.js";
 import { formatCurrency, formatCompact, DEFAULT_CURRENCY } from "./lib/currency.js";
-import { listMyKeyHolders, createKeyHolderInvite, revokeKeyHolder, deleteKeyHolder, sendInviteEmail, finalizeReleasePlan, summarizeKeyHolders, buildTrustRosterSlots, listKeysIHeld, summarizeHeldKeys } from "./lib/releasePlan.js";
+import { listMyKeyHolders, createKeyHolderInvite, requeueKeyHolderInvite, revokeKeyHolder, deleteKeyHolder, sendInviteEmail, activateCircleGeneration, summarizeKeyHolders, buildTrustRosterSlots, listKeysIHeld, summarizeHeldKeys } from "./lib/releasePlan.js";
+import { buildExternalAppUrl } from "./lib/appUrls.js";
+import { validateCircleForActivation } from "./lib/recoveryCeremony.js";
 import { loadMyReleaseSettings, upsertMyReleaseSettings, rotateMyClaimToken, fetchActiveReleaseAgainstMe, ownerAbortRelease, isValidNomineeEmail } from "./lib/releaseClaim.js";
 import { fetchMySubscription, fetchMyBillingEvents, fetchMyBillingProfile, upsertMyBillingProfile, fetchInvoiceUrl, joinVaultFallWaitlist, cancelSubscriptionAtPeriodEnd, resumeSubscription } from "./lib/billing.js";
 import { planFor, entitlementsFor, daysLeftFor, paidPlans } from "./lib/plans.js";
@@ -90,6 +92,8 @@ import { getBackupSizeWarning } from "./lib/stage2BackupSize.js";
 import { deriveHomeHealth, getPrimaryHomeAction } from "./lib/homeHealth.js";
 import { getBalanceSheetSummary } from "./lib/balanceSheet.js";
 import "./styles.css";
+
+const PUBLIC_APP_URL = (import.meta.env ?? {}).VITE_APP_URL || "https://app.lyfos.in";
 
 const AREAS = [
   {
@@ -2421,7 +2425,7 @@ function ActiveReleaseBanner({ onNavigateRelease }) {
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <button
               onClick={abort}
-              disabled={aborting || request.state === "ready_to_release" || request.state === "completed" || request.state === "cancelled"}
+              disabled={aborting || ["opened", "aborted", "rejected", "expired", "completed", "cancelled"].includes(request.state)}
               className="rounded-full bg-[#b42318] px-4 py-1.5 text-[11px] font-semibold text-white shadow-[0_4px_12px_rgba(180,35,24,0.25)] transition hover:bg-[#8e1612] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {aborting ? "Aborting…" : "Abort — I'm fine"}
@@ -2437,7 +2441,7 @@ function ActiveReleaseBanner({ onNavigateRelease }) {
 }
 
 function stateTone(state) {
-  if (state === "holding" || state === "ready_to_release") {
+  if (["holding", "ready_to_recover", "ready_to_release"].includes(state)) {
     return { bg: "bg-[#ff453a]/8", border: "border-[#b42318]/40", text: "text-[var(--red-ink)]", dot: "bg-[#b42318]" };
   }
   return { bg: "bg-[var(--amber-soft)]", border: "border-[#c88719]/30", text: "text-[var(--amber-ink)]", dot: "bg-[#c88719]" };
@@ -2445,6 +2449,12 @@ function stateTone(state) {
 
 function stateLabel(state) {
   return {
+    under_review:      "Evidence under review",
+    collecting_support:"Waiting for two supporting nominees",
+    ready_to_recover:  "Ready for the recipient",
+    opened:            "Opened read-only",
+    aborted:           "Aborted",
+    expired:           "Expired",
     pending_review:    "Pending Lyfos review",
     approved:          "Approved · waiting for your key holders",
     awaiting_shares:   "Key holders releasing",
@@ -2458,6 +2468,10 @@ function stateLabel(state) {
 
 function bannerCopy(request, daysRemaining) {
   switch (request.state) {
+    case "under_review":
+      return `A recovery recipient (${request.nominee_email_at_request}) submitted evidence. Lyfos is reviewing it. If this is unexpected, abort now.`;
+    case "collecting_support":
+      return `The evidence was approved. Two nominees other than the selected recipient must independently release their keys. Your vault remains sealed and you can still abort.`;
     case "pending_review":
       return `Someone (${request.nominee_email_at_request}) filed a release claim. Lyfos is reviewing the certificate. If this isn't expected — abort now.`;
     case "approved":
@@ -2466,6 +2480,8 @@ function bannerCopy(request, daysRemaining) {
       return `Your key holders are releasing shares. Once 3 of 5 release, a 14-day hold begins during which you'll be alerted daily. If this isn't expected — abort now.`;
     case "holding":
       return `The 14-day owner-protection hold is active. ${daysRemaining ?? "?"} day${daysRemaining === 1 ? "" : "s"} remaining. If you're alive and reading this — abort now and your vault stays sealed.`;
+    case "ready_to_recover":
+      return `The owner-protection hold has completed. The selected recipient can now match their private recovery key and open the entire vault read-only. You can still abort until it is opened.`;
     case "ready_to_release":
       return `The 14-day hold has expired. Your nominee can now download the emergency-eligible records. Abort is no longer possible.`;
     default:
@@ -5352,7 +5368,7 @@ function ReleaseScreen({ vault, onSave, session, vaultKey, entitlements, autoPre
         {releaseStep === 3 && (
           <ReleasePanelLight subtitle="Owner alert and threshold rules" body="These rules are shown as product logic. A production release requires a backend alert service.">
             <div className="divide-y divide-[var(--line)]">
-              <RuleRow label="Threshold" value="3 of 5 keys" />
+              <RuleRow label="Threshold" value="Recipient + 2 other keys" />
               <RuleRow label="Owner hold" value="14 days" />
               <RuleRow label="Owner alerts" value="2 per day" />
             </div>
@@ -5362,7 +5378,7 @@ function ReleaseScreen({ vault, onSave, session, vaultKey, entitlements, autoPre
         {releaseStep === 4 && (
           <ReleasePanelLight subtitle="Preview emergency access" body="The exact sequence a nominee should expect. Simulated in this prototype.">
             <div className="space-y-0">
-              {["Main Nominee signs in", "3 of 5 trusted keys join", "14-day owner alert hold", "Emergency-enabled records open"].map((step, index) => (
+              {["Primary or approved backup signs in", "Two other nominees release keys", "14-day owner alert hold", "Entire vault opens read-only"].map((step, index) => (
                 <div key={step} className="flex items-center gap-4 border-b border-[var(--line)] py-3.5 last:border-0">
                   <span className="grid h-7 w-7 place-items-center rounded-full bg-[var(--surface-2)] text-[12px] font-semibold text-[var(--ink-2)]">{index + 1}</span>
                   <span className="text-[14px] text-[var(--ink)]">{step}</span>
@@ -5377,7 +5393,7 @@ function ReleaseScreen({ vault, onSave, session, vaultKey, entitlements, autoPre
             <div className="divide-y divide-[var(--line)]">
               <RuleRow label="Nominee" value={nomineeReady ? "Ready" : "Missing"} tone={nomineeReady ? "ok" : "warn"} />
               <RuleRow label="Key holders" value={`${filledKeys}/5 added`} tone={filledKeys >= 5 ? "ok" : "warn"} />
-              <RuleRow label="Threshold" value={`${activeKeys.length}/3 selected`} tone={activeKeys.length >= 3 ? "ok" : "warn"} />
+              <RuleRow label="Supporting keys" value={`${Math.min(activeKeys.length, 2)}/2 selected`} tone={activeKeys.length >= 2 ? "ok" : "warn"} />
             </div>
           </ReleasePanelLight>
         )}
@@ -5417,9 +5433,11 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
   const holderSummary = useMemo(() => summarizeKeyHolders(holders), [holders]);
   const { activeHolders, readyHolders, invited, accepted, verified, finalized } = holderSummary;
   const rosterSlots = useMemo(() => buildTrustRosterSlots(holders), [holders]);
-  const planActive = finalized >= 5;
+  const activeGenerations = new Set(activeHolders.map((holder) => holder.circle_generation).filter((generation) => Number(generation) > 0));
+  const planActive = finalized >= 5 && activeGenerations.size === 1;
   const canPay = entitlements ? entitlements.releaseEnabled : false;
-  const canFinalize = !planActive && invited === 5 && verified === 5 && canPay;
+  const circleReadiness = useMemo(() => validateCircleForActivation(readyHolders), [readyHolders]);
+  const canFinalize = !planActive && circleReadiness.ok && canPay;
 
   async function refresh() {
     setLoading(true);
@@ -5436,18 +5454,22 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
 
   useEffect(() => { refresh(); }, []);
 
-  async function handleInviteCreated({ label, holderEmail, holderPhone }) {
+  async function handleInviteCreated({ label, holderEmail, holderPhone, role }) {
     setBusy(true);
     setError("");
     try {
-      const created = await createKeyHolderInvite({ label, holderEmail, holderPhone });
-      const inviteUrl = `${window.location.origin}/invite/${created.invite_token}`;
+      const created = await createKeyHolderInvite({ label, holderEmail, holderPhone, role });
+      const inviteUrl = buildExternalAppUrl(PUBLIC_APP_URL, `/invite/${created.invite_token}`);
       let delivery = { status: "failed", message: "The invite was created, but the email could not be sent." };
       try {
-        const result = await sendInviteEmail(created.id);
-        delivery = result?.delivered === false
-          ? { status: "failed", message: result.reason || "Email delivery is not configured yet." }
-          : { status: "sent", message: "Email sent successfully." };
+        const result = await sendInviteEmail({
+          inviteId: created.id,
+          inviteToken: created.invite_token,
+          deliveryId: created.delivery_id
+        });
+        delivery = result?.state === "failed"
+          ? { status: "failed", message: result.reason || "The provider rejected this email." }
+          : { status: result?.state || "sent", message: "The provider accepted the email. Delivery confirmation may take a moment." };
       } catch (sendErr) {
         if (typeof console !== "undefined") {
           console.warn("[lyfos] invite email send failed:", sendErr?.message ?? sendErr);
@@ -5468,21 +5490,26 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
     setResendingId(holder.id);
     setError("");
     try {
-      const result = await sendInviteEmail(holder.id);
-      const inviteUrl = `${window.location.origin}/invite/${holder.invite_token}`;
+      const next = await requeueKeyHolderInvite(holder.id);
+      const result = await sendInviteEmail({
+        inviteId: holder.id,
+        inviteToken: next.invite_token,
+        deliveryId: next.delivery_id
+      });
+      const inviteUrl = buildExternalAppUrl(PUBLIC_APP_URL, `/invite/${next.invite_token}`);
       setInviteFeedback({
         holderId: holder.id,
         inviteUrl,
         holderLabel: holder.label,
         holderEmail: holder.holder_email,
-        delivery: result?.delivered === false
-          ? { status: "failed", message: result.reason || "Email delivery is not configured yet." }
-          : { status: "sent", message: "Email sent successfully." }
+        delivery: result?.state === "failed"
+          ? { status: "failed", message: result.reason || "The provider rejected this email." }
+          : { status: result?.state || "sent", message: "The provider accepted the email. Delivery confirmation may take a moment." }
       });
     } catch (err) {
       setInviteFeedback({
         holderId: holder.id,
-        inviteUrl: `${window.location.origin}/invite/${holder.invite_token}`,
+        inviteUrl: null,
         holderLabel: holder.label,
         holderEmail: holder.holder_email,
         delivery: { status: "failed", message: err?.message || "The email provider rejected the invite." }
@@ -5494,7 +5521,7 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
 
   async function revoke(holder) {
     const extraWarning = holder.status === "verified"
-      ? `\n\nThis holder's share is part of your active plan. Revoking them drops you to 4-of-5 (still functional). Revoking another would break the plan — you'd need to re-finalize with new holders.`
+      ? `\n\nThis nominee is part of your active recovery generation. Revoking them makes the plan incomplete, and primary or backup recovery may stop working. Invite a replacement and activate a fresh five-person generation before relying on it again.`
       : "";
     if (!window.confirm(`Revoke ${holder.label}'s invite? They will no longer be a key holder.${extraWarning}`)) return;
     try {
@@ -5516,7 +5543,7 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
     }
   }
 
-  async function finalize() {
+  async function finalize(instructions) {
     if (!vaultKey) {
       setError("Unlock your vault first.");
       return;
@@ -5524,18 +5551,18 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
     if (!canFinalize) return;
     setFinalizing(true);
     setError("");
+    let rawKey = null;
     try {
       // Export the raw 32-byte AES key from the unlocked CryptoKey
-      const rawKey = new Uint8Array(await crypto.subtle.exportKey("raw", vaultKey));
-      await finalizeReleasePlan({ rawVaultKey: rawKey, holders: readyHolders });
-      // Zero the buffer best-effort (JS doesn't guarantee but better than not)
-      for (let i = 0; i < rawKey.length; i++) rawKey[i] = 0;
+      rawKey = new Uint8Array(await crypto.subtle.exportKey("raw", vaultKey));
+      await activateCircleGeneration({ rawVaultKey: rawKey, holders: readyHolders, instructions });
       setFinalizeOpen(false);
       setFinalizeFeedback("Plan active. Your circle is ready.");
       await refresh();
     } catch (err) {
       setError(err?.message || "Couldn't finalize.");
     } finally {
+      rawKey?.fill(0);
       setFinalizing(false);
     }
   }
@@ -5548,7 +5575,7 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
           {planActive ? "Your circle is active." : "Build your circle of five."}
         </h1>
         <p className="mx-auto mt-4 max-w-md text-[14px] leading-6 text-[var(--ink-2)]">
-          Invite five trusted nominees/key holders. Three of them, plus a 14-day hold, are required to release your vault. Each accepts by email on their own account — Lyfos never sees their encrypted share.
+          Choose one primary, one backup, and three trusted nominees. The selected recipient plus two other nominees—and a 14-day owner-protection hold—are required to recover the vault.
         </p>
       </div>
 
@@ -5560,6 +5587,9 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
       </div>
 
       {error && <div className="mt-4 rounded-xl bg-[#ff453a]/8 px-4 py-3 text-[13px] font-medium text-[var(--red-2)]">{error}</div>}
+      {!planActive && invited === 5 && !circleReadiness.ok && (
+        <div className="mt-4 rounded-xl bg-[var(--amber-soft)] px-4 py-3 text-[13px] font-medium text-[var(--amber-ink)]">{circleReadiness.reason}</div>
+      )}
       {inviteFeedback && <InviteFeedback feedback={inviteFeedback} onClose={() => setInviteFeedback(null)} />}
 
       <div className="mt-8 overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)]">
@@ -5596,7 +5626,12 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
           </button>
         )}
         {showInvite && (
-          <InviteForm busy={busy} onCancel={() => setShowInvite(false)} onSubmit={handleInviteCreated} />
+          <InviteForm
+            busy={busy}
+            occupiedRoles={activeHolders.map((holder) => holder.role).filter(Boolean)}
+            onCancel={() => setShowInvite(false)}
+            onSubmit={handleInviteCreated}
+          />
         )}
         {invited === 5 && accepted < 5 && (
           <p className="text-[12px] text-[var(--ink-3)]">Waiting on {5 - accepted} trusted {5 - accepted === 1 ? "person" : "people"} to accept.</p>
@@ -5610,7 +5645,7 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
               Finalize plan
             </button>
             <p className="max-w-sm text-center text-[12px] text-[var(--ink-3)]">
-              All 5 accepted. Finalize to split your vault key into shares — one for each holder.
+              All five are ready. Activate to bind the primary, backup, and two-person support rule in one encrypted generation.
             </p>
           </>
         )}
@@ -5618,7 +5653,7 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
           <FreeReleaseUpgradePrompt />
         )}
         {planActive && (
-          <p className="text-[12px] text-[var(--green-ink)]">Your circle is active. If something happens to you, 3 of 5 plus a 14-day hold are required to release.</p>
+          <p className="text-[12px] text-[var(--green-ink)]">Your circle is active. The primary or approved backup needs two other nominees after review and the 14-day hold.</p>
         )}
       </div>
 
@@ -5627,8 +5662,6 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
           {finalizeFeedback}
         </div>
       )}
-
-      {planActive && <ClaimUrlPanel />}
 
       {finalizeOpen && (
         <FinalizeModal
@@ -5721,7 +5754,7 @@ function ClaimUrlPanel() {
 
   if (loading) return null;
 
-  const url = settings?.claim_token ? `${window.location.origin}/claim/${settings.claim_token}` : null;
+  const url = settings?.claim_token ? buildExternalAppUrl(PUBLIC_APP_URL, `/claim/${settings.claim_token}`) : null;
 
   async function copyUrl() {
     if (!url) return;
@@ -5823,6 +5856,7 @@ function ClaimUrlPanel() {
 
 function FinalizeModal({ acceptedHolders, finalizing, hasVaultKey, onCancel, onConfirm }) {
   const [confirmText, setConfirmText] = useState("");
+  const [instructions, setInstructions] = useState("");
   const ready = confirmText.trim().toLowerCase() === "finalize";
 
   return (
@@ -5835,18 +5869,32 @@ function FinalizeModal({ acceptedHolders, finalizing, hasVaultKey, onCancel, onC
         <h2 className="mt-2 text-[24px] font-semibold tracking-tight">Activate your release plan.</h2>
 
         <p className="mt-4 text-[14px] leading-6 text-[var(--ink-2)]">
-          Lyfos will split your vault key into 5 cryptographic shares and seal one to each holder's release public key. Your key holders will be able to release their shares only when:
+          Lyfos will seal a recovery share to each nominee. The primary—or the approved backup—can recover only with two other nominees after review and the owner-protection hold.
         </p>
         <ul className="mt-3 space-y-1.5 pl-5 text-[13px] leading-5 text-[var(--ink-2)] list-disc">
-          <li>Your nominee files a death/incapacity claim with proof</li>
+          <li>Your primary nominee files a death/incapacity request with proof</li>
           <li>Lyfos approves the claim after review</li>
-          <li>3 of your 5 holders approve their share release</li>
+          <li>Two other nominees release their own keys</li>
           <li>A 14-day hold passes during which you are alerted daily and can cancel with one tap</li>
         </ul>
 
         <div className="mt-5 rounded-xl bg-[var(--amber-soft)] px-4 py-3 text-[12px] leading-5 text-[var(--amber-ink)]">
           <strong>Nothing happens to your vault.</strong> Your vault stays encrypted; Lyfos still cannot read it. You can continue using Lyfos exactly as before.
         </div>
+
+        <label className="mt-6 block">
+          <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">Personal instructions for your family</span>
+          <textarea
+            value={instructions}
+            onChange={(event) => setInstructions(event.target.value)}
+            rows={4}
+            maxLength={4000}
+            placeholder="Who to call first, where originals are kept, and anything your family should know before acting."
+            disabled={!hasVaultKey || finalizing}
+            className="mt-2 w-full rounded-xl border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[13px] leading-5 outline-none focus:border-[var(--ink)] disabled:opacity-50"
+          />
+          <span className="mt-1.5 block text-[11px] leading-4 text-[var(--ink-4)]">Encrypted for the primary and backup only. It appears above the recovered vault when access is approved.</span>
+        </label>
 
         <div className="mt-6">
           <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">Provisioning shares to</p>
@@ -5880,7 +5928,7 @@ function FinalizeModal({ acceptedHolders, finalizing, hasVaultKey, onCancel, onC
         <div className="mt-6 flex items-center justify-between gap-3">
           <button onClick={onCancel} disabled={finalizing} className="text-[12px] text-[var(--ink-3)] hover:text-[var(--ink)]">Cancel</button>
           <button
-            onClick={onConfirm}
+            onClick={() => onConfirm(instructions)}
             disabled={!ready || !hasVaultKey || finalizing}
             className="rounded-full bg-[#1d1d1f] px-6 py-2.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.15)] transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -5893,44 +5941,29 @@ function FinalizeModal({ acceptedHolders, finalizing, hasVaultKey, onCancel, onC
 }
 
 function KeyHolderRow({ slot, holder, onRevoke, onDelete, onResend, resending }) {
-  const inviteUrl = holder.status === "pending"
-    ? `${typeof window !== "undefined" ? window.location.origin : ""}/invite/${holder.invite_token}`
-    : null;
-  const [showUrl, setShowUrl] = useState(false);
-
   return (
     <div className="border-b border-[var(--line)] px-4 py-3 last:border-b-0">
       <div className="grid grid-cols-[44px_1fr_1fr_112px] items-center gap-3">
         <div className="text-[12px] font-semibold text-[var(--ink-3)]">{slot?.slotNumber ?? ""}</div>
-        <div className="min-w-0 truncate text-[14px] font-medium text-[var(--ink)]">{holder.label}</div>
+        <div className="min-w-0">
+          <div className="truncate text-[14px] font-medium text-[var(--ink)]">{holder.label}</div>
+          <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--ink-3)]">{slot?.roleLabel || "Trusted"}</div>
+        </div>
         <div className="min-w-0 truncate text-[12px] text-[var(--ink-3)]">{holder.holder_email}</div>
         <div className="shrink-0 text-right"><KeyHolderStatusPill holder={holder} /></div>
       </div>
 
-      {holder.status === "pending" && inviteUrl && (
+      {holder.status === "pending" && (
         <div className="mt-3">
           <div className="flex items-center gap-3">
-            <a href={holderWhatsAppUrl(inviteUrl)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full bg-[#25d366] px-3 py-1 text-[11px] font-semibold text-white">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.3 14.2c-.2.6-1.2 1.2-1.7 1.2-.4.1-1 .1-1.6-.1a13 13 0 0 1-1.5-.5c-2.6-1.1-4.3-3.7-4.4-3.9-.1-.2-1-1.4-1-2.6s.6-1.8.9-2.1c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.4l.9 2.1c.1.2.1.4 0 .6l-.4.6-.4.5c-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.4 1.5.3.1.5.1.6-.1l.8-.9c.2-.2.4-.2.6-.1l2 .9c.2.1.4.2.4.3v.8z"/></svg>
-              Remind on WhatsApp
-            </a>
-            <button
-              onClick={() => setShowUrl((v) => !v)}
-              className="text-[11px] font-medium text-[var(--ink-3)] underline-offset-2 hover:text-[var(--ink)] hover:underline"
-            >
-              {showUrl ? "Hide invite link" : "Show invite link"}
-            </button>
             <button
               onClick={onResend}
               disabled={resending}
               className="text-[11px] font-medium text-[var(--ink-3)] underline-offset-2 hover:text-[var(--ink)] hover:underline disabled:opacity-50"
             >
-              {resending ? "Sending…" : "Send email again"}
+              {resending ? "Creating fresh invite…" : "Resend and create fresh link"}
             </button>
           </div>
-          {showUrl && (
-            <div className="mt-2 break-all rounded-md bg-[var(--surface-2)] px-3 py-2 font-mono text-[11px] text-[#3a3a3c]">{inviteUrl}</div>
-          )}
         </div>
       )}
 
@@ -5968,23 +6001,36 @@ function EmptyTrustSlot({ slot, onInvite, disabled }) {
 function KeyHolderStatusPill({ holder }) {
   const status = holder?.status;
   const displayStatus = status === "accepted" && holder?.release_pubkey ? "verified" : status;
+  const deliveryTone = {
+    queued: ["bg-[var(--amber-soft)] text-[var(--amber-ink)]", "Email queued"],
+    sent: ["bg-[#007aff]/10 text-[#075985]", "Email sent"],
+    delivered: ["bg-[#34c759]/20 text-[var(--green-ink)]", "Email delivered"],
+    delayed: ["bg-[var(--amber-soft)] text-[var(--amber-ink)]", "Email delayed"],
+    bounced: ["bg-[#ff453a]/8 text-[var(--red-2)]", "Email bounced"],
+    suppressed: ["bg-[#ff453a]/8 text-[var(--red-2)]", "Email blocked"],
+    failed: ["bg-[#ff453a]/8 text-[var(--red-2)]", "Email failed"]
+  }[holder?.delivery_state];
   const tone = {
     pending:  ["bg-[var(--amber-soft)] text-[var(--amber-ink)]", "Pending invite"],
     accepted: ["bg-[#34c759]/10 text-[var(--green-ink)]", "Accepted"],
     verified: ["bg-[#34c759]/20 text-[var(--green-ink)]", "Verified"],
     revoked:  ["bg-[#ff453a]/8 text-[var(--red-2)]", "Revoked"]
   }[displayStatus] ?? ["bg-[var(--surface-3)] text-[var(--ink-2)]", displayStatus];
-  return <span className={cx("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider", tone[0])}>{tone[1]}</span>;
+  const visibleTone = displayStatus === "pending" && deliveryTone ? deliveryTone : tone;
+  return <span title={holder?.delivery_failure_reason || undefined} className={cx("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider", visibleTone[0])}>{visibleTone[1]}</span>;
 }
 
-function InviteForm({ busy, onCancel, onSubmit }) {
+function InviteForm({ busy, occupiedRoles = [], onCancel, onSubmit }) {
   const [label, setLabel] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [role, setRole] = useState(() => !occupiedRoles.includes("primary")
+    ? "primary"
+    : !occupiedRoles.includes("backup") ? "backup" : "trusted");
 
   function submit(event) {
     event.preventDefault();
-    onSubmit({ label, holderEmail: email, holderPhone: phone });
+    onSubmit({ label, holderEmail: email, holderPhone: phone, role });
   }
 
   return (
@@ -6001,6 +6047,36 @@ function InviteForm({ busy, onCancel, onSubmit }) {
           className="mt-1 w-full rounded-md border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-[14px] outline-none focus:border-[var(--ink)]"
         />
       </label>
+      <fieldset className="mt-3">
+        <legend className="text-[11px] text-[var(--ink-3)]">Role in recovery</legend>
+        <div className="mt-1 grid grid-cols-3 gap-1 rounded-xl bg-[var(--surface-2)] p-1">
+          {[
+            ["primary", "Primary"],
+            ["backup", "Backup"],
+            ["trusted", "Trusted"]
+          ].map(([value, text]) => {
+            const occupied = value !== "trusted" && occupiedRoles.includes(value);
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setRole(value)}
+                disabled={occupied}
+                className={cx(
+                  "rounded-lg px-2 py-2 text-[11px] font-semibold transition",
+                  role === value ? "bg-white text-[var(--ink)] shadow-sm" : "text-[var(--ink-3)]",
+                  occupied && "cursor-not-allowed opacity-35"
+                )}
+              >
+                {text}
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-2 text-[11px] leading-4 text-[var(--ink-4)]">
+          Primary opens the recovered vault. Backup steps in only after review. Two other nominees must always help.
+        </p>
+      </fieldset>
       <label className="mt-3 block">
         <span className="text-[11px] text-[var(--ink-3)]">Their email</span>
         <input
@@ -6049,8 +6125,10 @@ function InviteFeedback({ feedback, onClose }) {
     <div className="mt-4 rounded-2xl border border-[#34c759]/30 bg-[#34c759]/8 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className={cx("text-[13px] font-medium", feedback.delivery?.status === "sent" ? "text-[var(--green-ink)]" : "text-[var(--amber-ink)]")}>
-            {feedback.delivery?.status === "sent" ? "Invite sent." : "Invite created, email not sent."}
+          <p className={cx("text-[13px] font-medium", ["sent", "delivered"].includes(feedback.delivery?.status) ? "text-[var(--green-ink)]" : "text-[var(--amber-ink)]")}>
+            {feedback.delivery?.status === "delivered"
+              ? "Invite delivered."
+              : feedback.delivery?.status === "sent" ? "Invite accepted by email provider." : "Invite created; email needs attention."}
           </p>
           <p className="mt-1 text-[12px] leading-5 text-[var(--ink-2)]">
             Invited: <strong>{feedback.holderLabel}</strong> · {feedback.holderEmail}
@@ -6058,14 +6136,18 @@ function InviteFeedback({ feedback, onClose }) {
           <p className="mt-1 text-[12px] leading-5 text-[var(--ink-3)]">
             {feedback.delivery?.message || "Share this link directly if needed — they should open it on their own device:"}
           </p>
-          <div className="mt-2 break-all rounded-md bg-[var(--surface-3)] px-3 py-2 font-mono text-[11px]">{feedback.inviteUrl}</div>
-          <div className="mt-2.5 flex items-center gap-3">
-            <a href={holderWhatsAppUrl(feedback.inviteUrl)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full bg-[#25d366] px-3.5 py-1.5 text-[11.5px] font-semibold text-white">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.3 14.2c-.2.6-1.2 1.2-1.7 1.2-.4.1-1 .1-1.6-.1a13 13 0 0 1-1.5-.5c-2.6-1.1-4.3-3.7-4.4-3.9-.1-.2-1-1.4-1-2.6s.6-1.8.9-2.1c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.4l.9 2.1c.1.2.1.4 0 .6l-.4.6-.4.5c-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.4 1.5.3.1.5.1.6-.1l.8-.9c.2-.2.4-.2.6-.1l2 .9c.2.1.4.2.4.3v.8z"/></svg>
-              Share on WhatsApp
-            </a>
-            <button onClick={copyLink} className="text-[11px] font-medium text-[var(--green-ink)] underline-offset-2 hover:underline">Copy link</button>
-          </div>
+          {feedback.inviteUrl && (
+            <>
+              <div className="mt-2 break-all rounded-md bg-[var(--surface-3)] px-3 py-2 font-mono text-[11px]">{feedback.inviteUrl}</div>
+              <div className="mt-2.5 flex items-center gap-3">
+                <a href={holderWhatsAppUrl(feedback.inviteUrl)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full bg-[#25d366] px-3.5 py-1.5 text-[11.5px] font-semibold text-white">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.3 14.2c-.2.6-1.2 1.2-1.7 1.2-.4.1-1 .1-1.6-.1a13 13 0 0 1-1.5-.5c-2.6-1.1-4.3-3.7-4.4-3.9-.1-.2-1-1.4-1-2.6s.6-1.8.9-2.1c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.4l.9 2.1c.1.2.1.4 0 .6l-.4.6-.4.5c-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.4 1.5.3.1.5.1.6-.1l.8-.9c.2-.2.4-.2.6-.1l2 .9c.2.1.4.2.4.3v.8z"/></svg>
+                  Share on WhatsApp
+                </a>
+                <button onClick={copyLink} className="text-[11px] font-medium text-[var(--green-ink)] underline-offset-2 hover:underline">Copy link</button>
+              </div>
+            </>
+          )}
         </div>
         <button onClick={onClose} className="shrink-0 text-[11px] text-[var(--ink-3)] hover:text-[var(--ink)]">Close</button>
       </div>

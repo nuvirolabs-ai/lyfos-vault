@@ -46,50 +46,92 @@ serve(async (req) => {
   let body: any;
   try { body = await req.json(); } catch { body = {}; }
   const inviteId = body?.invite_id;
+  const inviteToken = body?.invite_token;
+  const deliveryId = body?.delivery_id;
   if (!inviteId || typeof inviteId !== "string") return json({ ok: false, error: "invite_id required" }, 400);
+  if (!inviteToken || typeof inviteToken !== "string") return json({ ok: false, error: "invite_token required" }, 400);
+  if (!deliveryId || typeof deliveryId !== "string") return json({ ok: false, error: "delivery_id required" }, 400);
 
   // Fetch the invite row + the owner's email
   const { data: invite, error: invErr } = await admin
     .from("key_holders")
-    .select("id, owner_id, holder_email, label, invite_token, status")
+    .select("id, owner_id, holder_email, label, role, invite_token_hash, invite_expires_at, status")
     .eq("id", inviteId)
     .maybeSingle();
   if (invErr) return json({ ok: false, error: invErr.message }, 500);
   if (!invite)          return json({ ok: false, error: "invite not found" }, 404);
   if (invite.owner_id !== callerId) return json({ ok: false, error: "not your invite" }, 403);
-  if (invite.status === "revoked")  return json({ ok: false, error: "invite revoked" }, 410);
+  if (invite.status !== "pending")  return json({ ok: false, error: "invite is not pending" }, 410);
+  if (invite.invite_expires_at && new Date(invite.invite_expires_at).getTime() <= Date.now()) {
+    return json({ ok: false, error: "invite expired" }, 410);
+  }
+  if (await sha256(inviteToken) !== invite.invite_token_hash) {
+    return json({ ok: false, error: "invite token mismatch" }, 403);
+  }
+
+  const { data: delivery, error: deliveryErr } = await admin
+    .from("email_deliveries")
+    .select("id, related_holder_id, state, idempotency_key")
+    .eq("id", deliveryId)
+    .maybeSingle();
+  if (deliveryErr) return json({ ok: false, error: deliveryErr.message }, 500);
+  if (!delivery || delivery.related_holder_id !== invite.id) return json({ ok: false, error: "delivery not found" }, 404);
+  if (!['queued', 'delayed', 'failed'].includes(delivery.state)) {
+    return json({ ok: true, state: delivery.state });
+  }
 
   const { data: ownerRow } = await admin.auth.admin.getUserById(invite.owner_id);
   const ownerEmail = ownerRow?.user?.email ?? "your-friend@lyfos";
   const ownerName  = ownerEmail.split("@")[0];
 
   if (!RESEND_KEY) {
-    return json({
-      ok: true,
-      delivered: false,
-      reason: "RESEND_API_KEY not set; sharing invite URL only",
-      invite_url: `${APP_URL}/invite/${invite.invite_token}`
-    });
+    await admin.from("email_deliveries").update({ state: "failed", failure_reason: "RESEND_API_KEY not configured" }).eq("id", delivery.id);
+    return json({ ok: false, state: "failed", reason: "Email delivery is not configured" }, 503);
   }
 
-  const inviteUrl = `${APP_URL}/invite/${invite.invite_token}`;
+  let inviteUrl: string;
+  try {
+    inviteUrl = externalUrl(`/invite/${inviteToken}`);
+  } catch (error) {
+    await admin.from("email_deliveries").update({ state: "failed", failure_reason: String(error) }).eq("id", delivery.id);
+    return json({ ok: false, state: "failed", error: "APP_URL must be a public HTTPS URL" }, 500);
+  }
   const subject = `${ownerName} nominated you on Lyfos`;
   const result = await fetch("https://api.resend.com/emails", {
     method: "POST",
-    headers: { Authorization: `Bearer ${RESEND_KEY}`, "content-type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${RESEND_KEY}`,
+      "content-type": "application/json",
+      "Idempotency-Key": delivery.idempotency_key
+    },
     body: JSON.stringify({
       from: FROM_EMAIL,
       to: invite.holder_email,
       subject,
-      html: buildHtml({ ownerName, label: invite.label, inviteUrl }),
-      text: buildText({ ownerName, label: invite.label, inviteUrl })
+      html: buildHtml({ ownerName, label: invite.label, role: invite.role, inviteUrl }),
+      text: buildText({ ownerName, label: invite.label, role: invite.role, inviteUrl }),
+      tags: [{ name: "delivery_id", value: delivery.id }]
     })
   });
 
   if (!result.ok) {
     const msg = await result.text();
+    await admin.from("email_deliveries").update({
+      state: "failed",
+      failure_reason: msg.slice(0, 500),
+      updated_at: new Date().toISOString()
+    }).eq("id", delivery.id);
     return json({ ok: false, error: `Resend rejected: ${msg.slice(0, 200)}` }, 502);
   }
+
+  const provider = await result.json().catch(() => ({}));
+  await admin.from("email_deliveries").update({
+    state: "sent",
+    provider_message_id: provider?.id ?? null,
+    sent_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    failure_reason: null
+  }).eq("id", delivery.id);
 
   await admin.from("audit_log").insert({
     user_id: invite.owner_id,
@@ -97,8 +139,21 @@ serve(async (req) => {
     event_meta: { invite_id: invite.id, holder_email: invite.holder_email }
   });
 
-  return json({ ok: true, delivered: true });
+  return json({ ok: true, state: "sent", provider_message_id: provider?.id ?? null });
 });
+
+function externalUrl(path: string): string {
+  const base = new URL(APP_URL);
+  if (base.protocol !== "https:" || ["localhost", "127.0.0.1", "::1"].includes(base.hostname.toLowerCase())) {
+    throw new Error("APP_URL must be a public HTTPS URL");
+  }
+  return new URL(path, `${base.origin}/`).toString();
+}
+
+async function sha256(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -107,11 +162,11 @@ function json(body: unknown, status = 200) {
   });
 }
 
-function buildText({ ownerName, label, inviteUrl }: { ownerName: string; label: string; inviteUrl: string }) {
+function buildText({ ownerName, label, role, inviteUrl }: { ownerName: string; label: string; role: string; inviteUrl: string }) {
   return [
     `${ownerName} has invited you to be a trusted nominee/key holder on Lyfos.`,
     "",
-    `You'd be one of five trusted people. If something happens to ${ownerName} — death or incapacity — three of you, plus a 14-day owner-protection hold, would be required to release their emergency vault.`,
+    `Your role is ${role}. If a recovery is approved, the primary (or approved backup) still needs two other nominees plus a 14-day owner-protection hold. No one can open the vault alone.`,
     "",
     `Lyfos never emails or shows you a plain unlock key. When you accept, your account creates a cryptographic release key. Later, ${ownerName}'s vault share is sealed to that key.`,
     "",
@@ -124,14 +179,14 @@ function buildText({ ownerName, label, inviteUrl }: { ownerName: string; label: 
   ].join("\n");
 }
 
-function buildHtml({ ownerName, label, inviteUrl }: { ownerName: string; label: string; inviteUrl: string }) {
+function buildHtml({ ownerName, label, role, inviteUrl }: { ownerName: string; label: string; role: string; inviteUrl: string }) {
   return `<!doctype html><html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:48px 24px;background:#fbfbfd;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif;color:#1d1d1f;-webkit-font-smoothing:antialiased">
   <div style="max-width:520px;margin:0 auto">
     <p style="font-size:11px;font-weight:600;letter-spacing:0.18em;color:#86868b;text-transform:uppercase;margin:0 0 16px">Trusted nominee invite</p>
     <h1 style="font-size:36px;font-weight:600;letter-spacing:-0.01em;line-height:1.15;margin:0 0 20px">${escape(ownerName)} nominated you.</h1>
     <p style="font-size:15px;line-height:1.65;margin:0 0 20px">
-      ${escape(ownerName)} uses Lyfos to keep sensitive records safe. They asked five trusted people to hold cryptographic shares. If something happens, three of you plus a 14-day owner-protection hold would be required to release the emergency vault.
+      ${escape(ownerName)} uses Lyfos to keep sensitive records safe. Your role is <strong>${escape(role)}</strong>. The primary (or approved backup) still needs two other nominees and a 14-day owner-protection hold. No one can open the vault alone.
     </p>
     <p style="font-size:15px;line-height:1.65;margin:0 0 32px">
       Your label: <strong>${escape(label)}</strong>. Lyfos never emails or shows a plain unlock key. Your account creates a release keypair, and later one encrypted share can be sealed to it.

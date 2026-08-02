@@ -15,7 +15,15 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const RESEND_KEY = Deno.env.get("RESEND_API_KEY")!;
 const FROM_EMAIL = Deno.env.get("FROM_EMAIL") ?? "Lyfos <hello@lyfos.in>";
-const APP_URL = Deno.env.get("APP_URL") ?? "https://app.lyfos.in";
+const APP_URL = requireExternalAppUrl(Deno.env.get("APP_URL") ?? "https://app.lyfos.in");
+
+function requireExternalAppUrl(value: string): string {
+  const url = new URL(value);
+  if (url.protocol !== "https:" || ["localhost", "127.0.0.1", "::1"].includes(url.hostname.toLowerCase())) {
+    throw new Error("APP_URL must be a public HTTPS URL");
+  }
+  return url.origin;
+}
 
 type Email = { n: number; day: number; subject: string; body: (name: string) => string; condition?: (u: any) => boolean };
 
@@ -23,7 +31,7 @@ const EMAILS: Email[] = [
   {
     n: 1, day: 0,
     subject: "Welcome to Lyfos. Here's how it actually works.",
-    body: (name) => `Hi ${name},\n\nWelcome. You just created the first vault that's designed to outlive you, and I wanted to introduce you properly before any feature emails start showing up.\n\nThe 30-second version of how Lyfos works:\n\n  1. You add records — passwords, IDs, accounts, instructions.\n  2. They're encrypted on your device with a passphrase only you know.\n  3. You pick five people you trust. Three of them, plus a 14-day hold,\n     can release your vault to your nominee if you're not here to do it.\n\nThat's the whole product. Everything else is in service of that loop.\n\nTwo things I'd ask you to do this week:\n\n  → Add at least 5 records. The Life Map will start to fill in.\n     ${APP_URL}\n\n  → Write down your recovery phrase on paper. If you lose your passphrase, it's the only way back. We don't have a copy.\n\nReply to this email if anything is unclear. I read every reply personally.\n\n— Founder, Lyfos`
+    body: (name) => `Hi ${name},\n\nWelcome. You just created the first vault that's designed to outlive you, and I wanted to introduce you properly before any feature emails start showing up.\n\nThe 30-second version of how Lyfos works:\n\n  1. You add records — passwords, IDs, accounts, instructions.\n  2. They're encrypted on your device with a passphrase only you know.\n  3. You choose one primary, one backup, and three trusted nominees.\n     The recipient still needs two other nominees plus a 14-day hold.\n\nThat's the whole product. Everything else is in service of that loop.\n\nTwo things I'd ask you to do this week:\n\n  → Add at least 5 records. The Life Map will start to fill in.\n     ${APP_URL}\n\n  → Write down your recovery phrase on paper. If you lose your passphrase, it's the only way back. We don't have a copy.\n\nReply to this email if anything is unclear. I read every reply personally.\n\n— Founder, Lyfos`
   },
   {
     n: 2, day: 1,
@@ -34,7 +42,7 @@ const EMAILS: Email[] = [
   {
     n: 3, day: 3,
     subject: "The reason Lyfos exists is the release plan",
-    body: (name) => `Hi ${name},\n\nA vault that only you can open is just a password manager. What makes Lyfos different is the release plan — the part where you decide who can get your records to your family when you can't do it yourself.\n\nIt takes about 15 minutes to set up:\n\n  1. Pick five people you trust. Mix categories.\n  2. Pick one nominee — the person who will receive the bundle.\n  3. We send each of the five an invite. They install Lyfos and accept.\n  4. You finalise. Your vault key gets split into five sealed pieces.\n\nAfter that, three of those five — together, not alone — can release your vault to your nominee. With a 14-day owner-protection hold and alerts on four channels for the whole window.\n\n  → Set up your release plan: ${APP_URL}\n\n— Founder, Lyfos`,
+    body: (name) => `Hi ${name},\n\nA vault that only you can open is just a password manager. What makes Lyfos different is the release plan — the part where you decide who can get your records to your family when you can't do it yourself.\n\nIt takes about 15 minutes to set up:\n\n  1. Pick five people you trust. Mix categories.\n  2. Choose the primary and backup directly in their invitations.\n  3. Each person accepts using their own Lyfos account.\n  4. You activate one recipient-gated encrypted generation.\n\nAfter that, the primary—or an approved backup—can recover only with two other nominees. A 14-day owner-protection hold and owner alerts still apply.\n\n  → Set up your release plan: ${APP_URL}\n\n— Founder, Lyfos`,
     condition: (u) => !u.release_plan_finalised
   },
   {

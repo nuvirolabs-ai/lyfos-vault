@@ -21,7 +21,8 @@ import {
   adminListPendingReleases,
   adminGetCertificateUrl,
   adminApproveRelease,
-  adminRejectRelease
+  adminRejectRelease,
+  sendRecoveryNotifications
 } from "./lib/releaseClaim.js";
 
 export function AdminScreen({ onReturnHome }) {
@@ -131,9 +132,25 @@ function ReviewRow({ row, onChanged }) {
     setBusy(true);
     try {
       await adminApproveRelease(row.id, note);
+      try {
+        await sendRecoveryNotifications(row.id);
+      } catch (notifyError) {
+        alert(`Approved, but notification delivery is still queued: ${notifyError?.message || "retry from this row"}`);
+      }
       await onChanged();
     } catch (err) {
       alert(err?.message || "Approve failed.");
+    } finally { setBusy(false); }
+  }
+
+  async function retryNotifications() {
+    setBusy(true);
+    try {
+      const result = await sendRecoveryNotifications(row.id);
+      alert(result?.failed ? `${result.sent} sent, ${result.failed} still failed.` : "Recovery notifications sent.");
+      await onChanged();
+    } catch (err) {
+      alert(err?.message || "Notification retry failed.");
     } finally { setBusy(false); }
   }
 
@@ -163,7 +180,7 @@ function ReviewRow({ row, onChanged }) {
         </button>
       </div>
 
-      {row.state === "pending_review" && (
+      {["pending_review", "under_review"].includes(row.state) && (
         <div className="mt-4">
           <label className="block">
             <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Note for the audit log (optional)</span>
@@ -208,6 +225,14 @@ function ReviewRow({ row, onChanged }) {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {row.state === "collecting_support" && (
+        <div className="mt-4 flex justify-end">
+          <button onClick={retryNotifications} disabled={busy} className="rounded-full border border-black/10 bg-[#fbfbfd] px-4 py-1.5 text-[11px] font-semibold disabled:opacity-50">
+            {busy ? "Sending…" : "Retry notifications"}
+          </button>
         </div>
       )}
 

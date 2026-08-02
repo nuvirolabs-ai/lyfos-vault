@@ -1,4 +1,4 @@
--- 0016_waitlist_activation.sql
+-- 0017_waitlist_activation.sql
 -- Adds approval/activation tracking to the founding-members waitlist so the
 -- founder can grant access in batches and trigger an activation email.
 --

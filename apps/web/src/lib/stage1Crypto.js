@@ -141,6 +141,27 @@ export async function decryptVaultWithRecoveryKey(record, recoveryKey) {
   }
 }
 
+export async function decryptVaultWithRawKey(record, rawVaultKey) {
+  if (!(rawVaultKey instanceof Uint8Array) || rawVaultKey.length !== 32) {
+    throw new Error("A 32-byte recovered vault key is required.");
+  }
+  if (!record?.encryptedVault?.iv || !record?.encryptedVault?.ciphertext) {
+    throw new Error("Encrypted vault payload missing.");
+  }
+  const vaultKey = await getCrypto().subtle.importKey(
+    "raw",
+    rawVaultKey,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["decrypt"]
+  );
+  try {
+    return await decryptJson(vaultKey, record.encryptedVault);
+  } catch {
+    throw new Error("Could not decrypt the recovered vault.");
+  }
+}
+
 export async function updateEncryptedVault(record, vaultKey, vault) {
   return {
     ...record,

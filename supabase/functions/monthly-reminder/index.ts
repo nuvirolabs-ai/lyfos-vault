@@ -37,7 +37,15 @@ const RESEND_KEY   = Deno.env.get("RESEND_API_KEY") ?? "";
 // @ts-ignore
 const FROM_EMAIL   = Deno.env.get("FROM_EMAIL") ?? "Lyfos <hello@lyfos.in>";
 // @ts-ignore
-const APP_URL      = Deno.env.get("APP_URL") ?? "https://app.lyfos.in";
+const APP_URL      = requireExternalAppUrl(Deno.env.get("APP_URL") ?? "https://app.lyfos.in");
+
+function requireExternalAppUrl(value: string): string {
+  const url = new URL(value);
+  if (url.protocol !== "https:" || ["localhost", "127.0.0.1", "::1"].includes(url.hostname.toLowerCase())) {
+    throw new Error("APP_URL must be a public HTTPS URL");
+  }
+  return url.origin;
+}
 
 const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false }

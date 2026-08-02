@@ -225,7 +225,7 @@ export function AuthScreen({
             <button onClick={onNomineeEntry} className="rounded-full border border-black/8 bg-white px-4 py-2 text-[12px] font-semibold text-[#1d1d1f] transition hover:bg-[#f5f5f7]">
               I am a nominee
             </button>
-            <p className="mt-2 text-[11px] text-[#a1a1a6]">Use this if someone shared a Lyfos claim link with you.</p>
+            <p className="mt-2 text-[11px] text-[#a1a1a6]">Sign in to review vaults entrusted to your account.</p>
           </div>
         )}
 
