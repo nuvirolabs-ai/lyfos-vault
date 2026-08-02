@@ -1,0 +1,21 @@
+{
+  "version": "2026.08.1",
+  "assets": [
+    { "serviceId": "generic-banking", "iconKey": "banking", "filePath": "/assets/legacy-services/generic/banking.svg", "usageStatus": "generic-only", "sourceReference": "Lyfos original generic icon", "lastReviewedAt": "2026-08-02" },
+    { "serviceId": "generic-investments", "iconKey": "investments", "filePath": "/assets/legacy-services/generic/investments.svg", "usageStatus": "generic-only", "sourceReference": "Lyfos original generic icon", "lastReviewedAt": "2026-08-02" },
+    { "serviceId": "generic-social", "iconKey": "social", "filePath": "/assets/legacy-services/generic/social.svg", "usageStatus": "generic-only", "sourceReference": "Lyfos original generic icon", "lastReviewedAt": "2026-08-02" },
+    { "serviceId": "generic-communication", "iconKey": "communication", "filePath": "/assets/legacy-services/generic/communication.svg", "usageStatus": "generic-only", "sourceReference": "Lyfos original generic icon", "lastReviewedAt": "2026-08-02" },
+    { "serviceId": "generic-devices", "iconKey": "devices", "filePath": "/assets/legacy-services/generic/devices.svg", "usageStatus": "generic-only", "sourceReference": "Lyfos original generic icon", "lastReviewedAt": "2026-08-02" },
+    { "serviceId": "generic-cloud", "iconKey": "cloud", "filePath": "/assets/legacy-services/generic/cloud.svg", "usageStatus": "generic-only", "sourceReference": "Lyfos original generic icon", "lastReviewedAt": "2026-08-02" },
+    { "serviceId": "generic-government", "iconKey": "government", "filePath": "/assets/legacy-services/generic/government.svg", "usageStatus": "generic-only", "sourceReference": "Lyfos original generic icon", "lastReviewedAt": "2026-08-02" },
+    { "serviceId": "generic-insurance", "iconKey": "insurance", "filePath": "/assets/legacy-services/generic/insurance.svg", "usageStatus": "generic-only", "sourceReference": "Lyfos original generic icon", "lastReviewedAt": "2026-08-02" },
+    { "serviceId": "generic-property", "iconKey": "property", "filePath": "/assets/legacy-services/generic/property.svg", "usageStatus": "generic-only", "sourceReference": "Lyfos original generic icon", "lastReviewedAt": "2026-08-02" },
+    { "serviceId": "generic-business", "iconKey": "business", "filePath": "/assets/legacy-services/generic/business.svg", "usageStatus": "generic-only", "sourceReference": "Lyfos original generic icon", "lastReviewedAt": "2026-08-02" },
+    { "serviceId": "generic-subscriptions", "iconKey": "subscriptions", "filePath": "/assets/legacy-services/generic/subscriptions.svg", "usageStatus": "generic-only", "sourceReference": "Lyfos original generic icon", "lastReviewedAt": "2026-08-02" },
+    { "serviceId": "generic-health", "iconKey": "health", "filePath": "/assets/legacy-services/generic/health.svg", "usageStatus": "generic-only", "sourceReference": "Lyfos original generic icon", "lastReviewedAt": "2026-08-02" },
+    { "serviceId": "generic-memories", "iconKey": "memories", "filePath": "/assets/legacy-services/generic/memories.svg", "usageStatus": "generic-only", "sourceReference": "Lyfos original generic icon", "lastReviewedAt": "2026-08-02" },
+    { "serviceId": "generic-recovery", "iconKey": "recovery", "filePath": "/assets/legacy-services/generic/recovery.svg", "usageStatus": "generic-only", "sourceReference": "Lyfos original generic icon", "lastReviewedAt": "2026-08-02" },
+    { "serviceId": "generic-custom", "iconKey": "custom", "filePath": "/assets/legacy-services/generic/custom.svg", "usageStatus": "generic-only", "sourceReference": "Lyfos original generic icon", "lastReviewedAt": "2026-08-02" },
+    { "serviceId": "generic-generic", "iconKey": "generic", "filePath": "/assets/legacy-services/generic/generic.svg", "usageStatus": "generic-only", "sourceReference": "Lyfos original generic icon", "lastReviewedAt": "2026-08-02" }
+  ]
+}

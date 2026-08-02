@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
     "check": "vite build",
-    "test": "node --test src/lib/*.test.js"
+    "test": "node --test src/lib/*.test.js src/legacy/*.test.js"
   },
   "dependencies": {
     "@os-one/crypto": "0.1.0",
