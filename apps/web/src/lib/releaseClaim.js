@@ -116,6 +116,14 @@ export async function listEntrustedVaults() {
   return data ?? [];
 }
 
+export async function getEntrustedInstructions(holderId) {
+  if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
+  const sb = getSupabase();
+  const { data, error } = await sb.rpc("get_entrusted_instructions", { p_holder_id: holderId });
+  if (error) throw error;
+  return data;
+}
+
 export async function createRelationshipRecoveryRequest({
   holderId,
   requestKind,
@@ -148,6 +156,24 @@ export async function markRecipientRecoveryOpened(requestId) {
   if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
   const sb = getSupabase();
   const { error } = await sb.rpc("mark_recipient_recovery_opened", { p_request_id: requestId });
+  if (error) throw error;
+}
+
+export async function getRecipientRecoveryProgress(requestId) {
+  if (!isSupabaseConfigured()) return { approved: 0, refused: 0, waiting: 0, required: 2 };
+  const sb = getSupabase();
+  const { data, error } = await sb.rpc("recipient_recovery_progress", { p_request_id: requestId });
+  if (error) throw error;
+  return data ?? { approved: 0, refused: 0, waiting: 0, required: 2 };
+}
+
+export async function reportInvalidRecoverySupport(requestId, keyHolderId) {
+  if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
+  const sb = getSupabase();
+  const { error } = await sb.rpc("report_invalid_recovery_support", {
+    p_request_id: requestId,
+    p_key_holder_id: keyHolderId
+  });
   if (error) throw error;
 }
 

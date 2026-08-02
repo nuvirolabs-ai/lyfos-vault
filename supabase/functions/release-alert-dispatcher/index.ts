@@ -26,6 +26,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 // @ts-ignore
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.106.2";
+import { requireExternalAppUrl } from "../_shared/public-app-url.ts";
 
 // @ts-ignore
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -298,11 +299,4 @@ async function sendPush(tokens: string[], request: any): Promise<string | null> 
   const body = await res.json().catch(() => ({}));
   const tickets: any[] = body?.data ?? [];
   return tickets.map((t) => t?.id).filter(Boolean).join(",") || null;
-}
-function requireExternalAppUrl(value: string): string {
-  const url = new URL(value);
-  if (url.protocol !== "https:" || ["localhost", "127.0.0.1", "::1"].includes(url.hostname.toLowerCase())) {
-    throw new Error("APP_URL must be a public HTTPS URL");
-  }
-  return url.origin;
 }

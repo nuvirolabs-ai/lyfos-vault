@@ -88,7 +88,8 @@ create table if not exists public.recipient_gate_envelopes (
 );
 
 alter table public.key_shares
-  add column if not exists generation_id uuid references public.circle_generations(id) on delete cascade;
+  add column if not exists generation_id uuid references public.circle_generations(id) on delete cascade,
+  add column if not exists share_commitment text;
 
 alter table public.key_shares alter column sss_threshold set default 2;
 
@@ -125,6 +126,24 @@ create table if not exists public.email_delivery_events (
   received_at timestamptz not null default now()
 );
 
+-- Raw invite tokens are kept only in this service-role outbox. Owners can
+-- still copy the one-time token returned by the RPC, but an interrupted
+-- browser is no longer the only process capable of delivering the email.
+create table if not exists public.invite_email_outbox (
+  delivery_id uuid primary key references public.email_deliveries(id) on delete cascade,
+  invite_token text not null check (length(invite_token) >= 24),
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.recovery_support_refusals (
+  id uuid primary key default gen_random_uuid(),
+  release_request_id uuid not null references public.release_requests(id) on delete cascade,
+  key_holder_id uuid not null references public.key_holders(id) on delete cascade,
+  reason text,
+  refused_at timestamptz not null default now(),
+  unique (release_request_id, key_holder_id)
+);
+
 -- ============================================================
 -- Recovery request recipient binding
 -- ============================================================
@@ -136,7 +155,8 @@ alter table public.release_requests
   add column if not exists recipient_key_version integer,
   add column if not exists request_kind text not null default 'normal',
   add column if not exists fallback_reason text,
-  add column if not exists evidence_summary text;
+  add column if not exists evidence_summary text,
+  add column if not exists recovery_encrypted_record jsonb;
 
 alter table public.release_requests alter column release_process_pubkey drop not null;
 alter table public.release_requests drop constraint if exists release_requests_recipient_role_check;
@@ -170,6 +190,18 @@ alter table public.circle_generations enable row level security;
 alter table public.recipient_gate_envelopes enable row level security;
 alter table public.email_deliveries enable row level security;
 alter table public.email_delivery_events enable row level security;
+alter table public.invite_email_outbox enable row level security;
+alter table public.recovery_support_refusals enable row level security;
+
+revoke all on public.invite_email_outbox from public, anon, authenticated;
+
+drop policy if exists "death_cert admin read" on storage.objects;
+create policy "death_cert admin read"
+  on storage.objects for select to authenticated
+  using (
+    bucket_id = 'death_certificates'
+    and coalesce((select raw_app_meta_data->>'role' from auth.users where id = auth.uid()), '') = 'admin'
+  );
 
 drop policy if exists "owner reads own circle generations" on public.circle_generations;
 create policy "owner reads own circle generations"
@@ -265,6 +297,9 @@ begin
     'holder_invite', v_invite, v_email, 'holder-invite:' || v_invite::text || ':1'
   ) returning id into v_delivery;
 
+  insert into public.invite_email_outbox (delivery_id, invite_token)
+  values (v_delivery, v_token);
+
   return query select v_invite, v_token, v_delivery;
 end;
 $$;
@@ -283,6 +318,7 @@ declare
   v_email text;
   v_attempt integer;
   v_delivery uuid;
+  v_last_attempt timestamptz;
 begin
   select holder_email into v_email
     from public.key_holders
@@ -290,8 +326,21 @@ begin
    for update;
   if v_email is null then raise exception 'pending invite not found'; end if;
 
+  select max(created_at) into v_last_attempt
+    from public.email_deliveries where related_holder_id = p_holder_id;
+  if v_last_attempt is not null and v_last_attempt > now() - interval '60 seconds' then
+    raise exception 'invite resend is available after 60 seconds';
+  end if;
+
   select coalesce(max(attempt), 0) + 1 into v_attempt
     from public.email_deliveries where related_holder_id = p_holder_id;
+
+  delete from public.invite_email_outbox o
+   using public.email_deliveries d
+   where o.delivery_id = d.id and d.related_holder_id = p_holder_id;
+  update public.email_deliveries
+     set state = 'failed', failure_reason = 'superseded by a newer invite', updated_at = now()
+   where related_holder_id = p_holder_id and state in ('queued', 'delayed', 'failed');
 
   update public.key_holders
      set invite_token_hash = public.hash_circle_token(v_token),
@@ -305,6 +354,9 @@ begin
     'holder-invite:' || p_holder_id::text || ':' || v_attempt::text,
     v_attempt
   ) returning id into v_delivery;
+
+  insert into public.invite_email_outbox (delivery_id, invite_token)
+  values (v_delivery, v_token);
 
   return query select v_token, v_delivery;
 end;
@@ -373,6 +425,11 @@ begin
          invite_consumed_at = now()
    where id = v_holder.id;
 
+  delete from public.invite_email_outbox o
+   using public.email_deliveries d
+   where o.delivery_id = d.id
+     and d.related_holder_id = v_holder.id;
+
   return v_holder.id;
 end;
 $$;
@@ -437,17 +494,20 @@ begin
          and owner_id = v_owner
          and status in ('accepted', 'verified')
     ) then raise exception 'share holder is not ready'; end if;
+    if coalesce(v_share->>'commitment', '') !~ '^[0-9a-f]{64}$' then
+      raise exception 'share commitment is required';
+    end if;
 
     insert into public.key_shares (
       owner_id, key_holder_id, share_index, ciphertext, ephemeral_pub,
-      sss_threshold, sss_total, generation_id
+      sss_threshold, sss_total, generation_id, share_commitment
     ) values (
       v_owner,
       (v_share->>'holder_id')::uuid,
       (v_share->>'share_index')::integer,
       v_share->>'ciphertext',
       v_share->>'ephemeral_pub',
-      2, 5, v_generation_id
+      2, 5, v_generation_id, v_share->>'commitment'
     );
   end loop;
 
@@ -507,6 +567,37 @@ $$;
 
 grant execute on function public.my_entrusted_vaults() to authenticated;
 
+create or replace function public.get_entrusted_instructions(p_holder_id uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_result jsonb;
+begin
+  select jsonb_build_object(
+    'ciphertext', e.instructions_ciphertext,
+    'ephemeralPub', e.instructions_ephemeral_pub
+  ) into v_result
+    from public.key_holders h
+    join public.circle_generations g
+      on g.owner_id = h.owner_id and g.state = 'active'
+    join public.recipient_gate_envelopes e
+      on e.generation_id = g.id and e.recipient_holder_id = h.id
+   where h.id = p_holder_id
+     and h.holder_user_id = auth.uid()
+     and h.status = 'verified'
+     and h.role in ('primary', 'backup')
+     and e.recipient_key_version = h.recovery_key_version;
+  if v_result is null then raise exception 'entrusted instructions not found'; end if;
+  return v_result;
+end;
+$$;
+
+grant execute on function public.get_entrusted_instructions(uuid) to authenticated;
+
 create or replace function public.recipient_gated_holder_context(p_request_id uuid)
 returns table (
   owner_id uuid,
@@ -515,6 +606,7 @@ returns table (
   holder_role text,
   holder_status text,
   share_released boolean,
+  support_refused boolean,
   recipient_holder_id uuid,
   recipient_pubkey text,
   request_state text
@@ -550,6 +642,10 @@ begin
            exists (
              select 1 from public.release_share_releases s
               where s.release_request_id = p_request_id and s.key_holder_id = h.id
+           ),
+           exists (
+             select 1 from public.recovery_support_refusals f
+              where f.release_request_id = p_request_id and f.key_holder_id = h.id
            ),
            v_request.recipient_holder_id,
            v_recipient_pubkey,
@@ -588,6 +684,10 @@ begin
   if p_request_kind = 'normal' and v_holder.role <> 'primary' then raise exception 'only the primary can start normal recovery'; end if;
   if p_request_kind = 'backup' and v_holder.role <> 'backup' then raise exception 'only the backup can start fallback recovery'; end if;
   if p_request_kind = 'backup' and coalesce(length(trim(p_fallback_reason)), 0) < 10 then raise exception 'fallback reason is required'; end if;
+  if coalesce(length(trim(p_evidence_summary)), 0) < 20 or coalesce(length(trim(p_evidence_path)), 0) = 0 then
+    raise exception 'evidence summary and document are required';
+  end if;
+  if p_evidence_path not like v_caller::text || '/%' then raise exception 'evidence document does not belong to this account'; end if;
   select id into v_generation from public.circle_generations
    where owner_id = v_holder.owner_id and state = 'active';
   if v_generation is null then raise exception 'circle is not active'; end if;
@@ -625,12 +725,27 @@ declare
   v_share_index integer;
   v_count integer;
 begin
+  if p_ciphertext is null
+     or p_ciphertext !~ '^[A-Za-z0-9+/]+={0,2}$'
+     or length(p_ciphertext) % 4 <> 0
+     or octet_length(decode(p_ciphertext, 'base64')) <> 139
+     or p_ephemeral_pub is null
+     or p_ephemeral_pub !~ '^[A-Za-z0-9+/]+={0,2}$'
+     or length(p_ephemeral_pub) % 4 <> 0
+     or octet_length(decode(p_ephemeral_pub, 'base64')) <> 32 then
+    raise exception 'supporting key envelope is malformed';
+  end if;
+
   select * into v_request from public.release_requests where id = p_request_id for update;
   if v_request.id is null or v_request.state <> 'collecting_support' then raise exception 'request is not collecting support'; end if;
   select * into v_holder from public.key_holders
    where owner_id = v_request.owner_id and holder_user_id = v_caller and status = 'verified';
   if v_holder.id is null then raise exception 'not a verified nominee for this owner'; end if;
   if v_holder.id = v_request.recipient_holder_id then raise exception 'recipient share cannot count as support'; end if;
+  if exists (
+    select 1 from public.recovery_support_refusals
+     where release_request_id = p_request_id and key_holder_id = v_holder.id
+  ) then raise exception 'this nominee already refused the recovery request'; end if;
 
   select share_index into v_share_index from public.key_shares
    where owner_id = v_request.owner_id
@@ -653,6 +768,73 @@ $$;
 
 grant execute on function public.release_supporting_share(uuid, text, text) to authenticated;
 
+create or replace function public.recipient_recovery_progress(p_request_id uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_request public.release_requests%rowtype;
+  v_total integer;
+  v_approved integer;
+  v_refused integer;
+begin
+  select * into v_request from public.release_requests
+   where id = p_request_id and nominee_user_id = auth.uid();
+  if v_request.id is null then raise exception 'recovery request not found'; end if;
+
+  select count(*) into v_total from public.key_holders h
+   where h.owner_id = v_request.owner_id
+     and h.status = 'verified'
+     and h.id <> v_request.recipient_holder_id;
+  select count(*) into v_approved from public.release_share_releases s
+   where s.release_request_id = p_request_id;
+  select count(*) into v_refused from public.recovery_support_refusals f
+   where f.release_request_id = p_request_id;
+
+  return jsonb_build_object(
+    'approved', v_approved,
+    'refused', v_refused,
+    'waiting', greatest(v_total - v_approved - v_refused, 0),
+    'required', 2
+  );
+end;
+$$;
+
+grant execute on function public.recipient_recovery_progress(uuid) to authenticated;
+
+create or replace function public.refuse_recovery_support(p_request_id uuid, p_reason text default null)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_caller uuid := auth.uid();
+  v_request public.release_requests%rowtype;
+  v_holder uuid;
+begin
+  select * into v_request from public.release_requests where id = p_request_id for update;
+  if v_request.id is null or v_request.state <> 'collecting_support' then raise exception 'request is not collecting support'; end if;
+  select id into v_holder from public.key_holders
+   where owner_id = v_request.owner_id and holder_user_id = v_caller and status = 'verified';
+  if v_holder is null then raise exception 'not a verified nominee for this owner'; end if;
+  if v_holder = v_request.recipient_holder_id then raise exception 'recipient cannot refuse their own recovery request'; end if;
+  if exists (
+    select 1 from public.release_share_releases
+     where release_request_id = p_request_id and key_holder_id = v_holder
+  ) then raise exception 'this nominee already released support'; end if;
+
+  insert into public.recovery_support_refusals (release_request_id, key_holder_id, reason)
+  values (p_request_id, v_holder, nullif(trim(p_reason), ''))
+  on conflict (release_request_id, key_holder_id) do nothing;
+end;
+$$;
+
+grant execute on function public.refuse_recovery_support(uuid, text) to authenticated;
+
 create or replace function public.get_ready_recovery_material(p_request_id uuid)
 returns jsonb
 language plpgsql
@@ -663,6 +845,7 @@ declare
   v_caller uuid := auth.uid();
   v_request public.release_requests%rowtype;
   v_generation uuid;
+  v_encrypted_record jsonb;
   v_result jsonb;
 begin
   select * into v_request from public.release_requests where id = p_request_id for update;
@@ -674,6 +857,15 @@ begin
   if v_request.state not in ('ready_to_recover', 'opened') then raise exception 'recovery is not ready'; end if;
 
   v_generation := v_request.circle_generation_id;
+  v_encrypted_record := v_request.recovery_encrypted_record;
+  if v_encrypted_record is null then
+    select encrypted_record into v_encrypted_record
+      from public.vault_blobs where user_id = v_request.owner_id;
+    if v_encrypted_record is null then raise exception 'recovery material is incomplete'; end if;
+    update public.release_requests
+       set recovery_encrypted_record = v_encrypted_record
+     where id = p_request_id;
+  end if;
 
   select jsonb_build_object(
     'request_id', v_request.id,
@@ -684,13 +876,21 @@ begin
       'instructionsEphemeralPub', e.instructions_ephemeral_pub
     ),
     'released_shares', (
-      select coalesce(jsonb_agg(jsonb_build_object('ciphertext', s.ciphertext, 'ephemeralPub', s.ephemeral_pub) order by s.released_at), '[]'::jsonb)
-        from public.release_share_releases s where s.release_request_id = v_request.id
+      select coalesce(jsonb_agg(jsonb_build_object(
+        'keyHolderId', s.key_holder_id,
+        'ciphertext', s.ciphertext,
+        'ephemeralPub', s.ephemeral_pub,
+        'commitment', k.share_commitment
+      ) order by s.released_at), '[]'::jsonb)
+        from public.release_share_releases s
+        join public.key_shares k
+          on k.key_holder_id = s.key_holder_id
+         and k.generation_id = v_request.circle_generation_id
+       where s.release_request_id = v_request.id
     ),
-    'encrypted_record', b.encrypted_record
+    'encrypted_record', v_encrypted_record
   ) into v_result
     from public.recipient_gate_envelopes e
-    join public.vault_blobs b on b.user_id = v_request.owner_id
    where e.generation_id = v_generation
      and e.recipient_holder_id = v_request.recipient_holder_id;
 
@@ -700,6 +900,72 @@ end;
 $$;
 
 grant execute on function public.get_ready_recovery_material(uuid) to authenticated;
+
+-- If a structurally valid envelope still fails recipient-side authenticated
+-- decryption, exclude that holder and resume collection instead of leaving
+-- the recovery permanently stuck after the hold.
+create or replace function public.report_invalid_recovery_support(
+  p_request_id uuid,
+  p_key_holder_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_request public.release_requests%rowtype;
+begin
+  select * into v_request from public.release_requests
+   where id = p_request_id and nominee_user_id = auth.uid() for update;
+  if v_request.id is null or v_request.state <> 'ready_to_recover' then
+    raise exception 'ready recovery request not found';
+  end if;
+  if p_key_holder_id = v_request.recipient_holder_id then
+    raise exception 'recipient key cannot be reported as supporting material';
+  end if;
+
+  delete from public.release_share_releases
+   where release_request_id = p_request_id and key_holder_id = p_key_holder_id;
+  if not found then raise exception 'supporting material not found'; end if;
+
+  insert into public.recovery_support_refusals (release_request_id, key_holder_id, reason)
+  values (p_request_id, p_key_holder_id, 'recipient_authenticated_decryption_failed')
+  on conflict (release_request_id, key_holder_id) do update
+    set reason = excluded.reason, refused_at = now();
+
+  update public.release_requests
+     set state = 'collecting_support', ready_at = null
+   where id = p_request_id;
+
+  insert into public.email_deliveries (
+    purpose, related_holder_id, related_request_id, recipient_email,
+    idempotency_key, attempt
+  )
+  select 'recovery_support', h.id, p_request_id, h.holder_email,
+         'recovery-support:' || p_request_id::text || ':' || h.id::text || ':retry:' || gen_random_uuid()::text,
+         coalesce((
+           select max(d.attempt) from public.email_deliveries d
+            where d.related_request_id = p_request_id
+              and d.related_holder_id = h.id
+              and d.purpose = 'recovery_support'
+         ), 0) + 1
+    from public.key_holders h
+   where h.owner_id = v_request.owner_id
+     and h.status = 'verified'
+     and h.id <> v_request.recipient_holder_id
+     and not exists (
+       select 1 from public.release_share_releases s
+        where s.release_request_id = p_request_id and s.key_holder_id = h.id
+     )
+     and not exists (
+       select 1 from public.recovery_support_refusals f
+        where f.release_request_id = p_request_id and f.key_holder_id = h.id
+     );
+end;
+$$;
+
+grant execute on function public.report_invalid_recovery_support(uuid, uuid) to authenticated;
 
 create or replace function public.mark_recipient_recovery_opened(p_request_id uuid)
 returns void
@@ -727,7 +993,8 @@ grant execute on function public.mark_recipient_recovery_opened(uuid) to authent
 
 -- Keep reviewer, owner-abort, and hold RPC names stable for the existing
 -- clients while enforcing the new state machine for new requests.
-create or replace function public.admin_list_pending_releases()
+drop function if exists public.admin_list_pending_releases();
+create function public.admin_list_pending_releases()
 returns table (
   id uuid,
   owner_id uuid,
@@ -738,7 +1005,10 @@ returns table (
   state text,
   created_at timestamptz,
   reviewed_at timestamptz,
-  rejection_reason text
+  rejection_reason text,
+  request_kind text,
+  fallback_reason text,
+  evidence_summary text
 )
 language plpgsql
 security definer
@@ -748,13 +1018,14 @@ declare
   v_caller uuid := auth.uid();
   v_role text;
 begin
-  select raw_user_meta_data->>'role' into v_role from auth.users where id = v_caller;
+  select raw_app_meta_data->>'role' into v_role from auth.users where id = v_caller;
   if v_caller is null or coalesce(v_role, '') <> 'admin' then raise exception 'not authorized'; end if;
 
   return query
     select r.id, r.owner_id, ou.email::text, r.nominee_user_id,
            r.nominee_email_at_request, r.death_certificate_path, r.state,
-           r.created_at, r.reviewed_at, r.rejection_reason
+           r.created_at, r.reviewed_at, r.rejection_reason,
+           r.request_kind, r.fallback_reason, r.evidence_summary
       from public.release_requests r
       join auth.users ou on ou.id = r.owner_id
      where r.state in (
@@ -775,7 +1046,7 @@ declare
   v_caller uuid := auth.uid();
   v_is_admin boolean;
 begin
-  select coalesce((raw_user_meta_data->>'role') = 'admin', false)
+  select coalesce((raw_app_meta_data->>'role') = 'admin', false)
     into v_is_admin from auth.users where id = v_caller;
   if v_caller is null or not coalesce(v_is_admin, false) then raise exception 'not authorized'; end if;
 
@@ -826,7 +1097,7 @@ declare
   v_caller uuid := auth.uid();
   v_is_admin boolean;
 begin
-  select coalesce((raw_user_meta_data->>'role') = 'admin', false)
+  select coalesce((raw_app_meta_data->>'role') = 'admin', false)
     into v_is_admin from auth.users where id = v_caller;
   if v_caller is null or not coalesce(v_is_admin, false) then raise exception 'not authorized'; end if;
   if coalesce(length(trim(p_reason)), 0) = 0 then raise exception 'rejection reason is required'; end if;
@@ -835,6 +1106,27 @@ begin
      set state = 'rejected', rejection_reason = trim(p_reason), reviewed_at = now()
    where id = p_request_id and state in ('under_review', 'pending_review');
   if not found then raise exception 'request is not under review'; end if;
+end;
+$$;
+
+create or replace function public.admin_get_certificate_url(p_request_id uuid)
+returns text
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_caller uuid := auth.uid();
+  v_path text;
+begin
+  if v_caller is null or not exists (
+    select 1 from auth.users
+     where id = v_caller and coalesce(raw_app_meta_data->>'role', '') = 'admin'
+  ) then raise exception 'not authorized'; end if;
+
+  select death_certificate_path into v_path
+    from public.release_requests where id = p_request_id;
+  return v_path;
 end;
 $$;
 
@@ -889,5 +1181,116 @@ $$;
 
 grant execute on function public.admin_approve_release(uuid, text) to authenticated;
 grant execute on function public.admin_reject_release(uuid, text) to authenticated;
+grant execute on function public.admin_get_certificate_url(uuid) to authenticated;
 grant execute on function public.owner_abort_release(uuid, text) to authenticated;
 grant execute on function public.maybe_complete_hold(uuid) to authenticated;
+
+-- Reconcile provider events both from the webhook and immediately after a
+-- sender persists its provider message id. This closes the fast-webhook race:
+-- an event received first stays in email_delivery_events and is replayed.
+create or replace function public.apply_email_delivery_events(p_provider_message_id text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_delivery uuid;
+  v_event record;
+  v_next text;
+begin
+  select id into v_delivery from public.email_deliveries
+   where provider_message_id = p_provider_message_id for update;
+  if v_delivery is null then return false; end if;
+
+  for v_event in
+    select event_type, payload, occurred_at
+      from public.email_delivery_events
+     where provider_message_id = p_provider_message_id
+     order by received_at asc, event_id asc
+  loop
+    v_next := case v_event.event_type
+      when 'email.sent' then 'sent'
+      when 'email.delivered' then 'delivered'
+      when 'email.delivery_delayed' then 'delayed'
+      when 'email.bounced' then 'bounced'
+      when 'email.suppressed' then 'suppressed'
+      when 'email.failed' then 'failed'
+      else null
+    end;
+    if v_next is null then continue; end if;
+
+    update public.email_deliveries
+       set state = v_next,
+           delivered_at = case when v_next = 'delivered' then coalesce(v_event.occurred_at, now()) else delivered_at end,
+           failure_reason = case when v_next in ('failed', 'bounced', 'suppressed')
+             then coalesce(v_event.payload #>> '{data,bounce,message}', v_event.payload #>> '{data,reason}', v_next)
+             else failure_reason end,
+           updated_at = now()
+     where id = v_delivery
+       and (
+         (v_next = 'sent' and state in ('queued', 'sent'))
+         or (v_next = 'delivered' and state in ('queued', 'sent', 'delayed', 'delivered'))
+         or (v_next = 'delayed' and state in ('queued', 'sent', 'delayed'))
+         or (v_next = 'bounced' and state in ('queued', 'sent', 'delayed', 'delivered', 'bounced'))
+         or (v_next = 'suppressed' and state in ('queued', 'sent', 'delayed', 'suppressed'))
+         or (v_next = 'failed' and state in ('queued', 'sent', 'delayed', 'failed'))
+       );
+  end loop;
+  return true;
+end;
+$$;
+
+revoke all on function public.apply_email_delivery_events(text) from public;
+grant execute on function public.apply_email_delivery_events(text) to service_role;
+
+do $$
+declare
+  jid bigint;
+begin
+  select jobid into jid from cron.job where jobname = 'lyfos-invite-email-outbox';
+  if jid is not null then perform cron.unschedule(jid); end if;
+end $$;
+
+select cron.schedule(
+  'lyfos-invite-email-outbox',
+  '*/5 * * * *',
+  $$
+    select net.http_post(
+      url := concat(current_setting('app.settings.supabase_url', true), '/functions/v1/send-key-holder-invite'),
+      headers := jsonb_build_object(
+        'Authorization', concat('Bearer ', current_setting('app.settings.cron_bearer', true)),
+        'content-type', 'application/json'
+      ),
+      body := '{}'::jsonb,
+      timeout_milliseconds := 60000
+    );
+  $$
+);
+
+-- Durable outbox dispatcher. The same server-only cron bearer used by
+-- the existing scheduled functions lets the Edge Function drain any
+-- queued recovery email even if the admin closes their browser.
+do $$
+declare
+  jid bigint;
+begin
+  select jobid into jid from cron.job where jobname = 'lyfos-recovery-notification-outbox';
+  if jid is not null then perform cron.unschedule(jid); end if;
+end $$;
+
+select cron.schedule(
+  'lyfos-recovery-notification-outbox',
+  '*/5 * * * *',
+  $$
+    select net.http_post(
+      url := concat(current_setting('app.settings.supabase_url', true), '/functions/v1/send-recovery-notifications'),
+      headers := jsonb_build_object(
+        'Authorization', concat('Bearer ', current_setting('app.settings.cron_bearer', true)),
+        'content-type', 'application/json'
+      ),
+      body := '{}'::jsonb,
+      timeout_milliseconds := 60000
+    );
+  $$
+);

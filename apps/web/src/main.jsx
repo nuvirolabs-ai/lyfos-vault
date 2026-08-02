@@ -5462,11 +5462,7 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
       const inviteUrl = buildExternalAppUrl(PUBLIC_APP_URL, `/invite/${created.invite_token}`);
       let delivery = { status: "failed", message: "The invite was created, but the email could not be sent." };
       try {
-        const result = await sendInviteEmail({
-          inviteId: created.id,
-          inviteToken: created.invite_token,
-          deliveryId: created.delivery_id
-        });
+        const result = await sendInviteEmail({ deliveryId: created.delivery_id });
         delivery = result?.state === "failed"
           ? { status: "failed", message: result.reason || "The provider rejected this email." }
           : { status: result?.state || "sent", message: "The provider accepted the email. Delivery confirmation may take a moment." };
@@ -5489,14 +5485,11 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
   async function resendInvite(holder) {
     setResendingId(holder.id);
     setError("");
+    let inviteUrl = null;
     try {
       const next = await requeueKeyHolderInvite(holder.id);
-      const result = await sendInviteEmail({
-        inviteId: holder.id,
-        inviteToken: next.invite_token,
-        deliveryId: next.delivery_id
-      });
-      const inviteUrl = buildExternalAppUrl(PUBLIC_APP_URL, `/invite/${next.invite_token}`);
+      inviteUrl = buildExternalAppUrl(PUBLIC_APP_URL, `/invite/${next.invite_token}`);
+      const result = await sendInviteEmail({ deliveryId: next.delivery_id });
       setInviteFeedback({
         holderId: holder.id,
         inviteUrl,
@@ -5509,7 +5502,7 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
     } catch (err) {
       setInviteFeedback({
         holderId: holder.id,
-        inviteUrl: null,
+        inviteUrl,
         holderLabel: holder.label,
         holderEmail: holder.holder_email,
         delivery: { status: "failed", message: err?.message || "The email provider rejected the invite." }

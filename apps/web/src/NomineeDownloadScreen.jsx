@@ -4,15 +4,21 @@ import { getSession, onAuthStateChange, signOut } from "./lib/auth.js";
 import {
   fetchMyReleaseRequests,
   getReadyRecoveryMaterial,
-  markRecipientRecoveryOpened
+  markRecipientRecoveryOpened,
+  reportInvalidRecoverySupport
 } from "./lib/releaseClaim.js";
 import {
   deriveHolderKeypairFromPassphrase,
   openSealedShare,
-  recoverRecipientGatedVaultKey
+  recoverRecipientGatedVaultKey,
+  sha256HexBytes
 } from "./lib/shareCrypto.js";
 import { decryptVaultWithRawKey } from "./lib/stage1Crypto.js";
-import { createRecoveredVaultViewModel } from "./lib/recoveryCeremony.js";
+import {
+  createRecoveredVaultViewModel,
+  filterRecoveredItems,
+  isSensitiveRecoveredField
+} from "./lib/recoveryCeremony.js";
 
 const FIELD_LABELS = [
   ["username", "Account / reference"],
@@ -52,7 +58,7 @@ export function NomineeDownloadScreen({ onReturnHome }) {
     try {
       const all = await fetchMyReleaseRequests();
       const recipientRequests = all.filter((item) => item.nominee_user_id === session.user.id && item.recipient_holder_id);
-      setRequest(recipientRequests.find((item) => ["ready_to_recover", "holding"].includes(item.state)) ?? recipientRequests[0] ?? null);
+      setRequest(recipientRequests.find((item) => ["ready_to_recover", "opened", "holding"].includes(item.state)) ?? recipientRequests[0] ?? null);
     } catch (err) {
       setError(err?.message || "Couldn't load your recovery request.");
     } finally {
@@ -63,7 +69,7 @@ export function NomineeDownloadScreen({ onReturnHome }) {
   useEffect(() => { refresh(); }, [session?.user?.id]);
 
   const readyNow = useMemo(() => Boolean(request) && (
-    request.state === "ready_to_recover"
+    ["ready_to_recover", "opened"].includes(request.state)
     || (request.state === "holding" && request.ready_at && new Date(request.ready_at).getTime() <= Date.now())
   ), [request]);
 
@@ -75,6 +81,26 @@ export function NomineeDownloadScreen({ onReturnHome }) {
     try {
       const recipientKeypair = await deriveHolderKeypairFromPassphrase(passphrase, session.user.id);
       const material = await getReadyRecoveryMaterial(request.id);
+      const gateProbe = await openSealedShare(material.gate_envelope, recipientKeypair.secretKey);
+      gateProbe.fill(0);
+      for (const released of material.released_shares) {
+        try {
+          const shareProbe = await openSealedShare(released, recipientKeypair.secretKey);
+          try {
+            const shareText = new TextDecoder().decode(shareProbe);
+            const commitment = await sha256HexBytes(shareProbe);
+            if (!/^[0-9a-f]{99}$/i.test(shareText) || commitment !== released.commitment) {
+              throw new Error("support commitment mismatch");
+            }
+          } finally {
+            shareProbe.fill(0);
+          }
+        } catch {
+          await reportInvalidRecoverySupport(request.id, released.keyHolderId);
+          setRequest((current) => current ? { ...current, state: "collecting_support", ready_at: null } : current);
+          throw new Error("One nominee's support key did not match. It was excluded safely; Lyfos is asking another nominee.");
+        }
+      }
       rawVaultKey = await recoverRecipientGatedVaultKey({
         gateEnvelope: material.gate_envelope,
         releasedShares: material.released_shares,
@@ -97,11 +123,15 @@ export function NomineeDownloadScreen({ onReturnHome }) {
 
       setRecoveredVault(createRecoveredVaultViewModel(vault));
       setPassphrase("");
-      await markRecipientRecoveryOpened(request.id);
-      setRequest((current) => current ? { ...current, state: "opened" } : current);
+      if (request.state !== "opened") {
+        await markRecipientRecoveryOpened(request.id);
+        setRequest((current) => current ? { ...current, state: "opened" } : current);
+      }
     } catch (err) {
       const message = err?.message || "Couldn't open the recovered vault.";
-      setError(/decrypt|auth|cipher|key/i.test(message)
+      setError(/did not match\. It was excluded safely/i.test(message)
+        ? message
+        : /decrypt|auth|cipher|key/i.test(message)
         ? "That recovery passphrase did not match the key created when you accepted the invitation."
         : message);
     } finally {
@@ -125,7 +155,12 @@ export function NomineeDownloadScreen({ onReturnHome }) {
   }
 
   if (recoveredVault) {
-    return <RecoveredVault vault={recoveredVault} ownerInstructions={ownerInstructions} onSignOut={() => signOut().then(() => setSession(null))} />;
+    return <RecoveredVault
+      vault={recoveredVault}
+      ownerInstructions={ownerInstructions}
+      onLock={() => { setRecoveredVault(null); setOwnerInstructions(""); }}
+      onSignOut={() => signOut().then(() => { setSession(null); setRecoveredVault(null); setOwnerInstructions(""); })}
+    />;
   }
 
   return (
@@ -192,8 +227,30 @@ function SafeOpeningGuide() {
   );
 }
 
-function RecoveredVault({ vault, ownerInstructions, onSignOut }) {
+function RecoveredVault({ vault, ownerInstructions, onLock, onSignOut }) {
+  const [query, setQuery] = useState("");
+  const visibleItems = useMemo(() => filterRecoveredItems(vault.items, query), [vault.items, query]);
+
+  useEffect(() => {
+    let timer;
+    const arm = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(onLock, 5 * 60 * 1000);
+    };
+    const hide = () => { if (document.hidden) onLock(); };
+    const events = ["pointerdown", "keydown", "touchstart"];
+    events.forEach((eventName) => window.addEventListener(eventName, arm, { passive: true }));
+    document.addEventListener("visibilitychange", hide);
+    arm();
+    return () => {
+      window.clearTimeout(timer);
+      events.forEach((eventName) => window.removeEventListener(eventName, arm));
+      document.removeEventListener("visibilitychange", hide);
+    };
+  }, [onLock]);
+
   function downloadCopy() {
+    if (!window.confirm("Save a plaintext offline copy on this device? Anyone who can open the file can read the recovered vault. Store it securely and delete it when it is no longer needed.")) return;
     const payload = JSON.stringify({
       kind: "lyfos-recipient-recovery",
       version: 1,
@@ -219,8 +276,9 @@ function RecoveredVault({ vault, ownerInstructions, onSignOut }) {
             <p className="mt-2 text-[13px] text-[#6e6e73]">Nothing here can edit, sync, or change the owner's account.</p>
           </div>
           <div className="flex gap-2">
-            <button onClick={downloadCopy} className="rounded-full bg-[#1d1d1f] px-4 py-2 text-[11px] font-semibold text-white">Save offline copy</button>
-            <button onClick={onSignOut} className="rounded-full border border-black/10 bg-white px-4 py-2 text-[11px] font-semibold">Close vault</button>
+            <button onClick={downloadCopy} className="rounded-full bg-[#1d1d1f] px-4 py-2 text-[11px] font-semibold text-white">Save plaintext offline copy</button>
+            <button onClick={onLock} className="rounded-full border border-black/10 bg-white px-4 py-2 text-[11px] font-semibold">Lock vault</button>
+            <button onClick={onSignOut} className="rounded-full border border-black/10 bg-white px-4 py-2 text-[11px] font-semibold">Sign out</button>
           </div>
         </div>
 
@@ -235,17 +293,21 @@ function RecoveredVault({ vault, ownerInstructions, onSignOut }) {
           <h2 className="text-[22px] font-semibold">All records</h2>
           <span className="text-[12px] text-[#86868b]">{vault.items.length} records</span>
         </div>
+        <label className="mt-4 block">
+          <span className="sr-only">Search recovered records</span>
+          <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search titles and context" className="w-full rounded-2xl border border-black/8 bg-white px-4 py-3 text-[13px] outline-none focus:border-[#1d1d1f]" />
+        </label>
         <div className="mt-4 space-y-3">
-          {vault.items.map((item, index) => <RecoveredRecord key={item.id || `${item.title}-${index}`} item={item} />)}
+          {visibleItems.map((item, index) => <RecoveredRecord key={item.id || `${item.title}-${index}`} item={item} />)}
           {vault.items.length === 0 && <div className="rounded-2xl bg-white p-6 text-center text-[13px] text-[#86868b]">The vault contains no records.</div>}
+          {vault.items.length > 0 && visibleItems.length === 0 && <div className="rounded-2xl bg-white p-6 text-center text-[13px] text-[#86868b]">No records match this search.</div>}
         </div>
 
         <details className="mt-8 rounded-2xl border border-black/8 bg-white p-5">
           <summary className="cursor-pointer text-[13px] font-semibold">Vault context and release record</summary>
-          <p className="mt-2 text-[12px] leading-5 text-[#86868b]">Additional read-only data preserved with the vault, including balances, release settings, and audit history.</p>
+          <p className="mt-2 text-[12px] leading-5 text-[#86868b]">Additional read-only vault content, including balances and audit history. Owner account settings and devices are excluded.</p>
           <pre className="mt-4 max-h-[28rem] overflow-auto whitespace-pre-wrap break-words rounded-xl bg-[#f5f5f7] p-4 text-[11px] leading-5">{JSON.stringify({
             balanceSheet: vault.balanceSheet ?? null,
-            releaseSettings: vault.releaseSettings ?? null,
             audit: vault.audit ?? null
           }, null, 2)}</pre>
         </details>
@@ -256,6 +318,26 @@ function RecoveredVault({ vault, ownerInstructions, onSignOut }) {
 
 function RecoveredRecord({ item }) {
   const [open, setOpen] = useState(item.type === "emergency_instruction");
+  const [revealed, setRevealed] = useState(() => new Set());
+  const [copied, setCopied] = useState("");
+
+  async function copyValue(key, value) {
+    try {
+      await navigator.clipboard.writeText(String(value));
+      setCopied(key);
+      window.setTimeout(() => setCopied((current) => current === key ? "" : current), 1500);
+    } catch {
+      setCopied("");
+    }
+  }
+
+  function toggleReveal(key) {
+    setRevealed((current) => {
+      const next = new Set(current);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
   return (
     <article className="overflow-hidden rounded-2xl border border-black/8 bg-white">
       <button onClick={() => setOpen((value) => !value)} className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left">
@@ -268,12 +350,20 @@ function RecoveredRecord({ item }) {
       {open && (
         <div className="border-t border-black/8 px-5 py-5">
           <dl className="grid gap-4 md:grid-cols-2">
-            {FIELD_LABELS.filter(([key]) => String(item[key] ?? "").trim()).map(([key, label]) => (
-              <div key={key} className={key === "notes" ? "md:col-span-2" : ""}>
-                <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#86868b]">{label}</dt>
-                <dd className="mt-1 whitespace-pre-wrap break-words text-[13px] leading-5">{item[key]}</dd>
-              </div>
-            ))}
+            {FIELD_LABELS.filter(([key]) => String(item[key] ?? "").trim()).map(([key, label]) => {
+              const sensitive = isSensitiveRecoveredField(key);
+              const isRevealed = revealed.has(key);
+              return (
+                <div key={key} className={key === "notes" ? "md:col-span-2" : ""}>
+                  <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#86868b]">{label}</dt>
+                  <dd className="mt-1 flex items-start gap-2">
+                    <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-[13px] leading-5">{sensitive && !isRevealed ? "••••••••••••" : item[key]}</span>
+                    {sensitive && <button type="button" onClick={() => toggleReveal(key)} className="shrink-0 text-[10px] font-semibold text-[#075985]">{isRevealed ? "Hide" : "Reveal"}</button>}
+                    {(!sensitive || isRevealed) && <button type="button" onClick={() => copyValue(key, item[key])} className="shrink-0 text-[10px] font-semibold text-[#6e6e73]">{copied === key ? "Copied" : "Copy"}</button>}
+                  </dd>
+                </div>
+              );
+            })}
           </dl>
           {(item.attachments?.length ?? 0) > 0 && (
             <div className="mt-5 border-t border-black/8 pt-4">

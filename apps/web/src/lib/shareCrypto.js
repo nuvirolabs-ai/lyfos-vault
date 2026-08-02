@@ -204,9 +204,13 @@ export async function createRecipientGatedPlan({
   const maskedVaultKey = xor32(rawVaultKey, gate);
   try {
     const shareStrings = await splitVaultKey(maskedVaultKey, { totalShares: 5, threshold: 2 });
-    const sealedShares = await Promise.all(shareStrings.map((share, index) =>
-      sealShareToPubkey(shareStringToBytes(share), holderPublicKeys[index])
-    ));
+    const preparedShares = await Promise.all(shareStrings.map(async (share, index) => {
+      const bytes = shareStringToBytes(share);
+      return {
+        sealed: await sealShareToPubkey(bytes, holderPublicKeys[index]),
+        commitment: await sha256HexBytes(bytes)
+      };
+    }));
     const [primaryGateEnvelope, backupGateEnvelope] = await Promise.all([
       sealShareToPubkey(gate, primaryPublicKey),
       sealShareToPubkey(gate, backupPublicKey)
@@ -215,7 +219,8 @@ export async function createRecipientGatedPlan({
       algorithm: "recipient-gate-xor-sss-2of5-v1",
       threshold: 2,
       totalShares: 5,
-      sealedShares,
+      sealedShares: preparedShares.map((item) => item.sealed),
+      shareCommitments: preparedShares.map((item) => item.commitment),
       primaryGateEnvelope,
       backupGateEnvelope
     };
@@ -339,4 +344,10 @@ export function shareStringToBytes(s) {
 }
 export function bytesToShareString(bytes) {
   return new TextDecoder().decode(bytes);
+}
+
+export async function sha256HexBytes(bytes) {
+  if (!(bytes instanceof Uint8Array)) throw new Error("bytes are required");
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }

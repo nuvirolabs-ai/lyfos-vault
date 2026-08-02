@@ -27,6 +27,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 // @ts-ignore
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.106.2";
+import { requireExternalAppUrl } from "../_shared/public-app-url.ts";
 
 // @ts-ignore Deno global available at runtime
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -38,14 +39,6 @@ const RESEND_KEY   = Deno.env.get("RESEND_API_KEY") ?? "";
 const FROM_EMAIL   = Deno.env.get("FROM_EMAIL") ?? "Lyfos <hello@lyfos.in>";
 // @ts-ignore
 const APP_URL      = requireExternalAppUrl(Deno.env.get("APP_URL") ?? "https://app.lyfos.in");
-
-function requireExternalAppUrl(value: string): string {
-  const url = new URL(value);
-  if (url.protocol !== "https:" || ["localhost", "127.0.0.1", "::1"].includes(url.hostname.toLowerCase())) {
-    throw new Error("APP_URL must be a public HTTPS URL");
-  }
-  return url.origin;
-}
 
 const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false }

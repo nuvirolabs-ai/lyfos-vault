@@ -1,5 +1,4 @@
-// Release plan — owner-side cloud flow. Mirror of CloudKeyHolders +
-// FinalizeModal + ClaimUrlPanel on web.
+// Release plan — owner-side recipient-gated circle setup.
 
 import React, { useEffect, useState } from "react";
 import { ScrollView, View, Pressable, Alert, Modal } from "react-native";
@@ -8,14 +7,14 @@ import { router } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import Constants from "expo-constants";
 
-import { Screen, Eyebrow, H1, H2, H3, Body, Footnote, Field, Input, PrimaryButton, SecondaryButton, LinkText, Card, Divider, StatusPill, DangerButton } from "../src/ui";
+import { Screen, Eyebrow, H1, H2, Body, Footnote, Field, Input, PrimaryButton, LinkText, Card, StatusPill } from "../src/ui";
 import { useApp } from "../src/AppContext";
 import {
-  listMyKeyHolders, createKeyHolderInvite, revokeKeyHolder, sendInviteEmail, finalizeReleasePlan
+  listMyKeyHolders, createKeyHolderInvite, requeueKeyHolderInvite, revokeKeyHolder, sendInviteEmail, finalizeReleasePlan
 } from "../src/lib/releasePlan";
-import { loadMyReleaseSettings, upsertMyReleaseSettings, rotateMyClaimToken } from "../src/lib/releaseClaim";
 import { useVaultKey } from "../src/useVaultKey";
 import { colors, radii } from "../src/theme";
+import { publicAppOrigin } from "../src/lib/appUrls";
 
 export default function ReleasePlanScreen() {
   const { entitlements, session } = useApp();
@@ -27,13 +26,18 @@ export default function ReleasePlanScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [feedbackUrl, setFeedbackUrl] = useState<string | null>(null);
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [feedbackOk, setFeedbackOk] = useState(false);
+  const [resendingId, setResendingId] = useState<string | null>(null);
   const [finalizeOpen, setFinalizeOpen] = useState(false);
 
   const accepted = holders.filter((h) => h.status === "accepted").length + holders.filter((h) => h.status === "verified").length;
   const verified = holders.filter((h) => h.status === "verified").length;
   const planActive = verified >= 5;
   const canPay = entitlements.releaseEnabled;
-  const canFinalize = !planActive && holders.length === 5 && accepted === 5 && canPay;
+  const rolesReady = holders.filter((h) => h.role === "primary").length === 1
+    && holders.filter((h) => h.role === "backup").length === 1;
+  const canFinalize = !planActive && holders.length === 5 && accepted === 5 && rolesReady && canPay;
 
   async function refresh() {
     setLoading(true); setError("");
@@ -43,19 +47,54 @@ export default function ReleasePlanScreen() {
   }
   useEffect(() => { refresh(); }, []);
 
-  async function invite(input: { label: string; email: string; phone?: string }) {
+  async function invite(input: { label: string; email: string; phone?: string; role: "primary" | "backup" | "trusted" }) {
     setBusy(true); setError("");
     try {
-      const created = await createKeyHolderInvite({ label: input.label, holderEmail: input.email, holderPhone: input.phone });
-      const appUrl = (Constants?.expoConfig?.extra as any)?.APP_URL ?? "https://app.lyfos.in";
+      const created = await createKeyHolderInvite({ label: input.label, holderEmail: input.email, holderPhone: input.phone, role: input.role });
+      const appUrl = publicAppOrigin((Constants?.expoConfig?.extra as any)?.APP_URL);
       const url = `${appUrl}/invite/${created.invite_token}`;
-      try { await sendInviteEmail(created.id); } catch {}
+      try {
+        const delivery = await sendInviteEmail(created.delivery_id);
+        setFeedbackOk(delivery?.state !== "failed");
+        setFeedbackMessage(delivery?.state === "failed"
+          ? delivery?.reason || "The email provider rejected this invite."
+          : "The email provider accepted the invite. Delivery confirmation may take a moment.");
+      } catch (sendError: any) {
+        setFeedbackOk(false);
+        setFeedbackMessage(sendError?.message || "The invite was created, but the email could not be sent.");
+      }
       setFeedbackUrl(url);
       setShowInvite(false);
       await refresh();
     } catch (e: any) {
       setError(e?.message || "Couldn't create invite.");
     } finally { setBusy(false); }
+  }
+
+  async function resend(holder: any) {
+    setResendingId(holder.id); setError("");
+    let url: string | null = null;
+    try {
+      const next = await requeueKeyHolderInvite(holder.id);
+      const appUrl = publicAppOrigin((Constants?.expoConfig?.extra as any)?.APP_URL);
+      url = `${appUrl}/invite/${next.invite_token}`;
+      const delivery = await sendInviteEmail(next.delivery_id);
+      setFeedbackOk(delivery?.state !== "failed");
+      setFeedbackMessage(delivery?.state === "failed"
+        ? delivery?.reason || "The email provider rejected this invite."
+        : "A fresh invite was accepted by the email provider.");
+      setFeedbackUrl(url);
+      await refresh();
+    } catch (e: any) {
+      if (url) {
+        setFeedbackOk(false);
+        setFeedbackMessage(e?.message || "The email could not be sent. Share this fresh link directly.");
+        setFeedbackUrl(url);
+        await refresh();
+      } else {
+        setError(e?.message || "Couldn't create a fresh invite.");
+      }
+    } finally { setResendingId(null); }
   }
 
   async function revoke(holder: any) {
@@ -98,7 +137,7 @@ export default function ReleasePlanScreen() {
             {planActive ? "Your circle is active." : "Build your circle of five."}
           </H1>
           <Footnote style={{ marginTop: 10, textAlign: "center", color: colors.text2 }}>
-            Five trusted humans. Three of them, plus a 14-day hold, are required to release your vault to your nominee.
+            Choose one primary, one backup, and three trusted nominees. The recovery recipient still needs two other nominees plus a 14-day hold.
           </Footnote>
 
           {/* Readiness row */}
@@ -113,15 +152,17 @@ export default function ReleasePlanScreen() {
           {error ? <Card tone="danger" style={{ marginTop: 12 }}><Body style={{ color: colors.redInk }}>{error}</Body></Card> : null}
 
           {feedbackUrl && (
-            <Card tone="success" style={{ marginTop: 12 }}>
-              <Footnote style={{ color: colors.greenInk, fontWeight: "600" }}>INVITE CREATED</Footnote>
-              <Body style={{ marginTop: 4, color: colors.greenInk }}>
-                We tried to email them. If it doesn't arrive, share this URL directly:
+            <Card tone={feedbackOk ? "success" : "amber"} style={{ marginTop: 12 }}>
+              <Footnote style={{ color: feedbackOk ? colors.greenInk : colors.amberInk, fontWeight: "600" }}>
+                {feedbackOk ? "INVITE SENT" : "EMAIL NEEDS ATTENTION"}
+              </Footnote>
+              <Body style={{ marginTop: 4, color: feedbackOk ? colors.greenInk : colors.amberInk }}>
+                {feedbackMessage} The link below is always available as a fallback:
               </Body>
               <Body style={{ marginTop: 6, fontFamily: "Courier", fontSize: 11 }} selectable>{feedbackUrl}</Body>
               <View style={{ flexDirection: "row", gap: 12, marginTop: 8 }}>
                 <LinkText onPress={() => Clipboard.setStringAsync(feedbackUrl).catch(() => {})}>Copy</LinkText>
-                <LinkText onPress={() => setFeedbackUrl(null)}>Close</LinkText>
+                <LinkText onPress={() => { setFeedbackUrl(null); setFeedbackMessage(""); }}>Close</LinkText>
               </View>
             </Card>
           )}
@@ -136,14 +177,20 @@ export default function ReleasePlanScreen() {
                 <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
                   <View style={{ flex: 1, marginRight: 12 }}>
                     <Body style={{ fontWeight: "600" }}>{h.label}</Body>
-                    <Footnote numberOfLines={1}>{h.holder_email}</Footnote>
+                    <Footnote numberOfLines={1}>{h.holder_email} · {h.role || "trusted"}</Footnote>
                   </View>
                   <StatusPill
-                    label={h.status}
-                    tone={h.status === "verified" ? "green" : h.status === "accepted" ? "green" : h.status === "revoked" ? "red" : "amber"}
+                    label={h.status === "pending" && h.delivery_state ? h.delivery_state : h.status}
+                    tone={["verified", "accepted", "delivered", "sent"].includes(h.status === "pending" && h.delivery_state ? h.delivery_state : h.status) ? "green" : h.status === "revoked" || ["failed", "bounced", "suppressed"].includes(h.delivery_state) ? "red" : "amber"}
                   />
                 </View>
-                <View style={{ alignItems: "flex-end", marginTop: 8 }}>
+                {!!h.delivery_failure_reason && <Footnote style={{ marginTop: 6, color: colors.redInk }}>{h.delivery_failure_reason}</Footnote>}
+                <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 16, marginTop: 8 }}>
+                  {h.status === "pending" && (
+                    <Pressable disabled={resendingId === h.id} onPress={() => resend(h)}>
+                      <Footnote style={{ color: colors.text }}>{resendingId === h.id ? "Sending…" : "Send email again"}</Footnote>
+                    </Pressable>
+                  )}
                   <Pressable onPress={() => revoke(h)}><Footnote style={{ color: colors.redInk }}>Revoke</Footnote></Pressable>
                 </View>
               </Card>
@@ -175,26 +222,25 @@ export default function ReleasePlanScreen() {
             )}
             {planActive && (
               <Footnote style={{ color: colors.greenInk, textAlign: "center" }}>
-                Your circle is active. If something happens to you, 3 of 5 plus a 14-day hold are required to release.
+                Your circle is active. Primary or backup still needs two other nominees and the 14-day owner-protection hold.
               </Footnote>
             )}
           </View>
 
-          {planActive && <ClaimUrlPanel />}
+          {planActive && <RecoveryAccessPanel />}
         </ScrollView>
       </SafeAreaView>
 
       <FinalizeModal
         open={finalizeOpen}
-        acceptedHolders={holders.filter((h) => h.status === "accepted")}
         hasVaultKey={!!vaultKey}
         onCancel={() => setFinalizeOpen(false)}
-        onConfirm={async () => {
+        onConfirm={async (instructions) => {
           if (!vaultKey) { setError("Unlock your vault first."); return; }
           setBusy(true);
           try {
             const rawKey = vaultKey;
-            await finalizeReleasePlan({ rawVaultKey: rawKey, holders: holders.filter((h) => h.status === "accepted") });
+            await finalizeReleasePlan({ rawVaultKey: rawKey, holders: holders.filter((h) => ["accepted", "verified"].includes(h.status)), instructions });
             setFinalizeOpen(false);
             await refresh();
           } catch (e: any) {
@@ -217,11 +263,12 @@ function Stat({ label, value, good }: { label: string; value: string; good?: boo
 }
 
 function InviteForm({ busy, onCancel, onSubmit }: {
-  busy: boolean; onCancel: () => void; onSubmit: (input: { label: string; email: string; phone?: string }) => Promise<void>;
+  busy: boolean; onCancel: () => void; onSubmit: (input: { label: string; email: string; phone?: string; role: "primary" | "backup" | "trusted" }) => Promise<void>;
 }) {
   const [label, setLabel] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [role, setRole] = useState<"primary" | "backup" | "trusted">("trusted");
   return (
     <Card style={{ width: "100%" }}>
       <Footnote style={{ fontWeight: "600", color: colors.text3 }}>INVITE A KEY HOLDER</Footnote>
@@ -230,92 +277,41 @@ function InviteForm({ busy, onCancel, onSubmit }: {
       <Field label="Their phone · optional, for SMS alerts">
         <Input value={phone} onChangeText={setPhone} placeholder="+91 98765 43210" keyboardType="phone-pad" />
       </Field>
+      <Field label="Their role">
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          {(["primary", "backup", "trusted"] as const).map((value) => (
+            <Pressable key={value} onPress={() => setRole(value)} style={{ flex: 1, paddingVertical: 10, borderRadius: radii.pill, backgroundColor: role === value ? colors.text : colors.surface }}>
+              <Footnote style={{ textAlign: "center", color: role === value ? colors.bg : colors.text2, fontWeight: "600", textTransform: "capitalize" }}>{value}</Footnote>
+            </Pressable>
+          ))}
+        </View>
+      </Field>
       <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 8 }}>
         <LinkText onPress={onCancel}>Cancel</LinkText>
-        <PrimaryButton onPress={() => onSubmit({ label, email, phone })} disabled={!label || !email} busy={busy} label="Send invite" style={{ paddingVertical: 8, paddingHorizontal: 16 }} />
+        <PrimaryButton onPress={() => onSubmit({ label, email, phone, role })} disabled={!label || !email} busy={busy} label="Send invite" style={{ paddingVertical: 8, paddingHorizontal: 16 }} />
       </View>
     </Card>
   );
 }
 
-function ClaimUrlPanel() {
-  const [settings, setSettings] = useState<any | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [label, setLabel] = useState(""); const [email, setEmail] = useState(""); const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  async function refresh() {
-    const s = await loadMyReleaseSettings().catch(() => null);
-    setSettings(s); setLabel(s?.nominee_label ?? ""); setEmail(s?.nominee_email ?? ""); setText(s?.claim_text ?? "");
-  }
-  useEffect(() => { refresh(); }, []);
-
-  async function save() {
-    setBusy(true);
-    try {
-      const next = await upsertMyReleaseSettings({ nomineeLabel: label || undefined, nomineeEmail: email || undefined, claimText: text || undefined });
-      setSettings(next); setEditing(false);
-    } finally { setBusy(false); }
-  }
-  async function rotate() {
-    Alert.alert("Rotate claim link?", "The old URL will stop working.", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Rotate", style: "destructive", onPress: async () => { const n = await rotateMyClaimToken(); setSettings(n); } }
-    ]);
-  }
-
-  const appUrl = (Constants?.expoConfig?.extra as any)?.APP_URL ?? "https://app.lyfos.in";
-  const url = settings?.claim_token ? `${appUrl}/claim/${settings.claim_token}` : null;
-
+function RecoveryAccessPanel() {
+  const appUrl = publicAppOrigin((Constants?.expoConfig?.extra as any)?.APP_URL);
   return (
-    <Card style={{ marginTop: 28 }}>
-      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-        <Footnote style={{ fontWeight: "600", color: colors.text3 }}>CLAIM LINK FOR YOUR NOMINEE</Footnote>
-        {settings && !editing && <LinkText onPress={() => setEditing(true)}>Edit</LinkText>}
-      </View>
-      {!settings && !editing && (
-        <View style={{ marginTop: 12 }}>
-          <Body style={{ color: colors.text2 }}>Generate a stable URL you share once with your nominee.</Body>
-          <PrimaryButton onPress={() => setEditing(true)} label="Set up claim link" style={{ marginTop: 16 }} />
-        </View>
-      )}
-      {settings && !editing && (
-        <View style={{ marginTop: 8 }}>
-          <Body>Nominee · <Body style={{ fontWeight: "600" }}>{settings.nominee_label || "—"}</Body></Body>
-          {!!settings.claim_text && <Footnote style={{ marginTop: 6, color: colors.text2 }}>"{settings.claim_text}"</Footnote>}
-          {url && (
-            <View style={{ marginTop: 12 }}>
-              <Body style={{ fontFamily: "Courier", fontSize: 11 }} selectable>{url}</Body>
-              <View style={{ flexDirection: "row", gap: 12, marginTop: 6 }}>
-                <LinkText onPress={() => Clipboard.setStringAsync(url).catch(() => {})}>Copy</LinkText>
-                <LinkText onPress={rotate} style={{ color: colors.redInk }}>Rotate</LinkText>
-              </View>
-            </View>
-          )}
-        </View>
-      )}
-      {editing && (
-        <View style={{ marginTop: 8, gap: 6 }}>
-          <Field label="Nominee label"><Input value={label} onChangeText={setLabel} placeholder="Priya Sharma (spouse)" /></Field>
-          <Field label="Nominee email · optional"><Input value={email} onChangeText={setEmail} placeholder="priya@example.com" keyboardType="email-address" autoCapitalize="none" /></Field>
-          <Field label="Note for them · optional">
-            <Input value={text} onChangeText={setText} multiline numberOfLines={4} style={{ minHeight: 90, textAlignVertical: "top" }} />
-          </Field>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 8 }}>
-            <LinkText onPress={() => { setEditing(false); refresh(); }}>Cancel</LinkText>
-            <PrimaryButton onPress={save} busy={busy} label="Save" style={{ paddingVertical: 8, paddingHorizontal: 16 }} />
-          </View>
-        </View>
-      )}
+    <Card tone="success" style={{ marginTop: 28 }}>
+      <Footnote style={{ color: colors.greenInk, fontWeight: "600" }}>RECOVERY ACCESS</Footnote>
+      <Body style={{ marginTop: 6, color: colors.greenInk }}>
+        Primary and backup nominees sign in to their own accounts at {appUrl}/claim. No separate claim token or owner login is used.
+      </Body>
     </Card>
   );
 }
 
-function FinalizeModal({ open, acceptedHolders, hasVaultKey, onCancel, onConfirm, busy }: {
-  open: boolean; acceptedHolders: any[]; hasVaultKey: boolean;
-  onCancel: () => void; onConfirm: () => void; busy: boolean;
+function FinalizeModal({ open, hasVaultKey, onCancel, onConfirm, busy }: {
+  open: boolean; hasVaultKey: boolean;
+  onCancel: () => void; onConfirm: (instructions: string) => void; busy: boolean;
 }) {
   const [text, setText] = useState("");
+  const [instructions, setInstructions] = useState("");
   const ready = text.trim().toLowerCase() === "finalize";
   return (
     <Modal visible={open} animationType="slide" transparent onRequestClose={onCancel}>
@@ -329,7 +325,8 @@ function FinalizeModal({ open, acceptedHolders, hasVaultKey, onCancel, onConfirm
           <View style={{ marginTop: 8, gap: 4 }}>
             <Body style={{ color: colors.text2 }}>• Your nominee files a claim with proof</Body>
             <Body style={{ color: colors.text2 }}>• Lyfos approves the claim</Body>
-            <Body style={{ color: colors.text2 }}>• 3 of 5 holders approve their share</Body>
+            <Body style={{ color: colors.text2 }}>• Primary or backup uses their private key</Body>
+            <Body style={{ color: colors.text2 }}>• Two other nominees independently release support</Body>
             <Body style={{ color: colors.text2 }}>• 14-day hold with daily alerts; one-tap abort</Body>
           </View>
           {!hasVaultKey && (
@@ -337,12 +334,15 @@ function FinalizeModal({ open, acceptedHolders, hasVaultKey, onCancel, onConfirm
               <Body style={{ color: colors.redInk }}>Unlock your vault first. The raw key never leaves this device.</Body>
             </Card>
           )}
+          <Field label="Private instructions for primary and backup · optional">
+            <Input value={instructions} onChangeText={setInstructions} multiline numberOfLines={4} style={{ minHeight: 90, textAlignVertical: "top" }} placeholder="What should they do first when the vault is released?" />
+          </Field>
           <Field label='Type "finalize" to confirm'>
             <Input value={text} onChangeText={setText} placeholder="finalize" autoCapitalize="none" editable={hasVaultKey && !busy} />
           </Field>
           <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 12 }}>
             <LinkText onPress={onCancel}>Cancel</LinkText>
-            <PrimaryButton onPress={onConfirm} disabled={!ready || !hasVaultKey} busy={busy} label="Activate plan" style={{ paddingVertical: 10, paddingHorizontal: 22 }} />
+            <PrimaryButton onPress={() => onConfirm(instructions)} disabled={!ready || !hasVaultKey} busy={busy} label="Activate plan" style={{ paddingVertical: 10, paddingHorizontal: 22 }} />
           </View>
         </View>
       </View>

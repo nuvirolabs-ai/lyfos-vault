@@ -6,6 +6,8 @@ import {
   canSupportRecovery,
   countValidSupport,
   createRecoveredVaultViewModel,
+  filterRecoveredItems,
+  isSensitiveRecoveredField,
   mergeLatestInviteDeliveries,
   nextRecoveryState,
   reduceDeliveryState,
@@ -73,8 +75,21 @@ test("invite rows expose only the newest observable delivery state", () => {
   assert.equal(merged[1].delivery_state, null);
 });
 
+test("invite rows prefer the newest resend attempt over a late webhook from an older attempt", () => {
+  const holders = [{ id: "one", status: "pending" }];
+  const merged = mergeLatestInviteDeliveries(holders, [
+    { related_holder_id: "one", state: "failed", attempt: 1, updated_at: "2026-08-02T10:05:00Z" },
+    { related_holder_id: "one", state: "sent", attempt: 2, updated_at: "2026-08-02T10:01:00Z" }
+  ]);
+
+  assert.equal(merged[0].delivery_state, "sent");
+});
+
 test("recovered vault contains every record and no mutation capability", () => {
   const model = createRecoveredVaultViewModel({
+    ownerSettings: { dangerous: true },
+    devices: [{ id: "owner-device" }],
+    billing: { plan: "vault" },
     items: [
       { id: "normal", emergencyEligible: false, type: "important_document" },
       { id: "urgent", emergencyEligible: true, type: "emergency_instruction" }
@@ -89,4 +104,24 @@ test("recovered vault contains every record and no mutation capability", () => {
     sync: false,
     ownerSettings: false
   });
+  assert.equal("ownerSettings" in model, false);
+  assert.equal("devices" in model, false);
+  assert.equal("billing" in model, false);
+});
+
+test("recovered vault search scans titles, types, and non-secret context", () => {
+  const items = [
+    { title: "HDFC salary", type: "bank_account", notes: "Main family account", secret: "never-index-this" },
+    { title: "Passport", type: "identity_document", notes: "Blue folder" }
+  ];
+  assert.deepEqual(filterRecoveredItems(items, "salary").map((item) => item.title), ["HDFC salary"]);
+  assert.deepEqual(filterRecoveredItems(items, "identity document").map((item) => item.title), ["Passport"]);
+  assert.equal(filterRecoveredItems(items, "never-index-this").length, 0);
+});
+
+test("recovered vault hides access and financial secrets until intentional reveal", () => {
+  assert.equal(isSensitiveRecoveredField("secret"), true);
+  assert.equal(isSensitiveRecoveredField("cardDetails"), true);
+  assert.equal(isSensitiveRecoveredField("bankDetails"), true);
+  assert.equal(isSensitiveRecoveredField("notes"), false);
 });

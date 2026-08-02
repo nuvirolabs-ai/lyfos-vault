@@ -6,6 +6,8 @@ import {
   deriveHolderKeypairFromPassphrase,
   sealShareToPubkey,
   openSealedShare,
+  randomBytes,
+  sha256Hex,
   utf8,
   fromUtf8
 } from "./crypto";
@@ -19,30 +21,59 @@ export async function listMyKeyHolders() {
     .from("key_holders")
     .select("*")
     .eq("owner_id", u.user.id)
+    .neq("status", "revoked")
     .order("created_at", { ascending: true });
   if (error) throw error;
-  return data ?? [];
+  const holders = data ?? [];
+  if (holders.length === 0) return holders;
+  const { data: deliveries, error: deliveryError } = await sb
+    .from("email_deliveries")
+    .select("related_holder_id, state, failure_reason, attempt, updated_at")
+    .in("related_holder_id", holders.map((holder: any) => holder.id))
+    .eq("purpose", "holder_invite")
+    .order("attempt", { ascending: false })
+    .order("updated_at", { ascending: false });
+  if (deliveryError) throw deliveryError;
+  return mergeLatestInviteDeliveries(holders, deliveries ?? []);
 }
 
-export async function createKeyHolderInvite({ label, holderEmail, holderPhone }: { label: string; holderEmail: string; holderPhone?: string }) {
+export function mergeLatestInviteDeliveries(holders: any[] = [], deliveries: any[] = []) {
+  const latestByHolder = new Map<string, any>();
+  for (const delivery of deliveries) {
+    const holderId = delivery?.related_holder_id;
+    if (!holderId) continue;
+    const current = latestByHolder.get(holderId);
+    const attempt = Number(delivery.attempt) || 0;
+    const currentAttempt = Number(current?.attempt) || 0;
+    if (!current
+      || attempt > currentAttempt
+      || (attempt === currentAttempt && String(delivery.updated_at ?? "") > String(current.updated_at ?? ""))) {
+      latestByHolder.set(holderId, delivery);
+    }
+  }
+  return holders.map((holder) => {
+    const delivery = latestByHolder.get(holder.id);
+    return {
+      ...holder,
+      delivery_state: delivery?.state ?? null,
+      delivery_failure_reason: delivery?.failure_reason ?? null,
+      delivery_updated_at: delivery?.updated_at ?? null
+    };
+  });
+}
+
+export async function createKeyHolderInvite({ label, holderEmail, holderPhone, role }: { label: string; holderEmail: string; holderPhone?: string; role: "primary" | "backup" | "trusted" }) {
   const sb = getSupabase()!;
-  const { data: u } = await sb.auth.getUser();
-  if (!u?.user?.id) throw new Error("Not signed in");
-  const invite_token = makeInviteToken();
-  const { data, error } = await sb
-    .from("key_holders")
-    .insert({
-      owner_id: u.user.id,
-      holder_email: holderEmail.trim().toLowerCase(),
-      holder_phone: holderPhone?.trim() || null,
-      label: label.trim(),
-      invite_token,
-      status: "pending"
-    })
-    .select()
-    .single();
+  const { data, error } = await sb.rpc("create_key_holder_invite", {
+    p_holder_email: holderEmail.trim().toLowerCase(),
+    p_holder_phone: holderPhone?.trim() || null,
+    p_label: label.trim(),
+    p_role: role
+  });
   if (error) throw error;
-  return data;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.invite_id || !row?.invite_token || !row?.delivery_id) throw new Error("Invite service returned an incomplete response");
+  return { id: row.invite_id, invite_token: row.invite_token, delivery_id: row.delivery_id, role };
 }
 
 export async function revokeKeyHolder(id: string) {
@@ -54,9 +85,18 @@ export async function revokeKeyHolder(id: string) {
   if (error) throw error;
 }
 
-export async function sendInviteEmail(inviteId: string) {
+export async function requeueKeyHolderInvite(holderId: string) {
   const sb = getSupabase()!;
-  const { data, error } = await sb.functions.invoke("send-key-holder-invite", { body: { invite_id: inviteId } });
+  const { data, error } = await sb.rpc("requeue_key_holder_invite", { p_holder_id: holderId });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.invite_token || !row?.delivery_id) throw new Error("Invite resend returned an incomplete response");
+  return row;
+}
+
+export async function sendInviteEmail(deliveryId: string) {
+  const sb = getSupabase()!;
+  const { data, error } = await sb.functions.invoke("send-key-holder-invite", { body: { delivery_id: deliveryId } });
   if (error) throw error;
   return data;
 }
@@ -79,39 +119,63 @@ export async function acceptInvite({ token, releasePubkey }: { token: string; re
   return data;
 }
 
-export async function finalizeReleasePlan({ rawVaultKey, holders }: { rawVaultKey: Uint8Array; holders: any[] }) {
+export async function finalizeReleasePlan({ rawVaultKey, holders, instructions = "" }: { rawVaultKey: Uint8Array; holders: any[]; instructions?: string }) {
   if (!Array.isArray(holders) || holders.length !== 5) throw new Error("Need exactly 5 accepted holders to finalize");
   for (const h of holders) {
-    if (h.status !== "accepted") throw new Error(`Holder ${h.label} is in status "${h.status}", expected "accepted"`);
+    if (!["accepted", "verified"].includes(h.status)) throw new Error(`Holder ${h.label} is not ready`);
     if (!h.release_pubkey) throw new Error(`Holder ${h.label} has not uploaded a release public key yet`);
   }
+  const primary = holders.find((h) => h.role === "primary");
+  const backup = holders.find((h) => h.role === "backup");
+  if (!primary || !backup || primary.id === backup.id) throw new Error("Choose one primary and one backup nominee before activation");
   const sb = getSupabase()!;
-  const { data: u } = await sb.auth.getUser();
-  if (!u?.user?.id) throw new Error("Not signed in");
-
-  const shares = splitVaultKey(rawVaultKey);
-  const ownerId = u.user.id;
-  const rows: any[] = [];
-  for (let i = 0; i < 5; i++) {
-    const h = holders[i];
-    const sealed = sealShareToPubkey(utf8(shares[i]), h.release_pubkey);
-    rows.push({
-      owner_id: ownerId,
-      key_holder_id: h.id,
-      share_index: i + 1,
-      ciphertext: sealed.ciphertext,
-      ephemeral_pub: sealed.ephemeralPub
+  const gate = randomBytes(32);
+  const masked = new Uint8Array(32);
+  const instructionBytes = utf8(instructions.trim());
+  for (let i = 0; i < 32; i++) masked[i] = rawVaultKey[i] ^ gate[i];
+  try {
+    const shares = splitVaultKey(masked, { total: 5, threshold: 2 });
+    const sealedShares = shares.map((share, index) => {
+      const bytes = utf8(share);
+      const sealed = sealShareToPubkey(bytes, holders[index].release_pubkey);
+      return {
+        holder_id: holders[index].id,
+        share_index: index + 1,
+        ciphertext: sealed.ciphertext,
+        ephemeral_pub: sealed.ephemeralPub,
+        commitment: sha256Hex(bytes)
+      };
     });
+    const primaryGate = sealShareToPubkey(gate, primary.release_pubkey);
+    const backupGate = sealShareToPubkey(gate, backup.release_pubkey);
+    const primaryInstructions = sealShareToPubkey(instructionBytes, primary.release_pubkey);
+    const backupInstructions = sealShareToPubkey(instructionBytes, backup.release_pubkey);
+    const payload = {
+      algorithm: "recipient-gate-xor-sss-2of5-v1",
+      shares: sealedShares,
+      primary: {
+        holder_id: primary.id,
+        ciphertext: primaryGate.ciphertext,
+        ephemeral_pub: primaryGate.ephemeralPub,
+        instructions_ciphertext: primaryInstructions.ciphertext,
+        instructions_ephemeral_pub: primaryInstructions.ephemeralPub
+      },
+      backup: {
+        holder_id: backup.id,
+        ciphertext: backupGate.ciphertext,
+        ephemeral_pub: backupGate.ephemeralPub,
+        instructions_ciphertext: backupInstructions.ciphertext,
+        instructions_ephemeral_pub: backupInstructions.ephemeralPub
+      }
+    };
+    const { data, error } = await sb.rpc("activate_circle_generation", { p_payload: payload });
+    if (error) throw error;
+    return { generationId: data, sharesUploaded: sealedShares.length };
+  } finally {
+    gate.fill(0);
+    masked.fill(0);
+    instructionBytes.fill(0);
   }
-  const { error: delErr } = await sb.from("key_shares").delete().eq("owner_id", ownerId);
-  if (delErr) throw delErr;
-  const { error: insErr } = await sb.from("key_shares").insert(rows);
-  if (insErr) throw insErr;
-  for (const h of holders) {
-    const { error: vErr } = await sb.rpc("mark_holder_verified", { p_holder_id: h.id });
-    if (vErr) throw vErr;
-  }
-  return { sharesUploaded: rows.length };
 }
 
 // ============================================================
@@ -196,16 +260,4 @@ export async function releaseMyShare(params: {
   });
   if (rpcErr) throw rpcErr;
   return { shareIndex: shareRow.share_index };
-}
-
-function makeInviteToken(): string {
-  const bytes = new Uint8Array(16);
-  const g = (globalThis as any).crypto;
-  if (g?.getRandomValues) g.getRandomValues(bytes);
-  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
-  let s = "";
-  for (const b of bytes) s += String.fromCharCode(b);
-  // base64-url encoding
-  // @ts-ignore
-  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }

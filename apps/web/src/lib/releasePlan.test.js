@@ -7,7 +7,7 @@ import {
   summarizeHeldKeys,
   summarizeKeyHolders
 } from "./releasePlan.js";
-import { makeReleaseProcessKeypair, openSealedShare } from "./shareCrypto.js";
+import { makeReleaseProcessKeypair, openSealedShare, sha256HexBytes } from "./shareCrypto.js";
 
 test("accepted holders with release public keys count as verified-ready", () => {
   const summary = summarizeKeyHolders([
@@ -77,8 +77,16 @@ test("buildCircleActivationPayload binds five shares and encrypted instructions 
   assert.equal(payload.algorithm, "recipient-gate-xor-sss-2of5-v1");
   assert.equal(payload.shares.length, 5);
   assert.deepEqual(payload.shares.map((share) => share.holder_id), holders.map((holder) => holder.id));
+  assert.equal(payload.shares.every((share) => /^[0-9a-f]{64}$/.test(share.commitment)), true);
   assert.equal(payload.primary.holder_id, holders[0].id);
   assert.equal(payload.backup.holder_id, holders[1].id);
+
+  const openedShare = await openSealedShare({
+    ciphertext: payload.shares[0].ciphertext,
+    ephemeralPub: payload.shares[0].ephemeral_pub
+  }, keypairs[0].secretKey);
+  assert.equal(await sha256HexBytes(openedShare), payload.shares[0].commitment);
+  openedShare.fill(0);
 
   const opened = await openSealedShare({
     ciphertext: payload.primary.instructions_ciphertext,

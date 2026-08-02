@@ -5,6 +5,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.106.2";
 import { Webhook } from "npm:standardwebhooks@1";
+import { requireExternalAppUrl } from "../_shared/public-app-url.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -80,13 +81,25 @@ serve(async (req) => {
   }
 
   const provider = await response.json().catch(() => ({}));
-  await admin.from("email_deliveries").update({
+  const providerMessageId = provider?.id ?? null;
+  const { error: sentUpdateError } = await admin.from("email_deliveries").update({
     state: "sent",
-    provider_message_id: provider?.id ?? null,
+    provider_message_id: providerMessageId,
     sent_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     failure_reason: null
   }).eq("id", delivery.id);
+  if (sentUpdateError) {
+    return Response.json({ error: { http_code: 500, message: "provider accepted the auth email but delivery state was not recorded" } }, { status: 500 });
+  }
+  if (providerMessageId) {
+    const { error: reconcileError } = await admin.rpc("apply_email_delivery_events", {
+      p_provider_message_id: providerMessageId
+    });
+    if (reconcileError) {
+      return Response.json({ error: { http_code: 500, message: "auth email delivery event reconciliation failed" } }, { status: 500 });
+    }
+  }
 
   return Response.json({});
 });
@@ -117,14 +130,6 @@ function canonicalRedirect(value: string): string {
     // Fall through to the configured public app origin.
   }
   return `${APP_URL}/`;
-}
-
-function requireExternalAppUrl(value: string): string {
-  const url = new URL(value);
-  if (url.protocol !== "https:" || ["localhost", "127.0.0.1", "::1"].includes(url.hostname.toLowerCase())) {
-    throw new Error("APP_URL must be a public HTTPS URL");
-  }
-  return url.origin;
 }
 
 function purposeFor(actionType: string): "auth_confirmation" | "magic_link" | "password_reset" {

@@ -35,7 +35,7 @@ export async function listMyKeyHolders() {
   if (holders.length === 0) return holders;
   const { data: deliveries, error: deliveryError } = await sb
     .from("email_deliveries")
-    .select("related_holder_id, state, failure_reason, updated_at")
+    .select("related_holder_id, state, failure_reason, attempt, updated_at")
     .in("related_holder_id", holders.map((holder) => holder.id))
     .eq("purpose", "holder_invite")
     .order("updated_at", { ascending: false });
@@ -190,16 +190,12 @@ export async function listKeysIHeld() {
  * If the function isn't deployed yet (404), we surface the invite URL
  * so the owner can share it manually in this release.
  */
-export async function sendInviteEmail({ inviteId, inviteToken, deliveryId }) {
+export async function sendInviteEmail({ deliveryId }) {
   if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
-  if (!inviteId || !inviteToken || !deliveryId) throw new Error("Complete invite delivery context is required");
+  if (!deliveryId) throw new Error("Invite delivery id is required");
   const sb = getSupabase();
   const { data, error } = await sb.functions.invoke("send-key-holder-invite", {
-    body: {
-      invite_id: inviteId,
-      invite_token: inviteToken,
-      delivery_id: deliveryId
-    }
+    body: { delivery_id: deliveryId }
   });
   if (error) throw error;
   return data;
@@ -238,7 +234,8 @@ export async function buildCircleActivationPayload({ rawVaultKey, holders, instr
         holder_id: holders[index].id,
         share_index: index + 1,
         ciphertext: sealed.ciphertext,
-        ephemeral_pub: sealed.ephemeralPub
+        ephemeral_pub: sealed.ephemeralPub,
+        commitment: plan.shareCommitments[index]
       })),
       primary: {
         holder_id: primary.id,
@@ -445,4 +442,14 @@ export async function releaseMyShare({ requestId, holderId, ownerId, recipientPu
   if (rpcErr) throw rpcErr;
 
   return { shareIndex: shareRow.share_index };
+}
+
+export async function refuseRecoverySupport(requestId, reason = "") {
+  if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
+  const sb = getSupabase();
+  const { error } = await sb.rpc("refuse_recovery_support", {
+    p_request_id: requestId,
+    p_reason: reason.trim() || null
+  });
+  if (error) throw error;
 }

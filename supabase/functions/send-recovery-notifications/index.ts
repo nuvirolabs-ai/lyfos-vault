@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.106.2";
+import { requireExternalAppUrl } from "../_shared/public-app-url.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -15,29 +16,60 @@ serve(async (req) => {
 
   let appOrigin: string;
   try {
-    const parsed = new URL(APP_URL);
-    if (parsed.protocol !== "https:" || ["localhost", "127.0.0.1", "::1"].includes(parsed.hostname.toLowerCase())) throw new Error();
-    appOrigin = parsed.origin;
+    appOrigin = requireExternalAppUrl(APP_URL);
   } catch {
     return Response.json({ error: "APP_URL must be a public HTTPS URL" }, { status: 500 });
   }
 
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
-  const { data: caller } = await admin.auth.getUser(authHeader.slice(7));
-  if (caller.user?.user_metadata?.role !== "admin") return Response.json({ error: "not authorized" }, { status: 403 });
+  const jwt = authHeader.slice(7);
+  const isServiceDispatcher = jwt === SERVICE_KEY;
+  if (!isServiceDispatcher) {
+    const { data: caller } = await admin.auth.getUser(jwt);
+    if (caller.user?.app_metadata?.role !== "admin") return Response.json({ error: "not authorized" }, { status: 403 });
+  }
 
   const body = await req.json().catch(() => ({}));
-  const requestId = body?.request_id;
-  if (typeof requestId !== "string") return Response.json({ error: "request_id required" }, { status: 400 });
+  let requestIds: string[];
+  if (typeof body?.request_id === "string") {
+    requestIds = [body.request_id];
+  } else if (isServiceDispatcher) {
+    const { data: queued, error: queuedError } = await admin
+      .from("email_deliveries")
+      .select("related_request_id")
+      .in("purpose", ["recovery_support", "owner_alert"])
+      .in("state", ["queued", "delayed", "failed"])
+      .not("related_request_id", "is", null)
+      .limit(250);
+    if (queuedError) return Response.json({ error: queuedError.message }, { status: 500 });
+    requestIds = [...new Set((queued ?? []).map((row) => row.related_request_id).filter(Boolean))];
+  } else {
+    return Response.json({ error: "request_id required" }, { status: 400 });
+  }
+
+  let sent = 0;
+  let failed = 0;
+  const errors: string[] = [];
+  for (const requestId of requestIds) {
+    const result = await sendForRequest(admin, requestId, appOrigin);
+    sent += result.sent;
+    failed += result.failed;
+    if (result.error) errors.push(`${requestId}: ${result.error}`);
+  }
+
+  return Response.json({ ok: failed === 0 && errors.length === 0, sent, failed, requests: requestIds.length, errors });
+});
+
+async function sendForRequest(admin: ReturnType<typeof createClient>, requestId: string, appOrigin: string) {
 
   const { data: recovery, error: recoveryError } = await admin
     .from("release_requests")
     .select("id, state, nominee_email_at_request, recipient_holder_id")
     .eq("id", requestId)
     .maybeSingle();
-  if (recoveryError) return Response.json({ error: recoveryError.message }, { status: 500 });
+  if (recoveryError) return { sent: 0, failed: 1, error: recoveryError.message };
   if (!recovery?.recipient_holder_id || !["collecting_support", "holding", "ready_to_recover"].includes(recovery.state)) {
-    return Response.json({ error: "recipient-gated recovery is not approved" }, { status: 409 });
+    return { sent: 0, failed: 0, error: "recipient-gated recovery is not approved" };
   }
 
   const { data: deliveries, error: deliveryError } = await admin
@@ -46,10 +78,11 @@ serve(async (req) => {
     .eq("related_request_id", requestId)
     .in("purpose", ["recovery_support", "owner_alert"])
     .in("state", ["queued", "delayed", "failed"]);
-  if (deliveryError) return Response.json({ error: deliveryError.message }, { status: 500 });
+  if (deliveryError) return { sent: 0, failed: 1, error: deliveryError.message };
 
   let sent = 0;
   let failed = 0;
+  const errors: string[] = [];
   for (const delivery of deliveries ?? []) {
     const isOwner = delivery.purpose === "owner_alert";
     const actionUrl = isOwner ? `${appOrigin}/release/abort` : `${appOrigin}/hold-release`;
@@ -77,23 +110,48 @@ serve(async (req) => {
     if (!response.ok) {
       failed += 1;
       const reason = (await response.text()).slice(0, 500);
-      await admin.from("email_deliveries").update({ state: "failed", failure_reason: reason, updated_at: new Date().toISOString() }).eq("id", delivery.id);
+      const { error: failedUpdateError } = await admin
+        .from("email_deliveries")
+        .update({ state: "failed", failure_reason: reason, updated_at: new Date().toISOString() })
+        .eq("id", delivery.id);
+      if (failedUpdateError) {
+        errors.push(`could not record failed delivery ${delivery.id}: ${failedUpdateError.message}`);
+      }
       continue;
     }
 
-    sent += 1;
     const provider = await response.json().catch(() => ({}));
-    await admin.from("email_deliveries").update({
-      state: "sent",
-      provider_message_id: provider?.id ?? null,
-      sent_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      failure_reason: null
-    }).eq("id", delivery.id);
+    const providerMessageId = provider?.id ?? null;
+    const { error: sentUpdateError } = await admin
+      .from("email_deliveries")
+      .update({
+        state: "sent",
+        provider_message_id: providerMessageId,
+        sent_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        failure_reason: null
+      })
+      .eq("id", delivery.id);
+    if (sentUpdateError) {
+      failed += 1;
+      errors.push(`provider accepted delivery ${delivery.id}, but its state could not be recorded: ${sentUpdateError.message}`);
+      continue;
+    }
+    if (providerMessageId) {
+      const { error: reconcileError } = await admin.rpc("apply_email_delivery_events", {
+        p_provider_message_id: providerMessageId
+      });
+      if (reconcileError) {
+        failed += 1;
+        errors.push(`delivery event reconciliation failed for ${delivery.id}: ${reconcileError.message}`);
+        continue;
+      }
+    }
+    sent += 1;
   }
 
-  return Response.json({ ok: failed === 0, sent, failed, state: failed === 0 ? "sent" : "partial" });
-});
+  return { sent, failed, error: errors.join("; ") };
+}
 
 function emailHtml({ subject, intro, actionUrl, actionLabel }: { subject: string; intro: string; actionUrl: string; actionLabel: string }): string {
   return `<!doctype html><html><body style="margin:0;padding:48px 24px;background:#fbfbfd;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif;color:#1d1d1f"><div style="max-width:520px;margin:0 auto"><p style="font-size:11px;font-weight:600;letter-spacing:.18em;color:#86868b;text-transform:uppercase">Lyfos recovery</p><h1 style="font-size:32px;line-height:1.15">${escapeHtml(subject)}</h1><p style="font-size:15px;line-height:1.65;color:#6e6e73">${escapeHtml(intro)}</p><p style="margin:30px 0"><a href="${escapeHtml(actionUrl)}" style="display:inline-block;padding:12px 22px;border-radius:999px;background:#1d1d1f;color:white;text-decoration:none;font-weight:600">${escapeHtml(actionLabel)}</a></p><p style="font-size:11px;color:#a1a1a6">Never share your recovery passphrase. Lyfos will not ask for it by email.</p></div></body></html>`;

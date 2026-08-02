@@ -65,7 +65,9 @@ Do not enable real nominee invitations until every item below is true:
 4. Deploy `send-key-holder-invite` and `send-recovery-notifications` with JWT verification. Deploy `send-auth-email` and `resend-webhook` without JWT verification; each of those verifies its own signed webhook instead.
 5. In Supabase Auth Hooks, enable the HTTPS **Send Email** hook and point it to `/functions/v1/send-auth-email`. Use the generated `SEND_EMAIL_HOOK_SECRET` unchanged.
 6. In Resend, register `/functions/v1/resend-webhook` for `email.sent`, `email.delivered`, `email.delivery_delayed`, `email.bounced`, `email.suppressed`, and `email.failed` events.
-7. Run a disposable-address ceremony: invite five accounts, confirm every activation returns to the exact invite route, verify the owner sees provider delivery states, complete primary + two-support recovery, repeat with the backup, then test owner abort.
+7. Configure the server-only Postgres settings used by the durable five-minute invite and recovery email outboxes: `app.settings.supabase_url` is the Supabase project URL and `app.settings.cron_bearer` is the service-role key. Never expose that bearer to the web app or commit it. The invite transaction stores its raw one-time token only in the service-role outbox, so delivery can resume safely if the owner's browser closes.
+8. Grant reviewer access only through server-controlled Supabase `app_metadata.role = admin`. Never use client-editable `user_metadata` for reviewer authorization.
+9. Run a disposable-address ceremony: invite five accounts, confirm every activation returns to the exact invite route, verify the owner sees provider delivery states, complete primary + two-support recovery, repeat with the backup, then test refusal and owner abort.
 
 Example deployment commands (run only against the intended Supabase project):
 

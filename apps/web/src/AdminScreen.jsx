@@ -1,7 +1,7 @@
 // Lyfos — founder admin review queue.
 //
 // Reachable at /admin. Requires the signed-in user's auth.users
-// raw_user_meta_data->>'role' = 'admin'. The admin_list_pending_releases
+// server-controlled raw_app_meta_data->>'role' = 'admin'. The admin_list_pending_releases
 // RPC enforces that at the server; this UI just renders whatever the
 // RPC returns (or "not authorized" if it raises).
 //
@@ -174,6 +174,9 @@ function ReviewRow({ row, onChanged }) {
           </p>
           <p className="mt-1 text-[15px] font-medium">Owner: {row.owner_email}</p>
           <p className="text-[13px] text-[#6e6e73]">Nominee: {row.nominee_email_at_request}</p>
+          <p className="mt-2 text-[12px] font-semibold capitalize text-[#1d1d1f]">{row.request_kind || "normal"} recovery</p>
+          {row.fallback_reason && <p className="mt-1 text-[12px] leading-5 text-[#6e6e73]"><strong>Why the primary cannot act:</strong> {row.fallback_reason}</p>}
+          <p className="mt-1 text-[12px] leading-5 text-[#6e6e73]"><strong>Evidence summary:</strong> {row.evidence_summary || "No summary supplied"}</p>
         </div>
         <button onClick={viewCert} className="shrink-0 rounded-full border border-black/8 bg-[#fbfbfd] px-3 py-1 text-[11px] font-semibold text-[#1d1d1f]">
           View certificate

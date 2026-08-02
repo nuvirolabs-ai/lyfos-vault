@@ -77,7 +77,12 @@ export function mergeLatestInviteDeliveries(holders = [], deliveries = []) {
     const holderId = delivery?.related_holder_id;
     if (!holderId) continue;
     const current = latestByHolder.get(holderId);
-    if (!current || String(delivery.updated_at ?? "") > String(current.updated_at ?? "")) {
+    const attempt = Number(delivery.attempt) || 0;
+    const currentAttempt = Number(current?.attempt) || 0;
+    const isNewerAttempt = attempt > currentAttempt;
+    const isNewerUpdateForSameAttempt = attempt === currentAttempt
+      && String(delivery.updated_at ?? "") > String(current?.updated_at ?? "");
+    if (!current || isNewerAttempt || isNewerUpdateForSameAttempt) {
       latestByHolder.set(holderId, delivery);
     }
   }
@@ -93,13 +98,22 @@ export function mergeLatestInviteDeliveries(holders = [], deliveries = []) {
 }
 
 export function createRecoveredVaultViewModel(vault = {}) {
+  const {
+    ownerSettings: _ownerSettings,
+    settings: _settings,
+    releaseSettings: _releaseSettings,
+    devices: _devices,
+    billing: _billing,
+    subscription: _subscription,
+    ...vaultContents
+  } = vault;
   const items = [...(Array.isArray(vault.items) ? vault.items : [])].sort((left, right) => {
     const leftPinned = left?.type === "emergency_instruction" ? 1 : 0;
     const rightPinned = right?.type === "emergency_instruction" ? 1 : 0;
     return rightPinned - leftPinned;
   });
   return {
-    ...vault,
+    ...vaultContents,
     items,
     recovered: true,
     readOnly: true,
@@ -112,4 +126,17 @@ export function createRecoveredVaultViewModel(vault = {}) {
       ownerSettings: false
     }
   };
+}
+
+const SENSITIVE_RECOVERY_FIELDS = new Set(["secret", "bankDetails", "cardDetails"]);
+
+export function isSensitiveRecoveredField(fieldName) {
+  return SENSITIVE_RECOVERY_FIELDS.has(fieldName);
+}
+
+export function filterRecoveredItems(items = [], query = "") {
+  const needle = String(query).trim().toLowerCase();
+  if (!needle) return items;
+  return items.filter((item) => [item?.title, item?.type?.replaceAll("_", " "), item?.username, item?.email, item?.notes]
+    .some((value) => String(value ?? "").toLowerCase().includes(needle)));
 }

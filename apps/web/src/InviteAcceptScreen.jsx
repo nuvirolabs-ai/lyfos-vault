@@ -27,6 +27,7 @@ export function InviteAcceptScreen({ token, onReturnHome }) {
   const [error, setError] = useState("");
   const [session, setSession] = useState(null);
   const [passphrase, setPassphrase] = useState("");
+  const [confirmPassphrase, setConfirmPassphrase] = useState("");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
 
@@ -57,7 +58,11 @@ export function InviteAcceptScreen({ token, onReturnHome }) {
       return;
     }
     if (passphrase.length < 12) {
-      setError("Use the same passphrase you use to open your own Lyfos vault. Must be at least 12 characters.");
+      setError("Your private recovery passphrase must be at least 12 characters.");
+      return;
+    }
+    if (passphrase !== confirmPassphrase) {
+      setError("The two recovery passphrases do not match.");
       return;
     }
     setBusy(true);
@@ -179,11 +184,23 @@ export function InviteAcceptScreen({ token, onReturnHome }) {
           <input
             type="password"
             autoFocus
-            autoComplete="current-password"
+            autoComplete="new-password"
             value={passphrase}
             onChange={(e) => setPassphrase(e.target.value)}
             className="mt-2 w-full rounded-xl border border-black/8 bg-white px-4 py-3 text-[15px] outline-none transition focus:border-[#1d1d1f]"
             placeholder="Minimum 12 characters"
+          />
+        </label>
+
+        <label className="block">
+          <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Confirm recovery passphrase</span>
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={confirmPassphrase}
+            onChange={(e) => setConfirmPassphrase(e.target.value)}
+            className="mt-2 w-full rounded-xl border border-black/8 bg-white px-4 py-3 text-[15px] outline-none transition focus:border-[#1d1d1f]"
+            placeholder="Type it again exactly"
           />
         </label>
 
@@ -195,7 +212,7 @@ export function InviteAcceptScreen({ token, onReturnHome }) {
 
         <button
           type="submit"
-          disabled={busy || passphrase.length < 12}
+          disabled={busy || passphrase.length < 12 || passphrase !== confirmPassphrase}
           className="mt-2 w-full rounded-full bg-[#1d1d1f] px-5 py-3 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
         >
           {busy ? "Working…" : "Accept invite"}

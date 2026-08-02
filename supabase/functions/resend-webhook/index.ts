@@ -9,24 +9,6 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const WEBHOOK_SECRET = Deno.env.get("RESEND_WEBHOOK_SECRET") ?? "";
 
-const EVENT_STATES: Record<string, string> = {
-  "email.sent": "sent",
-  "email.delivered": "delivered",
-  "email.delivery_delayed": "delayed",
-  "email.bounced": "bounced",
-  "email.suppressed": "suppressed",
-  "email.failed": "failed"
-};
-
-const ALLOWED_PREVIOUS_STATES: Record<string, string[]> = {
-  sent: ["queued", "sent"],
-  delivered: ["queued", "sent", "delayed", "delivered"],
-  delayed: ["queued", "sent", "delayed"],
-  bounced: ["queued", "sent", "delayed", "delivered", "bounced"],
-  suppressed: ["queued", "sent", "delayed", "suppressed"],
-  failed: ["queued", "sent", "delayed", "failed"]
-};
-
 serve(async (req) => {
   if (req.method !== "POST") return Response.json({ error: "method not allowed" }, { status: 405 });
   if (!WEBHOOK_SECRET) return Response.json({ error: "webhook is not configured" }, { status: 503 });
@@ -51,27 +33,19 @@ serve(async (req) => {
     payload: event,
     occurred_at: event.created_at ?? null
   });
-  if (eventError?.code === "23505") return Response.json({ ok: true, duplicate: true });
-  if (eventError) return Response.json({ error: eventError.message }, { status: 500 });
+  const duplicate = eventError?.code === "23505";
+  if (eventError && !duplicate) return Response.json({ error: eventError.message }, { status: 500 });
 
-  const nextState = EVENT_STATES[event.type];
-  if (nextState && providerMessageId) {
-    const update: Record<string, unknown> = {
-      state: nextState,
-      updated_at: new Date().toISOString()
-    };
-    if (nextState === "delivered") update.delivered_at = event.created_at ?? new Date().toISOString();
-    if (["failed", "bounced", "suppressed"].includes(nextState)) {
-      update.failure_reason = event.data?.bounce?.message ?? event.data?.reason ?? nextState;
-    }
-    await admin
-      .from("email_deliveries")
-      .update(update)
-      .eq("provider_message_id", providerMessageId)
-      .in("state", ALLOWED_PREVIOUS_STATES[nextState] ?? []);
+  let matched = false;
+  if (providerMessageId) {
+    const { data, error: reconcileError } = await admin.rpc("apply_email_delivery_events", {
+      p_provider_message_id: providerMessageId
+    });
+    if (reconcileError) return Response.json({ error: reconcileError.message }, { status: 500 });
+    matched = data === true;
   }
 
-  return Response.json({ ok: true });
+  return Response.json({ ok: true, duplicate, pending_reconciliation: Boolean(providerMessageId) && !matched });
 });
 
 type ResendEvent = {

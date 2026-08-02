@@ -16,6 +16,11 @@ test("external links always use the configured canonical origin", () => {
 
 test("external email configuration rejects localhost and non-HTTPS origins", () => {
   assert.throws(() => requireExternalAppUrl("http://127.0.0.1:5173"), /HTTPS public app URL/);
+  assert.throws(() => requireExternalAppUrl("https://[::1]:5173"), /HTTPS public app URL/);
+  assert.throws(() => requireExternalAppUrl("https://127.0.0.2"), /HTTPS public app URL/);
+  assert.throws(() => requireExternalAppUrl("https://0.0.0.0"), /HTTPS public app URL/);
+  assert.throws(() => requireExternalAppUrl("https://[::ffff:127.0.0.1]"), /HTTPS public app URL/);
+  assert.throws(() => requireExternalAppUrl("https://192.168.1.5"), /HTTPS public app URL/);
   assert.throws(() => requireExternalAppUrl("http://app.lyfos.in"), /HTTPS public app URL/);
 });
 

@@ -20,7 +20,7 @@
 import React, { useEffect, useState } from "react";
 import { AuthScreen } from "./AuthScreen.jsx";
 import { getSession, onAuthStateChange, signOut } from "./lib/auth.js";
-import { listReleasesAwaitingMyAction, releaseMyShare } from "./lib/releasePlan.js";
+import { listReleasesAwaitingMyAction, refuseRecoverySupport, releaseMyShare } from "./lib/releasePlan.js";
 
 export function HolderReleaseScreen({ onReturnHome }) {
   const [session, setSession] = useState(null);
@@ -115,6 +115,7 @@ function HolderReleaseCard({ req, onChanged, session }) {
   const required = recipientGated ? 2 : 3;
   const received = (req.holderContext ?? []).filter((holder) => holder.share_released).length;
   const isRecipient = req.myHolderId === req.recipient_holder_id;
+  const iRefused = Boolean((req.holderContext ?? []).find((holder) => holder.holder_id === req.myHolderId)?.support_refused);
 
   if (req.iAlreadyReleased) {
     return (
@@ -126,6 +127,10 @@ function HolderReleaseCard({ req, onChanged, session }) {
         </p>
       </div>
     );
+  }
+
+  if (iRefused) {
+    return <div className="rounded-2xl border border-black/10 bg-white p-5"><p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">You refused</p><p className="mt-2 text-[13px] leading-5 text-[#6e6e73]">Your key was not released. The other nominees can see only that this request was refused, not your private passphrase.</p></div>;
   }
 
   if (isRecipient || (recipientGated && req.state !== "collecting_support")) {
@@ -161,6 +166,20 @@ function HolderReleaseCard({ req, onChanged, session }) {
     }
   }
 
+  async function refuse() {
+    if (!window.confirm("Refuse this recovery request? Your encrypted share will stay sealed.")) return;
+    setBusy(true);
+    setError("");
+    try {
+      await refuseRecoverySupport(req.id);
+      await onChanged();
+    } catch (err) {
+      setError(err?.message || "Couldn't record your refusal.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (done) {
     return (
       <div className="rounded-2xl border border-[#34c759]/30 bg-[#34c759]/8 p-5">
@@ -184,8 +203,9 @@ function HolderReleaseCard({ req, onChanged, session }) {
           {(req.holderContext ?? []).map((holder) => {
             const isMine = holder.holder_id === req.myHolderId;
             const released = holder.share_released;
+            const refused = holder.support_refused;
             const isRecoveryRecipient = holder.holder_id === req.recipient_holder_id;
-            return <div key={holder.holder_id} className={`min-h-[82px] rounded-xl border p-3 ${isMine ? "border-[#1d1d1f] bg-white" : "border-black/8 bg-white/70"}`}><div className="text-[13px] font-semibold text-[#1d1d1f]">{holder.holder_label}</div><div className={`mt-2 text-[11px] ${released ? "text-[#0b6b3a]" : isMine ? "font-semibold text-[#7a4b00]" : "text-[#86868b]"}`}>{isRecoveryRecipient ? "Recipient" : released ? "Key received" : isMine ? "Your key" : "Waiting"}</div></div>;
+            return <div key={holder.holder_id} className={`min-h-[82px] rounded-xl border p-3 ${isMine ? "border-[#1d1d1f] bg-white" : "border-black/8 bg-white/70"}`}><div className="text-[13px] font-semibold text-[#1d1d1f]">{holder.holder_label}</div><div className={`mt-2 text-[11px] ${released ? "text-[#0b6b3a]" : refused ? "text-[#b42318]" : isMine ? "font-semibold text-[#7a4b00]" : "text-[#86868b]"}`}>{isRecoveryRecipient ? "Recipient" : released ? "Key received" : refused ? "Refused" : isMine ? "Your key" : "Waiting"}</div></div>;
           })}
         </div>
       </div>
@@ -207,6 +227,7 @@ function HolderReleaseCard({ req, onChanged, session }) {
       {error && <div className="mt-3 rounded-md bg-[#ff453a]/8 px-3 py-2 text-[12px] font-medium text-[#b42318]">{error}</div>}
 
       <div className="mt-4 flex items-center justify-end">
+        <button type="button" onClick={refuse} disabled={busy} className="mr-auto text-[11px] font-semibold text-[#b42318] disabled:opacity-40">Refuse</button>
         <button
           onClick={release}
           disabled={busy || passphrase.length < 12}

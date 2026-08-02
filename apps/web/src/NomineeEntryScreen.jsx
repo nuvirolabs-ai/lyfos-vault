@@ -4,9 +4,12 @@ import { getSession, onAuthStateChange, signOut } from "./lib/auth.js";
 import {
   createRelationshipRecoveryRequest,
   fetchMyReleaseRequests,
+  getEntrustedInstructions,
+  getRecipientRecoveryProgress,
   listEntrustedVaults,
   uploadDeathCertificate
 } from "./lib/releaseClaim.js";
+import { deriveHolderKeypairFromPassphrase, openSealedShare } from "./lib/shareCrypto.js";
 
 const ACTIVE_STATES = new Set(["under_review", "collecting_support", "holding", "ready_to_recover"]);
 
@@ -39,7 +42,13 @@ export function NomineeEntryScreen({ onReturnHome }) {
         fetchMyReleaseRequests()
       ]);
       setVaults(nextVaults);
-      setRequests(nextRequests.filter((request) => request.nominee_user_id === session.user.id));
+      const mine = nextRequests.filter((request) => request.nominee_user_id === session.user.id);
+      const withProgress = await Promise.all(mine.map(async (request) => {
+        if (request.state !== "collecting_support") return request;
+        const progress = await getRecipientRecoveryProgress(request.id);
+        return { ...request, support_progress: progress };
+      }));
+      setRequests(withProgress);
     } catch (err) {
       setError(err?.message || "Couldn't load the vaults entrusted to you.");
     } finally {
@@ -90,6 +99,7 @@ export function NomineeEntryScreen({ onReturnHome }) {
               request={requests.find((item) => item.recipient_holder_id === vault.holder_id && ACTIVE_STATES.has(item.state))
                 ?? requests.find((item) => item.recipient_holder_id === vault.holder_id)}
               onChanged={refresh}
+              holderUserId={session.user.id}
             />
           ))}
         </div>
@@ -125,16 +135,43 @@ function RecoveryGuide() {
   );
 }
 
-function EntrustedVaultCard({ vault, request, onChanged }) {
+function EntrustedVaultCard({ vault, request, onChanged, holderUserId }) {
   const [open, setOpen] = useState(false);
   const [summary, setSummary] = useState("");
   const [fallbackReason, setFallbackReason] = useState("");
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [instructionPassphrase, setInstructionPassphrase] = useState("");
+  const [personalInstructions, setPersonalInstructions] = useState(null);
+  const [unlockingInstructions, setUnlockingInstructions] = useState(false);
   const isBackup = vault.holder_role === "backup";
-  const canSubmit = summary.trim().length >= 20 && file && (!isBackup || fallbackReason.trim().length >= 10);
+  const canRestart = ["rejected", "aborted", "expired"].includes(request?.state);
+  const canSubmit = personalInstructions !== null && summary.trim().length >= 20 && file && (!isBackup || fallbackReason.trim().length >= 10);
   const status = useMemo(() => request ? request.state.replaceAll("_", " ") : "ready", [request]);
+
+  async function reviewInstructions() {
+    if (instructionPassphrase.length < 12) return;
+    setUnlockingInstructions(true);
+    setError("");
+    try {
+      const [envelope, keypair] = await Promise.all([
+        getEntrustedInstructions(vault.holder_id),
+        deriveHolderKeypairFromPassphrase(instructionPassphrase, holderUserId)
+      ]);
+      const opened = await openSealedShare(envelope, keypair.secretKey);
+      try {
+        setPersonalInstructions(new TextDecoder().decode(opened));
+        setInstructionPassphrase("");
+      } finally {
+        opened.fill(0);
+      }
+    } catch {
+      setError("That passphrase did not match the private recovery key created when you accepted the invitation.");
+    } finally {
+      setUnlockingInstructions(false);
+    }
+  }
 
   async function submit(event) {
     event.preventDefault();
@@ -170,15 +207,38 @@ function EntrustedVaultCard({ vault, request, onChanged }) {
         <span className="rounded-full bg-[#f5f5f7] px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#6e6e73]">{status}</span>
       </div>
 
-      {request ? (
+      {request && !canRestart ? (
         <div className="mt-5 rounded-2xl bg-[#f5f5f7] p-4">
           <p className="text-[13px] font-medium">{requestCopy(request)}</p>
-          {request.state === "ready_to_recover" && <a href="/download" className="mt-3 inline-block rounded-full bg-[#1d1d1f] px-5 py-2 text-[12px] font-semibold text-white">Open recovered vault</a>}
+          {request.state === "collecting_support" && request.support_progress && (
+            <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+              <ProgressCount label="Approved" value={request.support_progress.approved} />
+              <ProgressCount label="Refused" value={request.support_progress.refused} />
+              <ProgressCount label="Waiting" value={request.support_progress.waiting} />
+            </div>
+          )}
+          {["ready_to_recover", "opened"].includes(request.state) && <a href="/download" className="mt-3 inline-block rounded-full bg-[#1d1d1f] px-5 py-2 text-[12px] font-semibold text-white">Open recovered vault</a>}
         </div>
       ) : !open ? (
-        <button onClick={() => setOpen(true)} className="mt-5 rounded-full bg-[#1d1d1f] px-5 py-2.5 text-[12px] font-semibold text-white">Start recovery</button>
+        <div className="mt-5">
+          {canRestart && <div className="mb-4 rounded-2xl bg-[#f5f5f7] p-4 text-[13px] font-medium">{requestCopy(request)}</div>}
+          <button onClick={() => setOpen(true)} className="rounded-full bg-[#1d1d1f] px-5 py-2.5 text-[12px] font-semibold text-white">{canRestart ? "Start new recovery" : "Start recovery"}</button>
+        </div>
       ) : (
         <form onSubmit={submit} className="mt-5 space-y-4 border-t border-black/8 pt-5">
+          {personalInstructions === null ? (
+            <div className="rounded-2xl bg-[#fff8eb] p-4 text-[#7a4b00]">
+              <p className="text-[12px] font-semibold">First, read the owner's private instructions.</p>
+              <p className="mt-1 text-[11px] leading-5">This also confirms that your recovery passphrase matches before you submit evidence.</p>
+              <input type="password" autoComplete="current-password" value={instructionPassphrase} onChange={(event) => setInstructionPassphrase(event.target.value)} placeholder="Private recovery passphrase" className="mt-3 w-full rounded-xl border border-[#c88719]/25 bg-white px-3 py-2 text-[13px] outline-none focus:border-[#7a4b00]" />
+              <button type="button" onClick={reviewInstructions} disabled={unlockingInstructions || instructionPassphrase.length < 12} className="mt-3 rounded-full bg-[#7a4b00] px-4 py-2 text-[11px] font-semibold text-white disabled:opacity-40">{unlockingInstructions ? "Opening…" : "Read private instructions"}</button>
+            </div>
+          ) : (
+            <div className="rounded-2xl bg-[#1d1d1f] p-5 text-white">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/50">From the owner · Read before filing</p>
+              <p className="mt-3 whitespace-pre-wrap text-[14px] leading-6 text-white/90">{personalInstructions || "The owner did not add a personal note. Continue with the fixed Lyfos instructions above."}</p>
+            </div>
+          )}
           {isBackup && (
             <label className="block">
               <span className="text-[11px] font-medium">Why the primary cannot act</span>
@@ -204,13 +264,16 @@ function EntrustedVaultCard({ vault, request, onChanged }) {
   );
 }
 
+function ProgressCount({ label, value }) {
+  return <div className="rounded-xl bg-white px-2 py-2"><strong className="block text-[16px]">{value}</strong><span className="text-[10px] uppercase tracking-wider text-[#86868b]">{label}</span></div>;
+}
+
 function requestCopy(request) {
   if (request.state === "under_review") return "Lyfos is reviewing the evidence. No nominee key has been requested yet.";
   if (request.state === "collecting_support") return "Approved. Two other nominees are being asked to release their keys.";
   if (request.state === "holding") return "Two supporting keys matched. The 14-day owner-protection hold is running.";
-  if (request.state === "ready_to_recover") return "The hold is complete. You can now open the entire vault read-only.";
+  if (["ready_to_recover", "opened"].includes(request.state)) return "The authorized recovery can be opened again read-only with your private recovery passphrase.";
   if (request.state === "rejected") return `The request was rejected${request.rejection_reason ? `: ${request.rejection_reason}` : "."}`;
   if (request.state === "aborted") return "The vault owner stopped this recovery. The vault remains sealed.";
-  if (request.state === "opened") return "This vault was recovered and opened read-only.";
   return `Recovery state: ${request.state.replaceAll("_", " ")}.`;
 }
