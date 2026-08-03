@@ -2334,7 +2334,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
             </div>
           )}
           {backupSizeWarning?.level !== "none" && <BackupSizeNotice warning={backupSizeWarning} />}
-          {session && screen === "release" && <ActiveReleaseBanner onNavigateRelease={() => setScreen("release")} />}
+          {session && screen !== "release" && <ActiveReleaseBanner onNavigateRelease={() => setScreen("release")} />}
 
           <div className={cx("mx-auto flex gap-8", screen === "home" ? "max-w-[1280px] items-start" : "max-w-3xl")}>
             <div className="min-w-0 flex-1">
@@ -2471,7 +2471,7 @@ function bannerCopy(request, daysRemaining) {
     case "under_review":
       return `A recovery recipient (${request.nominee_email_at_request}) submitted evidence. Lyfos is reviewing it. If this is unexpected, abort now.`;
     case "collecting_support":
-      return `The evidence was approved. Two nominees other than the selected recipient must independently release their keys. Your vault remains sealed and you can still abort.`;
+      return `Two nominees other than the selected recipient must independently release their keys. Your vault remains sealed and you can still abort.`;
     case "pending_review":
       return `Someone (${request.nominee_email_at_request}) filed a release claim. Lyfos is reviewing the certificate. If this isn't expected — abort now.`;
     case "approved":
