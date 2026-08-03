@@ -25,9 +25,12 @@ export default function LegacyRecordScreen({ digitalLegacy, vault, onSave, recor
   }
 
   const category = getCategory(record.categoryId);
-  const service = record.serviceTemplateId ? getService(record.serviceTemplateId) : null;
+  const service = record.serviceTemplateId
+    ? getService(record.serviceTemplateId)
+    : (digitalLegacy.customServices ?? []).find((s) => s.id === record.customServiceId) ?? null;
   const freshness = getFreshnessState(record.review?.lastReviewedAt);
   const canEdit = DIGITAL_LEGACY_FEATURE_FLAGS.serviceCatalogue;
+  const needsOwnerReview = record.migration?.classification === "needs_owner_review";
 
   async function handleArchive() {
     const label = record.accountLabel || service?.name || category?.name || "this record";
@@ -66,6 +69,12 @@ export default function LegacyRecordScreen({ digitalLegacy, vault, onSave, recor
           <p className="mt-1 text-[13px] text-[var(--ink-3)]">{category?.name}{service ? ` · ${service.name}` : ""}</p>
         </div>
       </header>
+
+      {needsOwnerReview && (
+        <div className="rounded-2xl border border-[var(--amber-soft,#f3e2c4)] bg-[var(--amber-soft,#fdf4e3)] px-5 py-3.5 text-[13px] text-[var(--amber-ink,#7a4b00)]">
+          Brought over from your old vault records and couldn't be auto-filed with confidence — worth a quick look and, if it belongs elsewhere, re-add it in the right category.
+        </div>
+      )}
 
       <section className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5">
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">Details</p>

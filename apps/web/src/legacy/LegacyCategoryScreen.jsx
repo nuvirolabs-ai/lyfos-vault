@@ -27,6 +27,10 @@ export default function LegacyCategoryScreen({ digitalLegacy, categoryId, onOpen
   // Metadata-only search — never touches field values (search.js).
   const filtered = useMemo(() => searchLegacyRecords(categoryRecords, query), [categoryRecords, query]);
   const serviceById = useMemo(() => new Map(listServices({ categoryId }).map((s) => [s.id, s])), [categoryId]);
+  // Migrated records that couldn't be auto-classified live under
+  // categoryId "custom" with a customServiceId — resolve those too so
+  // they read as "Imported legacy records", not generic "Custom".
+  const customServiceById = useMemo(() => new Map((digitalLegacy.customServices ?? []).map((s) => [s.id, s])), [digitalLegacy]);
 
   if (!category) return <LegacyEmptyState title="Category not found" />;
 
@@ -68,7 +72,7 @@ export default function LegacyCategoryScreen({ digitalLegacy, categoryId, onOpen
       ) : (
         <div className="space-y-2">
           {filtered.map((rec) => {
-            const service = serviceById.get(rec.serviceTemplateId);
+            const service = serviceById.get(rec.serviceTemplateId) ?? customServiceById.get(rec.customServiceId);
             const label = rec.accountLabel || service?.name || category.name;
             return (
               <button

@@ -14,6 +14,8 @@ import { AUDIENCE_LABELS, LEGACY_ACTION_LABELS, RECIPIENT_LABELS, REVIEW_FREQUEN
 import ServiceIcon from "./components/ServiceIcon.jsx";
 
 const REVIEW_FREQUENCIES = ["3_months", "6_months", "yearly", "custom", "none"];
+const BASIC_CLASSIFICATIONS = ["identity_information", "account_information"];
+const BASIC_FIELD_COUNT = 3;
 
 function fieldInput(template, value, onChange) {
   const props = {
@@ -48,12 +50,24 @@ export default function LegacyRecordForm({ digitalLegacy, vault, onSave, categor
   const [reviewFrequency, setReviewFrequency] = useState(existingRecord?.review?.frequency ?? "yearly");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  // Editing starts fully expanded (nothing already filled in should be
+  // hidden); creating starts basics-only — "add more later, on that
+  // record's own screen" is the toggle below, not a separate flow.
+  const [showMore, setShowMore] = useState(Boolean(existingRecord));
 
   const allowedFieldKeys = useMemo(() => {
     const suggested = selectedService?.suggestedFieldKeys ?? [];
     const existingKeys = existingRecord?.fields?.map((f) => f.fieldKey) ?? [];
-    return [...new Set([...suggested, ...existingKeys])].filter((key) => FIELD_TEMPLATES[key]?.storagePolicy === "allowed");
+    return [...new Set([...suggested, ...existingKeys])]
+      // "account-label" duplicates the record's own top-level Label field.
+      .filter((key) => key !== "account-label" && FIELD_TEMPLATES[key]?.storagePolicy === "allowed");
   }, [selectedService, existingRecord]);
+
+  const basicFieldKeys = useMemo(
+    () => allowedFieldKeys.filter((key) => BASIC_CLASSIFICATIONS.includes(FIELD_TEMPLATES[key]?.classification)).slice(0, BASIC_FIELD_COUNT),
+    [allowedFieldKeys]
+  );
+  const moreFieldKeys = useMemo(() => allowedFieldKeys.filter((key) => !basicFieldKeys.includes(key)), [allowedFieldKeys, basicFieldKeys]);
 
   const [fieldValues, setFieldValues] = useState(() => {
     const initial = {};
@@ -181,11 +195,11 @@ export default function LegacyRecordForm({ digitalLegacy, vault, onSave, categor
             type="text"
             value={accountLabel}
             onChange={(e) => setAccountLabel(e.target.value)}
-            placeholder="e.g. HDFC Bank — primary savings"
+            placeholder={selectedService ? `e.g. ${selectedService.name} — primary` : "e.g. Personal account"}
             className="w-full rounded-lg border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--green)]"
           />
         </div>
-        {allowedFieldKeys.map((key) => {
+        {basicFieldKeys.map((key) => {
           const template = FIELD_TEMPLATES[key];
           return (
             <div key={key}>
@@ -196,57 +210,84 @@ export default function LegacyRecordForm({ digitalLegacy, vault, onSave, categor
         })}
       </section>
 
-      <section className="space-y-3 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">If something happens to you</p>
-        <select
-          value={action}
-          onChange={(e) => setAction(e.target.value)}
-          className="w-full rounded-lg border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--green)]"
+      {!showMore ? (
+        <button
+          type="button"
+          onClick={() => setShowMore(true)}
+          className="text-[13px] font-medium text-[var(--green-ink)] hover:underline"
         >
-          {LEGACY_ACTIONS.map((value) => <option key={value} value={value}>{LEGACY_ACTION_LABELS[value]}</option>)}
-        </select>
-        {action === "custom" && (
-          <textarea
-            rows={2}
-            value={customText}
-            onChange={(e) => setCustomText(e.target.value)}
-            placeholder="What should happen?"
-            className="w-full rounded-lg border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--green)]"
-          />
-        )}
-      </section>
+          + Add more details
+        </button>
+      ) : (
+        <>
+          {moreFieldKeys.length > 0 && (
+            <section className="space-y-3 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">More details</p>
+              {moreFieldKeys.map((key) => {
+                const template = FIELD_TEMPLATES[key];
+                return (
+                  <div key={key}>
+                    <label className="mb-1 block text-[12px] text-[var(--ink-3)]">{template.label}</label>
+                    {fieldInput(template, fieldValues[key] ?? "", (value) => setFieldValues((prev) => ({ ...prev, [key]: value })))}
+                  </div>
+                );
+              })}
+            </section>
+          )}
 
-      <section className="space-y-3 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">Release intent</p>
-        <select
-          value={audience}
-          onChange={(e) => setAudience(e.target.value)}
-          className="w-full rounded-lg border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--green)]"
-        >
-          {RELEASE_AUDIENCES.map((value) => <option key={value} value={value}>{AUDIENCE_LABELS[value]}</option>)}
-        </select>
-        <select
-          value={recipientMode}
-          onChange={(e) => setRecipientMode(e.target.value)}
-          className="w-full rounded-lg border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--green)]"
-        >
-          {RECIPIENT_MODES.map((value) => <option key={value} value={value}>{RECIPIENT_LABELS[value]}</option>)}
-        </select>
-        <p className="text-[11.5px] leading-5 text-[var(--ink-4)]">
-          This records your intent for your own planning. It is not cryptographically enforced yet — anyone who completes a Circle of Trust recovery today receives your full vault, not only what's marked here.
-        </p>
-      </section>
+          <section className="space-y-3 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">If something happens to you</p>
+            <select
+              value={action}
+              onChange={(e) => setAction(e.target.value)}
+              className="w-full rounded-lg border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--green)]"
+            >
+              {LEGACY_ACTIONS.map((value) => <option key={value} value={value}>{LEGACY_ACTION_LABELS[value]}</option>)}
+            </select>
+            {action === "custom" && (
+              <textarea
+                rows={2}
+                value={customText}
+                onChange={(e) => setCustomText(e.target.value)}
+                placeholder="What should happen?"
+                className="w-full rounded-lg border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--green)]"
+              />
+            )}
+          </section>
 
-      <section className="space-y-3 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">Review reminder</p>
-        <select
-          value={reviewFrequency}
-          onChange={(e) => setReviewFrequency(e.target.value)}
-          className="w-full rounded-lg border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--green)]"
-        >
-          {REVIEW_FREQUENCIES.map((value) => <option key={value} value={value}>{REVIEW_FREQUENCY_LABELS[value]}</option>)}
-        </select>
-      </section>
+          <section className="space-y-3 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">Release intent</p>
+            <select
+              value={audience}
+              onChange={(e) => setAudience(e.target.value)}
+              className="w-full rounded-lg border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--green)]"
+            >
+              {RELEASE_AUDIENCES.map((value) => <option key={value} value={value}>{AUDIENCE_LABELS[value]}</option>)}
+            </select>
+            <select
+              value={recipientMode}
+              onChange={(e) => setRecipientMode(e.target.value)}
+              className="w-full rounded-lg border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--green)]"
+            >
+              {RECIPIENT_MODES.map((value) => <option key={value} value={value}>{RECIPIENT_LABELS[value]}</option>)}
+            </select>
+            <p className="text-[11.5px] leading-5 text-[var(--ink-4)]">
+              This records your intent for your own planning. It is not cryptographically enforced yet — anyone who completes a Circle of Trust recovery today receives your full vault, not only what's marked here.
+            </p>
+          </section>
+
+          <section className="space-y-3 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">Review reminder</p>
+            <select
+              value={reviewFrequency}
+              onChange={(e) => setReviewFrequency(e.target.value)}
+              className="w-full rounded-lg border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--green)]"
+            >
+              {REVIEW_FREQUENCIES.map((value) => <option key={value} value={value}>{REVIEW_FREQUENCY_LABELS[value]}</option>)}
+            </select>
+          </section>
+        </>
+      )}
 
       <button
         type="submit"

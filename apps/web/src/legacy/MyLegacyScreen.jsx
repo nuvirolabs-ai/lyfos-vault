@@ -33,6 +33,27 @@ export default function MyLegacyScreen({ digitalLegacy, onOpenCategory, onOpenRe
     () => [...activeRecords].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)).slice(0, 5),
     [activeRecords]
   );
+  // Populated categories first (glanceable — what you've actually done),
+  // empty ones after and visually quiet (CategoryCard handles the tint).
+  // "custom" (migrated/imported records that couldn't be auto-classified)
+  // only appears once it actually holds something — there's no way to
+  // create new custom-category records yet, so an always-empty tile
+  // there would just be confusing.
+  const categoryRows = useMemo(() => {
+    const rows = LEGACY_CATEGORIES
+      .filter((category) => category.id !== "custom" || activeRecords.some((r) => r.categoryId === "custom"))
+      .map((category) => {
+        const recordsInCategory = activeRecords.filter((r) => r.categoryId === category.id);
+        const reviewEntry = digitalLegacy.categoryReviews.find((r) => r.categoryId === category.id);
+        return { category, recordsInCategory, reviewEntry };
+      });
+    return rows.sort((a, b) => {
+      const aEmpty = a.recordsInCategory.length === 0;
+      const bEmpty = b.recordsInCategory.length === 0;
+      if (aEmpty !== bEmpty) return aEmpty ? 1 : -1;
+      return a.category.sortOrder - b.category.sortOrder;
+    });
+  }, [activeRecords, digitalLegacy.categoryReviews]);
 
   return (
     <div className="space-y-10">
@@ -54,9 +75,7 @@ export default function MyLegacyScreen({ digitalLegacy, onOpenCategory, onOpenRe
       <section>
         <h2 className="mb-3 text-[16px] font-semibold text-[var(--ink)]">Categories</h2>
         <div className="grid gap-2 md:grid-cols-2">
-          {LEGACY_CATEGORIES.filter((category) => category.id !== "custom").map((category) => {
-            const recordsInCategory = activeRecords.filter((r) => r.categoryId === category.id);
-            const reviewEntry = digitalLegacy.categoryReviews.find((r) => r.categoryId === category.id);
+          {categoryRows.map(({ category, recordsInCategory, reviewEntry }) => {
             const showMarkNotApplicable = DIGITAL_LEGACY_FEATURE_FLAGS.serviceCatalogue
               && recordsInCategory.length === 0
               && reviewEntry?.state !== "not_applicable";

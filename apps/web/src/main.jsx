@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { RELEASE_POLICY } from "@os-one/vault-model";
-import { migrateLegacyVault } from "@os-one/digital-legacy";
+import { LEGACY_CATEGORIES, getCategory, migrateLegacyVault, searchLegacyRecords } from "@os-one/digital-legacy";
 import { DIGITAL_LEGACY_FEATURE_FLAGS } from "./legacy/featureFlags.js";
 import MyLegacyScreen from "./legacy/MyLegacyScreen.jsx";
 import LegacyCategoryScreen from "./legacy/LegacyCategoryScreen.jsx";
@@ -2313,26 +2313,37 @@ function AtAGlance({ vault, backupHealth, onOpenArea, onNavigate }) {
   );
 }
 
-function GlobalSearch({ vault, onOpenArea, onOpenRecord, onNavigate }) {
+function GlobalSearch({ vault, onOpenArea, onOpenRecord, onNavigate, onOpenLegacyCategory, onOpenLegacyRecord }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const boxRef = useRef(null);
   const inputRef = useRef(null);
   const query = q.trim().toLowerCase();
+  const legacyOn = DIGITAL_LEGACY_FEATURE_FLAGS.dashboard;
 
   const results = useMemo(() => {
     if (query.length < 3) return [];
     const out = [];
-    const pages = [["home", "Home"], ["records", "All records"], ["money", "Balance sheet"], ["release", "Circle of trust"], ["settings", "Settings"]];
+    const pages = legacyOn
+      ? [["legacy", "My Legacy"], ["money", "Balance sheet"], ["release", "Circle of trust"], ["settings", "Settings"]]
+      : [["home", "Home"], ["records", "All records"], ["money", "Balance sheet"], ["release", "Circle of trust"], ["settings", "Settings"]];
     pages.forEach(([id, label]) => { if (label.toLowerCase().includes(query)) out.push({ kind: "page", id, label, sub: "Page" }); });
-    AREAS.forEach((a) => { if (a.label.toLowerCase().includes(query) || a.promise.toLowerCase().includes(query)) out.push({ kind: "area", area: a, label: a.label, sub: "Life area" }); });
-    (vault.items ?? []).forEach((it) => {
-      const hay = `${it.title} ${it.username} ${it.email} ${it.bankDetails} ${it.cardDetails} ${it.notes} ${typeLabel(it.type)}`.toLowerCase();
-      if (hay.includes(query)) out.push({ kind: "record", item: it, label: it.title || typeLabel(it.type), sub: getAreaForType(it.type).label });
-    });
+    if (legacyOn) {
+      // Metadata-only search — never touches field values (search.js).
+      searchLegacyRecords(vault.digitalLegacy?.records ?? [], query).forEach((rec) => {
+        const category = getCategory(rec.categoryId);
+        out.push({ kind: "legacy-record", legacyRecord: rec, label: rec.accountLabel || category?.name || "Untitled", sub: category?.name ?? "My Legacy" });
+      });
+    } else {
+      AREAS.forEach((a) => { if (a.label.toLowerCase().includes(query) || a.promise.toLowerCase().includes(query)) out.push({ kind: "area", area: a, label: a.label, sub: "Life area" }); });
+      (vault.items ?? []).forEach((it) => {
+        const hay = `${it.title} ${it.username} ${it.email} ${it.bankDetails} ${it.cardDetails} ${it.notes} ${typeLabel(it.type)}`.toLowerCase();
+        if (hay.includes(query)) out.push({ kind: "record", item: it, label: it.title || typeLabel(it.type), sub: getAreaForType(it.type).label });
+      });
+    }
     return out.slice(0, 8);
-  }, [query, vault]);
+  }, [query, vault, legacyOn]);
 
   useEffect(() => { setActive(0); }, [query]);
   useEffect(() => {
@@ -2346,6 +2357,7 @@ function GlobalSearch({ vault, onOpenArea, onOpenRecord, onNavigate }) {
   function choose(r) {
     if (!r) return;
     if (r.kind === "record") onOpenRecord(r.item);
+    else if (r.kind === "legacy-record") onOpenLegacyRecord(r.legacyRecord.id);
     else if (r.kind === "area") onOpenArea(r.area.id);
     else onNavigate(r.id);
     setQ(""); setOpen(false); inputRef.current?.blur();
@@ -2380,13 +2392,13 @@ function GlobalSearch({ vault, onOpenArea, onOpenRecord, onNavigate }) {
             <div className="px-4 py-6 text-center text-[13px] text-[var(--ink-3)]">No matches for “{q.trim()}”.</div>
           ) : results.map((r, i) => (
             <button
-              key={r.kind + (r.item?.id ?? r.area?.id ?? r.id) + i}
+              key={r.kind + (r.item?.id ?? r.legacyRecord?.id ?? r.area?.id ?? r.id) + i}
               onMouseEnter={() => setActive(i)}
               onClick={() => choose(r)}
               className={cx("flex w-full items-center gap-3 px-4 py-2.5 text-left transition", i === active ? "bg-[var(--surface-2)]" : "")}
             >
               <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[var(--surface-2)] text-[var(--ink-3)]">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={r.kind === "page" ? "M4 6 H20 M4 12 H20 M4 18 H14" : AREA_ICON[r.kind === "area" ? r.area.id : getAreaForType(r.item.type).id]} /></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={r.kind === "page" || r.kind === "legacy-record" ? "M4 6 H20 M4 12 H20 M4 18 H14" : AREA_ICON[r.kind === "area" ? r.area.id : getAreaForType(r.item.type).id]} /></svg>
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13.5px] font-medium text-[var(--ink)]">{r.label}</span>
@@ -2547,7 +2559,11 @@ function OnboardingTour({ steps, onDone }) {
 }
 
 function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange, onSave, onLock, backupHealth, backupSizeWarning, onExport, onReplaceRecoveryKey, onDigitalLegacyMigrate, onReset, session, onShowAuthScreen, onSignOut, subscription, entitlements, onSubscriptionChange }) {
-  const [screen, setScreen] = useState("home");
+  const [screen, setScreen] = useState(() => (DIGITAL_LEGACY_FEATURE_FLAGS.dashboard ? "legacy" : "home"));
+  // The screen that counts as "home" for cross-cutting UI (sync nudge,
+  // wide layout, onboarding tour) — follows whichever screen is actually
+  // the landing screen above, so those don't silently stop firing.
+  const primaryScreen = DIGITAL_LEGACY_FEATURE_FLAGS.dashboard ? "legacy" : "home";
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [screen]);
@@ -2626,7 +2642,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
   // Sync-by-default: nudge until the vault is protected by encrypted sync.
   // "Later" hides it for this unlock only — data loss is too costly to forget.
   const [syncNudgeDismissed, setSyncNudgeDismissed] = useState(false);
-  const syncNudgeVisible = isSupabaseConfigured() && !session && !syncNudgeDismissed && !showTour && screen === "home";
+  const syncNudgeVisible = isSupabaseConfigured() && !session && !syncNudgeDismissed && !showTour && screen === primaryScreen;
 
   // Guided "next action" — pulse exactly one button, in setup order, until done.
   const hasRecords = vault.items.length > 0;
@@ -2645,16 +2661,34 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
         : null;
   const hint = (id) => !showTour && nextAction === id && screen !== id;
 
-  const railWorkspace = [
-    { id: "home", label: "Home", icon: "M4 11 L12 4 L20 11 M6 9.5 V20 H18 V9.5" },
-    { id: "records", label: "All records", icon: "M4 4 h16 v16 H4 Z M4 9 H20", count: vault.items.length },
-    { id: "money", label: "Balance sheet", icon: "M3 18 L9 11 L13 15 L21 6 M21 6 H16 M21 6 V11", locked: !canUseBalanceSheet },
-    { id: "release", label: "Circle of trust", icon: "M12 3 L20 6 V12 C 20 17 16 20 12 21 C 8 20 4 17 4 12 V6 Z M9 12 l2 2 l4 -4", locked: !canUseRelease },
-    ...(DIGITAL_LEGACY_FEATURE_FLAGS.dashboard
-      ? [{ id: "legacy", label: "My Legacy", icon: "M12 3 L4 7 V12 C4 17 7.5 20.5 12 22 C16.5 20.5 20 17 20 12 V7 Z" }]
-      : [])
-  ];
+  const railWorkspace = DIGITAL_LEGACY_FEATURE_FLAGS.dashboard
+    ? [
+        { id: "legacy", label: "My Legacy", icon: "M12 3 L4 7 V12 C4 17 7.5 20.5 12 22 C16.5 20.5 20 17 20 12 V7 Z" },
+        { id: "money", label: "Balance sheet", icon: "M3 18 L9 11 L13 15 L21 6 M21 6 H16 M21 6 V11", locked: !canUseBalanceSheet },
+        { id: "release", label: "Circle of trust", icon: "M12 3 L20 6 V12 C 20 17 16 20 12 21 C 8 20 4 17 4 12 V6 Z M9 12 l2 2 l4 -4", locked: !canUseRelease }
+      ]
+    : [
+        { id: "home", label: "Home", icon: "M4 11 L12 4 L20 11 M6 9.5 V20 H18 V9.5" },
+        { id: "records", label: "All records", icon: "M4 4 h16 v16 H4 Z M4 9 H20", count: vault.items.length },
+        { id: "money", label: "Balance sheet", icon: "M3 18 L9 11 L13 15 L21 6 M21 6 H16 M21 6 V11", locked: !canUseBalanceSheet },
+        { id: "release", label: "Circle of trust", icon: "M12 3 L20 6 V12 C 20 17 16 20 12 21 C 8 20 4 17 4 12 V6 Z M9 12 l2 2 l4 -4", locked: !canUseRelease }
+      ];
   function isRailActive(id) { return screen === id || (id === "legacy" && (screen === "legacy-category" || screen === "legacy-record" || screen === "legacy-record-edit")); }
+
+  // Digital Legacy categories that actually have an active record —
+  // the same left-rail slot the old "Life areas" list occupied, now
+  // populated from real Digital Legacy data instead of vault.items.
+  const legacyCategoriesWithData = useMemo(() => {
+    if (!DIGITAL_LEGACY_FEATURE_FLAGS.dashboard || !vault.digitalLegacy) return [];
+    const attentionStatuses = new Set(["action_required", "incomplete", "needs_review"]);
+    return LEGACY_CATEGORIES
+      .map((category) => {
+        const records = vault.digitalLegacy.records.filter((r) => r.categoryId === category.id && r.status !== "archived");
+        return { category, count: records.length, needsAttention: records.some((r) => attentionStatuses.has(r.status)) };
+      })
+      .filter(({ count }) => count > 0)
+      .sort((a, b) => a.category.sortOrder - b.category.sortOrder);
+  }, [vault.digitalLegacy]);
 
   return (
     <main className="min-h-screen bg-[var(--bg)] text-[var(--ink)]">
@@ -2666,7 +2700,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
           </span>
           Lyfos
         </div>
-        <GlobalSearch vault={vault} onOpenArea={openArea} onOpenRecord={openRecord} onNavigate={setScreen} />
+        <GlobalSearch vault={vault} onOpenArea={openArea} onOpenRecord={openRecord} onNavigate={setScreen} onOpenLegacyCategory={openLegacyCategory} onOpenLegacyRecord={openLegacyRecord} />
         <div className="ml-auto flex items-center gap-2.5">
           <NotificationBell vault={vault} backupHealth={backupHealth} onNavigate={setScreen} onOpenSettings={() => setScreen("settings")} />
           <button data-tour="seal" onClick={() => onLock("Manual lock")} className="rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-3.5 py-1.5 text-[12.5px] font-semibold text-[var(--ink-2)] transition hover:text-[var(--ink)]">Seal</button>
@@ -2684,13 +2718,28 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
           <div className="mt-1.5 space-y-0.5">
             {railWorkspace.map((n) => <RailItem key={n.id} collapsed={railCollapsed} active={isRailActive(n.id)} onClick={() => setScreen(n.id)} icon={n.icon} label={n.label} count={n.count} locked={n.locked} dataTour={n.id === "release" ? "trust" : undefined} pulse={hint(n.id)} />)}
           </div>
-          {!railCollapsed && <div className="mt-6 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">Life areas</div>}
-          <div className="mt-1.5 space-y-0.5">
-            {model.areas.map((a) => <RailItem key={a.id} collapsed={railCollapsed} active={screen === "area" && areaId === a.id} onClick={() => openArea(a.id)} dot={stateDot[a.state]} label={a.label} count={a.count} />)}
-          </div>
+          {DIGITAL_LEGACY_FEATURE_FLAGS.dashboard ? (
+            legacyCategoriesWithData.length > 0 && (
+              <>
+                {!railCollapsed && <div className="mt-6 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">My Legacy</div>}
+                <div className="mt-1.5 space-y-0.5">
+                  {legacyCategoriesWithData.map(({ category, count, needsAttention }) => (
+                    <RailItem key={category.id} collapsed={railCollapsed} active={screen === "legacy-category" && legacyCategoryId === category.id} onClick={() => openLegacyCategory(category.id)} dot={needsAttention ? "var(--amber)" : "var(--green)"} label={category.name} count={count} />
+                  ))}
+                </div>
+              </>
+            )
+          ) : (
+            <>
+              {!railCollapsed && <div className="mt-6 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">Life areas</div>}
+              <div className="mt-1.5 space-y-0.5">
+                {model.areas.map((a) => <RailItem key={a.id} collapsed={railCollapsed} active={screen === "area" && areaId === a.id} onClick={() => openArea(a.id)} dot={stateDot[a.state]} label={a.label} count={a.count} />)}
+              </div>
+            </>
+          )}
           {!railCollapsed && <div className="mt-6 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">You</div>}
           <div className="mt-1.5 space-y-0.5">
-            <RailItem collapsed={railCollapsed} active={screen === "capture"} onClick={() => setScreen("capture")} icon="M12 5 V19 M5 12 H19" label="Add a record" count={freeLimitReached ? `${vault.items.length}/${entitlements.vaultItemLimit}` : undefined} dataTour="add" pulse={hint("capture")} />
+            <RailItem collapsed={railCollapsed} active={screen === "capture" || screen === "legacy-record-edit"} onClick={() => setScreen(DIGITAL_LEGACY_FEATURE_FLAGS.dashboard ? "legacy" : "capture")} icon="M12 5 V19 M5 12 H19" label="Add a record" count={freeLimitReached ? `${vault.items.length}/${entitlements.vaultItemLimit}` : undefined} dataTour="add" pulse={hint("capture")} />
             <RailItem collapsed={railCollapsed} active={screen === "settings"} onClick={() => setScreen("settings")} icon="M12 9 a3 3 0 1 0 0 6 a3 3 0 0 0 0-6 Z M12 2 v3 M12 19 v3 M5 5 l2 2 M17 17 l2 2 M2 12 h3 M19 12 h3 M5 19 l2-2 M17 7 l2-2" label="Settings" />
           </div>
         </aside>
@@ -2702,11 +2751,11 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
             {railWorkspace.map((n) => (
               <button key={n.id} onClick={() => setScreen(n.id)} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", isRailActive(n.id) ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]", n.locked && !isRailActive(n.id) && "opacity-60", hint(n.id) && "tour-pulse")}>{n.label}{n.locked ? " · Locked" : ""}</button>
             ))}
-            <button onClick={() => setScreen("capture")} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", screen === "capture" ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]", hint("capture") && "tour-pulse")}>+ Add</button>
+            <button onClick={() => setScreen(DIGITAL_LEGACY_FEATURE_FLAGS.dashboard ? "legacy" : "capture")} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", (screen === "capture" || screen === "legacy-record-edit") ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]", hint("capture") && "tour-pulse")}>+ Add</button>
             <button onClick={() => setScreen("settings")} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", screen === "settings" ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]")}>Settings</button>
           </div>
           {/* Mobile: a persistent "add" affordance for the most common action */}
-          <button onClick={() => setScreen("capture")} aria-label="Add a record" className="fixed bottom-5 right-5 z-30 inline-flex h-14 items-center gap-2 rounded-full bg-[var(--accent)] px-5 text-white shadow-[0_10px_28px_rgba(22,163,74,0.28)] transition hover:translate-y-[-1px] lg:hidden">
+          <button onClick={() => setScreen(DIGITAL_LEGACY_FEATURE_FLAGS.dashboard ? "legacy" : "capture")} aria-label="Add a record" className="fixed bottom-5 right-5 z-30 inline-flex h-14 items-center gap-2 rounded-full bg-[var(--accent)] px-5 text-white shadow-[0_10px_28px_rgba(22,163,74,0.28)] transition hover:translate-y-[-1px] lg:hidden">
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5 V19 M5 12 H19" /></svg>
             <span className="text-[13px] font-semibold">Add record</span>
           </button>
@@ -2727,7 +2776,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
           {backupSizeWarning?.level !== "none" && <BackupSizeNotice warning={backupSizeWarning} />}
           {session && screen !== "release" && <ActiveReleaseBanner onNavigateRelease={() => setScreen("release")} />}
 
-          <div className={cx("mx-auto flex gap-8", screen === "home" ? "max-w-[1280px] items-start" : "max-w-3xl")}>
+          <div className={cx("mx-auto flex gap-8", screen === primaryScreen ? "max-w-[1280px] items-start" : "max-w-3xl")}>
             <div className="min-w-0 flex-1">
               {screen === "home"    && <FamilyHomeDashboard vault={vault} onNavigate={setScreen} onOpenArea={openArea} onOpenRecord={openRecord} />}
               {screen === "records" && <AllRecords vault={vault} onOpenRecord={openRecord} />}
@@ -2751,6 +2800,12 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
               )}
               {screen === "legacy-record-edit" && DIGITAL_LEGACY_FEATURE_FLAGS.dashboard && DIGITAL_LEGACY_FEATURE_FLAGS.serviceCatalogue && vault.digitalLegacy && (
                 <LegacyRecordForm
+                  // Forces a fresh mount per category/record — without this,
+                  // React reuses the instance across "Add record" calls and
+                  // its useState-seeded service/field selection from the
+                  // previous category leaks into the next (the HDFC-Bank-
+                  // fields-under-Cloud-storage bug).
+                  key={`${legacyCategoryId}-${legacyEditRecordId ?? "new"}`}
                   digitalLegacy={vault.digitalLegacy}
                   vault={vault}
                   onSave={onSave}
@@ -2779,7 +2834,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
         </section>
       </div>
 
-      {showTour && screen === "home" && <OnboardingTour steps={TOUR_STEPS} onDone={finishTour} />}
+      {showTour && screen === primaryScreen && <OnboardingTour steps={TOUR_STEPS} onDone={finishTour} />}
     </main>
   );
 }
