@@ -23,6 +23,15 @@ function serviceWorkerBuildIdPlugin() {
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), serviceWorkerBuildIdPlugin()],
+  resolve: {
+    alias: {
+      // secrets.js-grempe's UMD wrapper does `require("crypto")`, which
+      // Vite otherwise externalizes to an empty Node-builtin stub in
+      // the browser build, breaking its RNG detection. See
+      // src/lib/browserCryptoShim.cjs for the full explanation.
+      crypto: resolve(__dirname, "src/lib/browserCryptoShim.cjs")
+    }
+  },
   define: {
     __BUILD_ID__: JSON.stringify(BUILD_ID)
   },
