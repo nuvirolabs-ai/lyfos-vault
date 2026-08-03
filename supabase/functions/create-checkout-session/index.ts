@@ -30,6 +30,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 // @ts-ignore
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.106.2";
+import { corsPreflight, CORS_HEADERS } from "../_shared/cors.ts";
 
 // @ts-ignore
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -55,6 +56,8 @@ const STRIPE_PRICE_VAULT  = Deno.env.get("STRIPE_PRICE_VAULT")  ?? "";
 // @ts-ignore
 
 serve(async (req) => {
+  const preflight = corsPreflight(req);
+  if (preflight) return preflight;
   if (req.method !== "POST") return json({ ok: false, error: "method not allowed" }, 405);
 
   if (PAID_LAUNCH_LOCKED) {
@@ -209,5 +212,5 @@ async function createStripeSession({ admin, user, plan, priceId }: any) {
 }
 
 function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...CORS_HEADERS } });
 }

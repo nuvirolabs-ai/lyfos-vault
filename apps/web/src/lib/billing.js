@@ -8,53 +8,10 @@
 import { getSupabase, isSupabaseConfigured } from "./supabaseClient.js";
 import { planFor } from "./plans.js";
 
-const BILLING_API_BASE = (import.meta.env.VITE_BILLING_API_BASE || "").replace(/\/$/, "");
 const WAITLIST_ENDPOINT =
   import.meta.env.VITE_WAITLIST_ENDPOINT ||
   "https://rifooyrwepkrhprakdec.supabase.co/functions/v1/waitlist";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-async function postBillingJson(path, payload) {
-  const response = await fetch(`${BILLING_API_BASE}${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || "Payment request failed");
-  return data;
-}
-
-function openRazorpayCheckout(options) {
-  return new Promise((resolve, reject) => {
-    if (!window.Razorpay) {
-      reject(new Error("Razorpay checkout could not load"));
-      return;
-    }
-
-    const checkout = new window.Razorpay({
-      ...options,
-      handler: async (response) => {
-        try {
-          const verified = await postBillingJson("/api/verify-payment", response);
-          resolve(verified);
-        } catch (error) {
-          reject(error);
-        }
-      },
-      modal: {
-        ondismiss: () => reject(new Error("Checkout closed before payment."))
-      },
-      theme: { color: "#1d1d1f" }
-    });
-
-    checkout.on("payment.failed", (response) => {
-      reject(new Error(response?.error?.description || "Payment failed. Please try again."));
-    });
-
-    checkout.open();
-  });
-}
 
 // ============================================================
 // Read paths
@@ -118,40 +75,36 @@ export async function fetchInvoiceUrl(pdfPath) {
 }
 
 // ============================================================
-// Upgrade flow — opens Razorpay Standard Checkout and verifies the
-// payment signature through the backend.
+// Upgrade flow — creates a real recurring Razorpay subscription via
+// the create-checkout-session Edge Function and hands back its hosted
+// checkout URL. The subscription only becomes 'active' in our database
+// once Razorpay's webhook confirms the first charge — this function
+// does not (and cannot) mark the user as upgraded itself.
 // ============================================================
 
 /**
- * Kick off an upgrade. Returns a verified payment response when the
- * backend signature check passes.
+ * Kick off an upgrade. Returns { checkoutUrl } — the caller should
+ * redirect the browser there to complete payment on Razorpay's hosted
+ * page. Do not treat a successful call as "upgraded"; the plan only
+ * flips once Razorpay's webhook fires after the first successful charge.
  *
  * @param {object} opts
  * @param {string} opts.plan       'vault'
- * @param {string} [opts.provider] 'razorpay' (default) | 'stripe'
+ * @param {string} [opts.provider] 'razorpay' (only provider currently wired)
  */
 export async function startUpgrade({ plan, provider = "razorpay" }) {
   if (plan !== "vault") throw new Error("plan must be 'vault'");
   if (!planFor(plan).checkoutEnabled) throw new Error("Vault launches this fall. Join the launch list instead.");
-  if (provider !== "razorpay") throw new Error("Only Razorpay Standard Checkout is configured");
+  if (provider !== "razorpay") throw new Error("Only Razorpay is configured");
+  if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
 
-  const selected = planFor(plan);
-  const order = await postBillingJson("/api/create-order", {
-    amount: selected.amountInr,
-    currency: "INR",
-    receipt: `lyfos_${plan}_${Date.now()}`
+  const sb = getSupabase();
+  const { data, error } = await sb.functions.invoke("create-checkout-session", {
+    body: { plan, provider }
   });
-
-  const verified = await openRazorpayCheckout({
-    key: order.key_id,
-    amount: order.amount,
-    currency: order.currency,
-    name: "Lyfos",
-    description: `Lyfos ${selected.label} annual access`,
-    order_id: order.order_id
-  });
-
-  return { provider: "razorpay", verified: true, ...verified };
+  if (error) throw new Error(data?.error || error.message || "Could not start checkout");
+  if (!data?.ok || !data?.checkoutUrl) throw new Error(data?.error || "Checkout session did not return a payment link");
+  return { checkoutUrl: data.checkoutUrl, subscriptionId: data.subscription_id };
 }
 
 export async function joinVaultFallWaitlist({ email, source = "vault-fall-interest-app" } = {}) {

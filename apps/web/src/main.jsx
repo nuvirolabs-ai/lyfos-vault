@@ -55,7 +55,7 @@ import { listMyKeyHolders, createKeyHolderInvite, requeueKeyHolderInvite, revoke
 import { buildExternalAppUrl } from "./lib/appUrls.js";
 import { validateCircleForActivation } from "./lib/recoveryCeremony.js";
 import { loadMyReleaseSettings, upsertMyReleaseSettings, rotateMyClaimToken, fetchActiveReleaseAgainstMe, ownerAbortRelease, isValidNomineeEmail } from "./lib/releaseClaim.js";
-import { fetchMySubscription, fetchMyBillingEvents, fetchMyBillingProfile, upsertMyBillingProfile, fetchInvoiceUrl, joinVaultFallWaitlist, cancelSubscriptionAtPeriodEnd, resumeSubscription } from "./lib/billing.js";
+import { fetchMySubscription, fetchMyBillingEvents, fetchMyBillingProfile, upsertMyBillingProfile, fetchInvoiceUrl, joinVaultFallWaitlist, cancelSubscriptionAtPeriodEnd, resumeSubscription, startUpgrade } from "./lib/billing.js";
 import { planFor, entitlementsFor, daysLeftFor, paidPlans } from "./lib/plans.js";
 import { isSupabaseConfigured } from "./lib/supabaseClient.js";
 import { getSession, onAuthStateChange, signOut, appendServerAuditEvent, ensureDeviceToken, getDeviceToken, deleteAccount, signInWithPassword, signUpWithPassword } from "./lib/auth.js";
@@ -2847,6 +2847,20 @@ function BillingSection({ subscription, entitlements, session, onSubscriptionCha
     }
   }
 
+  async function startCheckout(planId) {
+    setError("");
+    setBusy(true);
+    try {
+      const { checkoutUrl } = await startUpgrade({ plan: planId });
+      window.location.assign(checkoutUrl);
+      // Intentionally no finally/setBusy(false) on success — the page is
+      // navigating away to Razorpay's hosted checkout page.
+    } catch (err) {
+      setError(err?.message || "Couldn't start checkout.");
+      setBusy(false);
+    }
+  }
+
   async function cancel() {
     if (!window.confirm("Cancel at the end of your current billing period? You'll keep access until then.")) return;
     setBusy(true);
@@ -2935,7 +2949,6 @@ function BillingSection({ subscription, entitlements, session, onSubscriptionCha
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-[14px] font-semibold">Lyfos {p.label}</p>
-                        {!p.checkoutEnabled && <span className="rounded-full bg-[var(--green-soft)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--green-ink)]">Coming this fall</span>}
                       </div>
                       <p className="mt-0.5 text-[11px] text-[var(--ink-3)]">{p.summary}</p>
                     </div>
@@ -2944,27 +2957,37 @@ function BillingSection({ subscription, entitlements, session, onSubscriptionCha
                   <ul className="mt-3 list-disc space-y-1 pl-4 text-[12px] leading-5 text-[var(--ink-2)]">
                     {p.bullets.map((b) => <li key={b}>{b}</li>)}
                   </ul>
-                  <div className="mt-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
-                    <p className="text-[12px] font-medium text-[var(--ink)]">Launching this fall.</p>
-                    <p className="mt-1 text-[11px] leading-5 text-[var(--ink-3)]">Submit your email id and we will save it in the Vault launch list.</p>
-                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                      <input
-                        type="email"
-                        value={interestEmail}
-                        onChange={(e) => { setInterestEmail(e.target.value); setInterestSaved(false); setError(""); }}
-                        placeholder="you@example.com"
-                        className="min-w-0 flex-1 rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[12px] text-[var(--ink)] outline-none focus:border-[var(--green)]"
-                      />
-                      <button
-                        onClick={joinPaidLaunchList}
-                        disabled={busy || !interestEmail.trim()}
-                        className="rounded-full bg-[#1d1d1f] px-4 py-2 text-[12px] font-semibold text-white disabled:opacity-40"
-                      >
-                        {busy ? "Saving…" : "Submit email"}
-                      </button>
+                  {p.checkoutEnabled ? (
+                    <button
+                      onClick={() => startCheckout(p.id)}
+                      disabled={busy}
+                      className="mt-3 w-full rounded-full bg-[#1d1d1f] px-4 py-2.5 text-[12px] font-semibold text-white disabled:cursor-wait disabled:opacity-50"
+                    >
+                      {busy ? "Opening Razorpay…" : `Get ${p.label} · ${formatCurrency(p.amountInr / 100, "INR")}/year`}
+                    </button>
+                  ) : (
+                    <div className="mt-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
+                      <p className="text-[12px] font-medium text-[var(--ink)]">Launching this fall.</p>
+                      <p className="mt-1 text-[11px] leading-5 text-[var(--ink-3)]">Submit your email id and we will save it in the Vault launch list.</p>
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                        <input
+                          type="email"
+                          value={interestEmail}
+                          onChange={(e) => { setInterestEmail(e.target.value); setInterestSaved(false); setError(""); }}
+                          placeholder="you@example.com"
+                          className="min-w-0 flex-1 rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[12px] text-[var(--ink)] outline-none focus:border-[var(--green)]"
+                        />
+                        <button
+                          onClick={joinPaidLaunchList}
+                          disabled={busy || !interestEmail.trim()}
+                          className="rounded-full bg-[#1d1d1f] px-4 py-2 text-[12px] font-semibold text-white disabled:opacity-40"
+                        >
+                          {busy ? "Saving…" : "Submit email"}
+                        </button>
+                      </div>
+                      {interestSaved && <p className="mt-2 text-[11px] font-medium text-[var(--green-ink)]">You are on the list. Vault launches this fall.</p>}
                     </div>
-                    {interestSaved && <p className="mt-2 text-[11px] font-medium text-[var(--green-ink)]">You are on the list. Vault launches this fall.</p>}
-                  </div>
+                  )}
                 </div>
               );
             })}
