@@ -91,8 +91,9 @@ export async function fetchInvoiceUrl(pdfPath) {
  * @param {object} opts
  * @param {string} opts.plan       'vault'
  * @param {string} [opts.provider] 'razorpay' (only provider currently wired)
+ * @param {string} [opts.couponCode]
  */
-export async function startUpgrade({ plan, provider = "razorpay" }) {
+export async function startUpgrade({ plan, provider = "razorpay", couponCode }) {
   if (plan !== "vault") throw new Error("plan must be 'vault'");
   if (!planFor(plan).checkoutEnabled) throw new Error("Vault launches this fall. Join the launch list instead.");
   if (provider !== "razorpay") throw new Error("Only Razorpay is configured");
@@ -100,11 +101,35 @@ export async function startUpgrade({ plan, provider = "razorpay" }) {
 
   const sb = getSupabase();
   const { data, error } = await sb.functions.invoke("create-checkout-session", {
-    body: { plan, provider }
+    body: { plan, provider, couponCode: couponCode || undefined }
   });
   if (error) throw new Error(data?.error || error.message || "Could not start checkout");
   if (!data?.ok || !data?.checkoutUrl) throw new Error(data?.error || "Checkout session did not return a payment link");
   return { checkoutUrl: data.checkoutUrl, subscriptionId: data.subscription_id };
+}
+
+/**
+ * Check a coupon code against a plan before checkout, so the UI can show
+ * the discounted price. Returns { valid, code, originalAmountPaise,
+ * discountPaise, amountPaise } on a valid code, or { valid: false, error }.
+ * Doesn't reserve or redeem the coupon — create-checkout-session does the
+ * real, authoritative check when the user actually pays.
+ */
+export async function validateCoupon({ plan, code }) {
+  if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
+  const sb = getSupabase();
+  const { data, error } = await sb.functions.invoke("validate-coupon", {
+    body: { plan, code }
+  });
+  if (error) throw new Error(data?.error || error.message || "Could not check that code");
+  if (!data?.ok) return { valid: false, error: data?.error || "Invalid coupon code" };
+  return {
+    valid: true,
+    code: data.code,
+    originalAmountPaise: data.originalAmountPaise,
+    discountPaise: data.discountPaise,
+    amountPaise: data.amountPaise
+  };
 }
 
 export async function joinVaultFallWaitlist({ email, source = "vault-fall-interest-app" } = {}) {

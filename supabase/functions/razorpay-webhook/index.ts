@@ -9,7 +9,9 @@
 // Validates the X-Razorpay-Signature header before doing anything.
 //
 // Events we listen for:
-//   payment_link.paid — the one-time purchase succeeded; plan goes active
+//   payment_link.paid — the one-time purchase succeeded; plan goes active.
+//                        If a coupon was applied (see create-checkout-session),
+//                        this is also where it's marked redeemed.
 //   payment.failed     — log only, for support visibility
 //
 // Required secrets:
@@ -122,6 +124,29 @@ async function handlePaymentLinkPaid(body: any, eventId: string) {
       headers: { Authorization: `Bearer ${SERVICE_KEY}`, "content-type": "application/json" },
       body: JSON.stringify({ event_id: inserted.id })
     }).catch((err) => console.warn("[lyfos] invoice gen kick failed", err?.message));
+  }
+
+  const couponCode = link?.notes?.lyfos_coupon_code;
+  const discountPaise = Number(link?.notes?.lyfos_discount_paise ?? 0);
+  if (couponCode) await redeemCoupon(couponCode, lyfosUserId, inserted?.id ?? null, discountPaise);
+}
+
+// Records that this coupon was used, best-effort — payment already
+// succeeded by the time this runs, so a bookkeeping failure here must
+// never surface as a webhook error (Razorpay would retry the whole event).
+async function redeemCoupon(code: string, userId: string, billingEventId: string | null, discountPaise: number) {
+  try {
+    const { data: coupon } = await admin.from("coupons").select("id").eq("code", code).maybeSingle();
+    if (!coupon) return;
+    await admin.from("coupon_redemptions").insert({
+      coupon_id: coupon.id,
+      user_id: userId,
+      billing_event_id: billingEventId,
+      amount_off_paise: discountPaise
+    });
+    await admin.rpc("increment_coupon_redemptions", { p_coupon_id: coupon.id });
+  } catch (err: any) {
+    console.warn("[lyfos] coupon redemption bookkeeping failed", err?.message);
   }
 }
 

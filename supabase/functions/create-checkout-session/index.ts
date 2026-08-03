@@ -2,8 +2,9 @@
 //
 // Called by the client (authenticated user) to start an upgrade.
 // Vault is a one-time purchase, not a recurring subscription: this
-// creates a Razorpay Payment Link for the plan's amount and returns
-// its hosted checkout URL. The client redirects there; Razorpay's
+// creates a Razorpay Payment Link for the plan's amount (minus an
+// optional coupon discount — see body.couponCode and _shared/coupons.ts)
+// and returns its hosted checkout URL. The client redirects there; Razorpay's
 // webhook (razorpay-webhook, on payment_link.paid) is what actually
 // marks the purchase active once payment is confirmed — this
 // function never marks anyone as upgraded itself.
@@ -27,6 +28,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 // @ts-ignore
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.106.2";
 import { corsPreflight, CORS_HEADERS } from "../_shared/cors.ts";
+import { resolveCoupon } from "../_shared/coupons.ts";
 
 // @ts-ignore
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -78,6 +80,7 @@ serve(async (req) => {
   try { body = await req.json(); } catch { body = {}; }
   const plan = body?.plan;
   const provider = body?.provider ?? "razorpay";
+  const couponCode = body?.couponCode ? String(body.couponCode) : "";
   const amounts = PLAN_AMOUNTS[plan];
   if (!amounts) return json({ ok: false, error: "plan must be 'vault'" }, 400);
 
@@ -88,11 +91,24 @@ serve(async (req) => {
     return json({ ok: false, error: "already purchased", current: existing.plan }, 409);
   }
 
+  let amountPaise = amounts.inr;
+  let appliedCouponCode = "";
+  let appliedDiscountPaise = 0;
+  // Coupons only price the Razorpay Payment Link today — Stripe checkout
+  // uses a fixed priceId and isn't discountable without a custom price.
+  if (couponCode && provider === "razorpay") {
+    const resolved = await resolveCoupon(admin, { code: couponCode, plan, userId: user.id, amountPaise: amounts.inr });
+    if (!resolved.ok) return json({ ok: false, error: resolved.error }, 400);
+    amountPaise = resolved.amountPaise;
+    appliedCouponCode = resolved.coupon.code;
+    appliedDiscountPaise = resolved.discountPaise;
+  }
+
   if (provider === "razorpay") {
     if (!RZP_KEY || !RZP_SECRET) {
       return json({ ok: false, error: "razorpay not configured on this deployment" }, 503);
     }
-    return await createRazorpayPaymentLink({ user, plan, amountPaise: amounts.inr });
+    return await createRazorpayPaymentLink({ user, plan, amountPaise, couponCode: appliedCouponCode, discountPaise: appliedDiscountPaise });
   }
 
   if (provider === "stripe") {
@@ -110,11 +126,17 @@ serve(async (req) => {
 // ============================================================
 // Razorpay — one-time Payment Link
 // ============================================================
-async function createRazorpayPaymentLink({ user, plan, amountPaise }: any) {
+async function createRazorpayPaymentLink({ user, plan, amountPaise, couponCode, discountPaise }: any) {
   const headers = {
     Authorization: "Basic " + btoa(`${RZP_KEY}:${RZP_SECRET}`),
     "content-type": "application/json"
   };
+
+  const notes: Record<string, string> = { lyfos_user_id: user.id, lyfos_plan: plan };
+  if (couponCode) {
+    notes.lyfos_coupon_code = couponCode;
+    notes.lyfos_discount_paise = String(discountPaise ?? 0);
+  }
 
   const link = await fetch("https://api.razorpay.com/v1/payment_links", {
     method: "POST",
@@ -129,7 +151,7 @@ async function createRazorpayPaymentLink({ user, plan, amountPaise }: any) {
       },
       notify: { email: true, sms: false },
       reminder_enable: true,
-      notes: { lyfos_user_id: user.id, lyfos_plan: plan },
+      notes,
       callback_url: `${APP_URL}/?upgrade=success`,
       callback_method: "get"
     })

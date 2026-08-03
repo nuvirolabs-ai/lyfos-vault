@@ -55,7 +55,7 @@ import { listMyKeyHolders, createKeyHolderInvite, requeueKeyHolderInvite, revoke
 import { buildExternalAppUrl } from "./lib/appUrls.js";
 import { validateCircleForActivation } from "./lib/recoveryCeremony.js";
 import { loadMyReleaseSettings, upsertMyReleaseSettings, rotateMyClaimToken, fetchActiveReleaseAgainstMe, ownerAbortRelease, isValidNomineeEmail } from "./lib/releaseClaim.js";
-import { fetchMySubscription, fetchMyBillingEvents, fetchMyBillingProfile, upsertMyBillingProfile, fetchInvoiceUrl, joinVaultFallWaitlist, startUpgrade } from "./lib/billing.js";
+import { fetchMySubscription, fetchMyBillingEvents, fetchMyBillingProfile, upsertMyBillingProfile, fetchInvoiceUrl, joinVaultFallWaitlist, startUpgrade, validateCoupon } from "./lib/billing.js";
 import { planFor, entitlementsFor, daysLeftFor, paidPlans } from "./lib/plans.js";
 import { isSupabaseConfigured } from "./lib/supabaseClient.js";
 import { getSession, onAuthStateChange, signOut, appendServerAuditEvent, ensureDeviceToken, getDeviceToken, deleteAccount, signInWithPassword, signUpWithPassword } from "./lib/auth.js";
@@ -2147,18 +2147,46 @@ function RailItem({ active, onClick, icon, label, count, dot, dataTour, pulse, l
 function PaidFeatureLock({ feature, body, onOpenSettings, hasSession }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [showCoupon, setShowCoupon] = useState(false);
+  const [couponInput, setCouponInput] = useState("");
+  const [coupon, setCoupon] = useState(null);
+  const [couponBusy, setCouponBusy] = useState(false);
+  const [couponError, setCouponError] = useState("");
 
   async function handleUpgrade() {
     if (!hasSession) { onOpenSettings?.(); return; }
     setError("");
     setBusy(true);
     try {
-      const { checkoutUrl } = await startUpgrade({ plan: "vault" });
+      const { checkoutUrl } = await startUpgrade({ plan: "vault", couponCode: coupon?.code });
       window.location.assign(checkoutUrl);
     } catch (err) {
       setError(err?.message || "Couldn't start checkout.");
       setBusy(false);
     }
+  }
+
+  async function applyCoupon() {
+    const code = couponInput.trim();
+    if (!code) return;
+    setCouponError("");
+    setCouponBusy(true);
+    try {
+      const result = await validateCoupon({ plan: "vault", code });
+      if (!result.valid) { setCouponError(result.error || "Invalid coupon code"); setCoupon(null); }
+      else setCoupon(result);
+    } catch (err) {
+      setCouponError(err?.message || "Couldn't check that code.");
+      setCoupon(null);
+    } finally {
+      setCouponBusy(false);
+    }
+  }
+
+  function clearCoupon() {
+    setCoupon(null);
+    setCouponInput("");
+    setCouponError("");
   }
 
   return (
@@ -2173,12 +2201,46 @@ function PaidFeatureLock({ feature, body, onOpenSettings, hasSession }) {
       <h1 className="mt-3 text-[34px] font-semibold leading-[1.1] tracking-tight md:text-[42px]">{feature}</h1>
       <p className="mx-auto mt-4 max-w-md text-[14px] leading-6 text-[var(--ink-2)]">{body}</p>
       {error && <div className="mx-auto mt-4 max-w-md rounded-md bg-[#ff453a]/8 px-3 py-2 text-[12px] font-medium text-[var(--red-2)]">{error}</div>}
+
+      {hasSession && (
+        coupon ? (
+          <div className="mx-auto mt-5 flex max-w-xs items-center justify-between gap-2 rounded-lg bg-[var(--green-soft)] px-3 py-2 text-[11.5px] font-medium text-[var(--green-ink)]">
+            <span>Coupon {coupon.code} applied</span>
+            <button onClick={clearCoupon} className="text-[var(--ink-3)] underline decoration-dotted">Remove</button>
+          </div>
+        ) : showCoupon ? (
+          <div className="mx-auto mt-5 max-w-xs">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={couponInput}
+                onChange={(e) => { setCouponInput(e.target.value.toUpperCase()); setCouponError(""); }}
+                placeholder="Coupon code"
+                className="min-w-0 flex-1 rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[12px] uppercase text-[var(--ink)] outline-none focus:border-[var(--green)]"
+              />
+              <button
+                onClick={applyCoupon}
+                disabled={couponBusy || !couponInput.trim()}
+                className="rounded-full border border-[var(--line-2)] px-4 py-2 text-[12px] font-semibold text-[var(--ink)] disabled:opacity-40"
+              >
+                {couponBusy ? "Checking…" : "Apply"}
+              </button>
+            </div>
+            {couponError && <p className="mt-1.5 text-[11px] font-medium text-[var(--red-2)]">{couponError}</p>}
+          </div>
+        ) : (
+          <button onClick={() => setShowCoupon(true)} className="mt-5 text-[12px] font-medium text-[var(--ink-3)] underline decoration-dotted">
+            Have a coupon?
+          </button>
+        )
+      )}
+
       <button
         onClick={handleUpgrade}
         disabled={busy}
-        className="mt-7 rounded-full bg-[#1d1d1f] px-6 py-3 text-[13px] font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition hover:bg-black disabled:cursor-wait disabled:opacity-50"
+        className="mt-5 rounded-full bg-[#1d1d1f] px-6 py-3 text-[13px] font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition hover:bg-black disabled:cursor-wait disabled:opacity-50"
       >
-        {busy ? "Opening Razorpay…" : hasSession ? "Upgrade to Vault" : "Sign in to upgrade"}
+        {busy ? "Opening Razorpay…" : !hasSession ? "Sign in to upgrade" : coupon ? `Upgrade to Vault · ${formatCurrency(coupon.amountPaise / 100, "INR")}` : "Upgrade to Vault"}
       </button>
       <p className="mt-3 text-[11px] text-[var(--ink-4)]">New accounts get a 30-day free trial of Vault. After that, it's a one-time ₹999 (India) or $9 (international) payment — yours for life, no subscription.</p>
     </section>
@@ -2845,6 +2907,10 @@ function BillingSection({ subscription, entitlements, session, onSubscriptionCha
   const [busy, setBusy] = useState(false);
   const [interestEmail, setInterestEmail] = useState(() => session?.user?.email ?? "");
   const [interestSaved, setInterestSaved] = useState(false);
+  const [couponInput, setCouponInput] = useState("");
+  const [coupon, setCoupon] = useState(null); // { code, originalAmountPaise, discountPaise, amountPaise }
+  const [couponBusy, setCouponBusy] = useState(false);
+  const [couponError, setCouponError] = useState("");
 
   async function loadEvents() {
     setLoadingEvents(true);
@@ -2872,7 +2938,7 @@ function BillingSection({ subscription, entitlements, session, onSubscriptionCha
     setError("");
     setBusy(true);
     try {
-      const { checkoutUrl } = await startUpgrade({ plan: planId });
+      const { checkoutUrl } = await startUpgrade({ plan: planId, couponCode: coupon?.code });
       window.location.assign(checkoutUrl);
       // Intentionally no finally/setBusy(false) on success — the page is
       // navigating away to Razorpay's hosted checkout page.
@@ -2880,6 +2946,29 @@ function BillingSection({ subscription, entitlements, session, onSubscriptionCha
       setError(err?.message || "Couldn't start checkout.");
       setBusy(false);
     }
+  }
+
+  async function applyCoupon(planId) {
+    const code = couponInput.trim();
+    if (!code) return;
+    setCouponError("");
+    setCouponBusy(true);
+    try {
+      const result = await validateCoupon({ plan: planId, code });
+      if (!result.valid) { setCouponError(result.error || "Invalid coupon code"); setCoupon(null); }
+      else setCoupon(result);
+    } catch (err) {
+      setCouponError(err?.message || "Couldn't check that code.");
+      setCoupon(null);
+    } finally {
+      setCouponBusy(false);
+    }
+  }
+
+  function clearCoupon() {
+    setCoupon(null);
+    setCouponInput("");
+    setCouponError("");
   }
 
   async function openInvoice(path) {
@@ -2936,19 +3025,57 @@ function BillingSection({ subscription, entitlements, session, onSubscriptionCha
                       </div>
                       <p className="mt-0.5 text-[11px] text-[var(--ink-3)]">{p.summary}</p>
                     </div>
-                    <p className="text-[15px] font-semibold tabular-nums">{formatCurrency(p.amountInr / 100, "INR")}<span className="text-[10px] font-normal text-[var(--ink-3)]"> one-time</span></p>
+                    <p className="text-[15px] font-semibold tabular-nums">
+                      {coupon ? (
+                        <>
+                          <span className="mr-1.5 text-[12px] font-normal text-[var(--ink-4)] line-through">{formatCurrency(p.amountInr / 100, "INR")}</span>
+                          {formatCurrency(coupon.amountPaise / 100, "INR")}
+                        </>
+                      ) : (
+                        formatCurrency(p.amountInr / 100, "INR")
+                      )}
+                      <span className="text-[10px] font-normal text-[var(--ink-3)]"> one-time</span>
+                    </p>
                   </div>
                   <ul className="mt-3 list-disc space-y-1 pl-4 text-[12px] leading-5 text-[var(--ink-2)]">
                     {p.bullets.map((b) => <li key={b}>{b}</li>)}
                   </ul>
                   {p.checkoutEnabled ? (
-                    <button
-                      onClick={() => startCheckout(p.id)}
-                      disabled={busy}
-                      className="mt-3 w-full rounded-full bg-[#1d1d1f] px-4 py-2.5 text-[12px] font-semibold text-white disabled:cursor-wait disabled:opacity-50"
-                    >
-                      {busy ? "Opening Razorpay…" : `Get ${p.label} · ${formatCurrency(p.amountInr / 100, "INR")} one-time`}
-                    </button>
+                    <>
+                      {coupon ? (
+                        <div className="mt-3 flex items-center justify-between gap-2 rounded-lg bg-[var(--green-soft)] px-3 py-2 text-[11.5px] font-medium text-[var(--green-ink)]">
+                          <span>Coupon {coupon.code} applied — {formatCurrency(coupon.discountPaise / 100, "INR")} off</span>
+                          <button onClick={clearCoupon} className="text-[var(--ink-3)] underline decoration-dotted">Remove</button>
+                        </div>
+                      ) : (
+                        <div className="mt-3">
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={couponInput}
+                              onChange={(e) => { setCouponInput(e.target.value.toUpperCase()); setCouponError(""); }}
+                              placeholder="Coupon code"
+                              className="min-w-0 flex-1 rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[12px] uppercase text-[var(--ink)] outline-none focus:border-[var(--green)]"
+                            />
+                            <button
+                              onClick={() => applyCoupon(p.id)}
+                              disabled={couponBusy || !couponInput.trim()}
+                              className="rounded-full border border-[var(--line-2)] px-4 py-2 text-[12px] font-semibold text-[var(--ink)] disabled:opacity-40"
+                            >
+                              {couponBusy ? "Checking…" : "Apply"}
+                            </button>
+                          </div>
+                          {couponError && <p className="mt-1.5 text-[11px] font-medium text-[var(--red-2)]">{couponError}</p>}
+                        </div>
+                      )}
+                      <button
+                        onClick={() => startCheckout(p.id)}
+                        disabled={busy}
+                        className="mt-3 w-full rounded-full bg-[#1d1d1f] px-4 py-2.5 text-[12px] font-semibold text-white disabled:cursor-wait disabled:opacity-50"
+                      >
+                        {busy ? "Opening Razorpay…" : `Get ${p.label} · ${formatCurrency((coupon ? coupon.amountPaise : p.amountInr) / 100, "INR")} one-time`}
+                      </button>
+                    </>
                   ) : (
                     <div className="mt-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
                       <p className="text-[12px] font-medium text-[var(--ink)]">Launching this fall.</p>
