@@ -86,3 +86,42 @@ export function revokeAttachmentPreviews(attachments = [], revoke = globalThis.U
     }
   }
 }
+
+export function attachmentKind(file) {
+  const type = file.type || "";
+  if (type.startsWith("image/")) return "Image";
+  if (type.includes("pdf")) return "PDF";
+  if (type.includes("word") || file.name.match(/\.(doc|docx)$/i)) return "Document";
+  if (type.includes("text") || file.name.match(/\.(txt|md|csv)$/i)) return "Text";
+  return "File";
+}
+
+export function readFileAsAttachment(file, existingNames = []) {
+  return new Promise((resolve, reject) => {
+    const validation = validateAttachmentFile(file);
+    if (!validation.ok) {
+      reject(new Error(validation.reason));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => resolve(makeAttachment({
+      name: file.name,
+      type: file.type || "application/octet-stream",
+      size: file.size,
+      dataUrl: reader.result
+    }, existingNames));
+    reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
+    reader.readAsDataURL(file);
+  });
+}
+
+export async function readFilesAsAttachments(files, existingAttachments = []) {
+  const attachments = [];
+  const names = existingAttachments.map((attachment) => attachment.name);
+  for (const file of [...files]) {
+    const attachment = await readFileAsAttachment(file, names);
+    attachments.push(attachment);
+    names.push(attachment.name);
+  }
+  return attachments;
+}

@@ -38,11 +38,12 @@ import {
   shouldLockForVisibility
 } from "./lib/stage1Session.js";
 import {
+  attachmentKind,
   deleteAttachmentFromRecord,
-  makeAttachment,
+  readFileAsAttachment,
+  readFilesAsAttachments,
   replaceAttachmentOnRecord,
-  revokeAttachmentPreviews,
-  validateAttachmentFile
+  revokeAttachmentPreviews
 } from "./lib/stage1Attachments.js";
 import {
   deriveBackupHealth,
@@ -398,36 +399,6 @@ function downloadTextFile(filename, text, type = "application/json") {
   URL.revokeObjectURL(url);
 }
 
-function readFileAsAttachment(file, existingNames = []) {
-  return new Promise((resolve, reject) => {
-    const validation = validateAttachmentFile(file);
-    if (!validation.ok) {
-      reject(new Error(validation.reason));
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => resolve(makeAttachment({
-      name: file.name,
-      type: file.type || "application/octet-stream",
-      size: file.size,
-      dataUrl: reader.result
-    }, existingNames));
-    reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
-    reader.readAsDataURL(file);
-  });
-}
-
-async function readFilesAsAttachments(files, existingAttachments = []) {
-  const attachments = [];
-  const names = existingAttachments.map((attachment) => attachment.name);
-  for (const file of [...files]) {
-    const attachment = await readFileAsAttachment(file, names);
-    attachments.push(attachment);
-    names.push(attachment.name);
-  }
-  return attachments;
-}
-
 function parseMoney(value) {
   const number = Number(String(value ?? "").replace(/[^0-9.-]/g, ""));
   return Number.isFinite(number) ? number : 0;
@@ -736,15 +707,6 @@ function createBlankRecord(area) {
     attachments: [],
     financial: { kind: "none", value: "", liability: "", income: "", expense: "" }
   };
-}
-
-function attachmentKind(file) {
-  const type = file.type || "";
-  if (type.startsWith("image/")) return "Image";
-  if (type.includes("pdf")) return "PDF";
-  if (type.includes("word") || file.name.match(/\.(doc|docx)$/i)) return "Document";
-  if (type.includes("text") || file.name.match(/\.(txt|md|csv)$/i)) return "Text";
-  return "File";
 }
 
 function attachmentIcon(kind) {

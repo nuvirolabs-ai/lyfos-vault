@@ -4,6 +4,7 @@ import { DIGITAL_LEGACY_FEATURE_FLAGS } from "./featureFlags.js";
 import { AUDIENCE_LABELS, LEGACY_ACTION_LABELS, RECIPIENT_LABELS } from "./labels.js";
 import ServiceIcon from "./components/ServiceIcon.jsx";
 import LegacyEmptyState from "./components/LegacyEmptyState.jsx";
+import AttachmentList from "./components/AttachmentList.jsx";
 
 const FRESHNESS_LABELS = {
   current: "Reviewed recently.",
@@ -101,6 +102,13 @@ export default function LegacyRecordScreen({ digitalLegacy, vault, onSave, recor
           </dl>
         )}
       </section>
+
+      {record.attachments?.length > 0 && (
+        <section className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5">
+          <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">Files</p>
+          <AttachmentList attachments={record.attachments} />
+        </section>
+      )}
 
       <section className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5">
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">If something happens to you</p>

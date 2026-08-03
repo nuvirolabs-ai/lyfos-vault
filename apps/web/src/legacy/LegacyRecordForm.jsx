@@ -10,8 +10,10 @@ import {
   listServices
 } from "@os-one/digital-legacy";
 import { appendAuditEvent } from "../lib/stage1Audit.js";
+import { readFilesAsAttachments } from "../lib/stage1Attachments.js";
 import { AUDIENCE_LABELS, LEGACY_ACTION_LABELS, RECIPIENT_LABELS, REVIEW_FREQUENCY_LABELS } from "./labels.js";
 import ServiceIcon from "./components/ServiceIcon.jsx";
+import AttachmentList from "./components/AttachmentList.jsx";
 
 const REVIEW_FREQUENCIES = ["3_months", "6_months", "yearly", "custom", "none"];
 const BASIC_CLASSIFICATIONS = ["identity_information", "account_information"];
@@ -48,6 +50,9 @@ export default function LegacyRecordForm({ digitalLegacy, vault, onSave, categor
   const [audience, setAudience] = useState(existingRecord?.releasePolicy?.audience ?? "owner_only");
   const [recipientMode, setRecipientMode] = useState(existingRecord?.releasePolicy?.recipientMode ?? "primary");
   const [reviewFrequency, setReviewFrequency] = useState(existingRecord?.review?.frequency ?? "yearly");
+  const [attachments, setAttachments] = useState(existingRecord?.attachments ?? []);
+  const [attachError, setAttachError] = useState("");
+  const [attaching, setAttaching] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   // Editing starts fully expanded (nothing already filled in should be
@@ -132,6 +137,23 @@ export default function LegacyRecordForm({ digitalLegacy, vault, onSave, categor
     );
   }
 
+  async function handleAddFiles(files) {
+    setAttachError("");
+    setAttaching(true);
+    try {
+      const added = await readFilesAsAttachments(files, attachments);
+      setAttachments((prev) => [...prev, ...added]);
+    } catch (err) {
+      setAttachError(err?.message || "Couldn't add that file.");
+    } finally {
+      setAttaching(false);
+    }
+  }
+
+  function handleDeleteAttachment(attachmentId) {
+    setAttachments((prev) => prev.filter((a) => a.id !== attachmentId));
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
@@ -150,7 +172,7 @@ export default function LegacyRecordForm({ digitalLegacy, vault, onSave, categor
         instructions: { action, ...(action === "custom" && customText.trim() ? { customText: customText.trim() } : {}) },
         releasePolicy: { audience, recipientMode, trigger: "existing_circle" },
         review: { frequency: reviewFrequency, ...(existingRecord?.review?.lastReviewedAt ? { lastReviewedAt: existingRecord.review.lastReviewedAt } : {}) },
-        attachments: existingRecord?.attachments ?? [],
+        attachments,
         createdAt: existingRecord?.createdAt
       };
       const options = { now };
@@ -234,6 +256,12 @@ export default function LegacyRecordForm({ digitalLegacy, vault, onSave, categor
               })}
             </section>
           )}
+
+          <section className="space-y-3 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">Files</p>
+            {attachError && <div className="rounded-md bg-[#ff453a]/8 px-3 py-2 text-[12px] font-medium text-[var(--red-2)]">{attachError}</div>}
+            <AttachmentList attachments={attachments} onAdd={handleAddFiles} onDelete={handleDeleteAttachment} busy={attaching} />
+          </section>
 
           <section className="space-y-3 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5">
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">If something happens to you</p>
