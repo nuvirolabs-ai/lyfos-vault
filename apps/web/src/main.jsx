@@ -1,6 +1,10 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { RELEASE_POLICY } from "@os-one/vault-model";
+import { DIGITAL_LEGACY_FEATURE_FLAGS } from "./legacy/featureFlags.js";
+import MyLegacyScreen from "./legacy/MyLegacyScreen.jsx";
+import LegacyCategoryScreen from "./legacy/LegacyCategoryScreen.jsx";
+import LegacyRecordScreen from "./legacy/LegacyRecordScreen.jsx";
 import {
   createStage1VaultRecord,
   decryptVaultWithPassphrase,
@@ -2547,6 +2551,13 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
   const stateDot = { protected: "var(--green)", review: "var(--amber)", exposed: "var(--rose,#c0335e)" };
   function openArea(id) { setPendingRecordId(null); setAreaId(id); setScreen("area"); }
   function openRecord(item) { const a = getAreaForType(item.type); setAreaId(a.id); setPendingRecordId(item.id); setScreen("area"); }
+
+  // Digital Legacy Phase 3 — read-only prototype, sample data only.
+  // See docs/LYFOS_DIGITAL_LEGACY_ASSESSMENT.md.
+  const [legacyCategoryId, setLegacyCategoryId] = useState(null);
+  const [legacyRecordId, setLegacyRecordId] = useState(null);
+  function openLegacyCategory(id) { setLegacyCategoryId(id); setScreen("legacy-category"); }
+  function openLegacyRecord(id) { setLegacyRecordId(id); setScreen("legacy-record"); }
   const selectedArea = AREAS.find((a) => a.id === areaId) ?? AREAS[0];
   const initials = (session?.user?.email?.[0] ?? "L").toUpperCase();
 
@@ -2599,8 +2610,12 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
     { id: "home", label: "Home", icon: "M4 11 L12 4 L20 11 M6 9.5 V20 H18 V9.5" },
     { id: "records", label: "All records", icon: "M4 4 h16 v16 H4 Z M4 9 H20", count: vault.items.length },
     { id: "money", label: "Balance sheet", icon: "M3 18 L9 11 L13 15 L21 6 M21 6 H16 M21 6 V11", locked: !canUseBalanceSheet },
-    { id: "release", label: "Circle of trust", icon: "M12 3 L20 6 V12 C 20 17 16 20 12 21 C 8 20 4 17 4 12 V6 Z M9 12 l2 2 l4 -4", locked: !canUseRelease }
+    { id: "release", label: "Circle of trust", icon: "M12 3 L20 6 V12 C 20 17 16 20 12 21 C 8 20 4 17 4 12 V6 Z M9 12 l2 2 l4 -4", locked: !canUseRelease },
+    ...(DIGITAL_LEGACY_FEATURE_FLAGS.dashboard
+      ? [{ id: "legacy", label: "My Legacy", icon: "M12 3 L4 7 V12 C4 17 7.5 20.5 12 22 C16.5 20.5 20 17 20 12 V7 Z" }]
+      : [])
   ];
+  function isRailActive(id) { return screen === id || (id === "legacy" && (screen === "legacy-category" || screen === "legacy-record")); }
 
   return (
     <main className="min-h-screen bg-[var(--bg)] text-[var(--ink)]">
@@ -2628,7 +2643,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
           </button>
           {!railCollapsed && <div className="px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">Workspace</div>}
           <div className="mt-1.5 space-y-0.5">
-            {railWorkspace.map((n) => <RailItem key={n.id} collapsed={railCollapsed} active={screen === n.id} onClick={() => setScreen(n.id)} icon={n.icon} label={n.label} count={n.count} locked={n.locked} dataTour={n.id === "release" ? "trust" : undefined} pulse={hint(n.id)} />)}
+            {railWorkspace.map((n) => <RailItem key={n.id} collapsed={railCollapsed} active={isRailActive(n.id)} onClick={() => setScreen(n.id)} icon={n.icon} label={n.label} count={n.count} locked={n.locked} dataTour={n.id === "release" ? "trust" : undefined} pulse={hint(n.id)} />)}
           </div>
           {!railCollapsed && <div className="mt-6 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">Life areas</div>}
           <div className="mt-1.5 space-y-0.5">
@@ -2646,7 +2661,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
           {/* Mobile nav — must include Add a record + Settings (no rail on phones) */}
           <div className="mb-5 flex gap-2 overflow-x-auto pb-1 lg:hidden">
             {railWorkspace.map((n) => (
-              <button key={n.id} onClick={() => setScreen(n.id)} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", screen === n.id ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]", n.locked && screen !== n.id && "opacity-60", hint(n.id) && "tour-pulse")}>{n.label}{n.locked ? " · Locked" : ""}</button>
+              <button key={n.id} onClick={() => setScreen(n.id)} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", isRailActive(n.id) ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]", n.locked && !isRailActive(n.id) && "opacity-60", hint(n.id) && "tour-pulse")}>{n.label}{n.locked ? " · Locked" : ""}</button>
             ))}
             <button onClick={() => setScreen("capture")} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", screen === "capture" ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]", hint("capture") && "tour-pulse")}>+ Add</button>
             <button onClick={() => setScreen("settings")} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", screen === "settings" ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]")}>Settings</button>
@@ -2682,6 +2697,9 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
               {screen === "update"  && <UpdateScreen vault={vault} onSave={onSave} onNavigate={setScreen} />}
               {screen === "capture" && <CaptureScreen vault={vault} onSave={onSave} entitlements={entitlements} onNavigate={(s) => setScreen(s === "life" ? "home" : s)} />}
               {screen === "release" && (canUseRelease ? <ReleaseScreen vault={vault} onSave={onSave} session={session} vaultKey={vaultKey} entitlements={entitlements} autoPreview={releaseAutoPreview} /> : <PaidFeatureLock feature="Circle of Trust" body="The nominee release service is a paid feature because it needs verified key holders, invite email delivery, owner-protection holds, and release alerts." onOpenSettings={() => setScreen("settings")} />)}
+              {screen === "legacy"          && DIGITAL_LEGACY_FEATURE_FLAGS.dashboard && <MyLegacyScreen onOpenCategory={openLegacyCategory} onOpenRecord={openLegacyRecord} />}
+              {screen === "legacy-category" && DIGITAL_LEGACY_FEATURE_FLAGS.dashboard && <LegacyCategoryScreen categoryId={legacyCategoryId} onOpenRecord={openLegacyRecord} onBack={() => setScreen("legacy")} />}
+              {screen === "legacy-record"   && DIGITAL_LEGACY_FEATURE_FLAGS.dashboard && <LegacyRecordScreen recordId={legacyRecordId} onBack={() => setScreen(legacyCategoryId ? "legacy-category" : "legacy")} />}
               {screen === "area"    && <CategoryWorkspace vault={vault} area={selectedArea} initialRecordId={pendingRecordId} onSave={onSave} onCapture={() => setScreen("capture")} onClose={() => setScreen("home")} entitlements={entitlements} onOpenSettings={() => setScreen("settings")} />}
             {screen === "settings" && <SettingsPage vault={vault} onExport={onExport} onReset={onReset} onLoadDemo={loadDemoData} session={session} onShowAuthScreen={onShowAuthScreen} onSignOut={onSignOut} subscription={subscription} entitlements={entitlements} onSubscriptionChange={onSubscriptionChange} autoLockMs={autoLockMs} onAutoLockChange={onAutoLockChange} />}
 

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@os-one/crypto": "0.1.0",
+    "@os-one/digital-legacy": "0.1.0",
     "@os-one/vault-model": "0.1.0",
     "@scure/bip39": "^2.2.0",
     "@supabase/supabase-js": "^2.106.2",
