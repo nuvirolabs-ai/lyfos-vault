@@ -75,3 +75,9 @@ verify_jwt = false
 
 [functions.send-recovery-notifications]
 verify_jwt = true
+
+# Razorpay calls this directly with its own x-razorpay-signature header,
+# not a Supabase JWT — the platform's JWT gate must be off or every real
+# webhook delivery gets rejected with 401 before our own HMAC check runs.
+[functions.razorpay-webhook]
+verify_jwt = false
