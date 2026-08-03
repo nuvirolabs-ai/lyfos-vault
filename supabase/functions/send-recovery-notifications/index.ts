@@ -76,7 +76,7 @@ async function sendForRequest(admin: ReturnType<typeof createClient>, requestId:
     .eq("id", requestId)
     .maybeSingle();
   if (recoveryError) return { sent: 0, failed: 1, error: recoveryError.message };
-  if (!recovery?.recipient_holder_id || !["collecting_support", "holding", "ready_to_recover"].includes(recovery.state)) {
+  if (!recovery?.recipient_holder_id || !["collecting_support", "holding", "ready_to_recover", "opened"].includes(recovery.state)) {
     return { sent: 0, failed: 0, error: "recipient-gated recovery is not approved" };
   }
 
@@ -93,11 +93,16 @@ async function sendForRequest(admin: ReturnType<typeof createClient>, requestId:
   const errors: string[] = [];
   for (const delivery of deliveries ?? []) {
     const isOwner = delivery.purpose === "owner_alert";
-    const actionUrl = isOwner ? `${appOrigin}/release/abort` : `${appOrigin}/hold-release`;
-    const subject = isOwner ? "A recovery request for your Lyfos vault was approved" : "Your key is needed for a Lyfos recovery";
-    const intro = isOwner
-      ? `A recovery request from ${recovery.nominee_email_at_request} passed evidence review. Two nominees are now being asked for supporting keys. If this is unexpected, abort immediately.`
-      : `A reviewed recovery request needs your independent support. Sign in to your own Lyfos account, inspect the request, and release only your key if you trust it.`;
+    const vaultWasOpened = isOwner && recovery.state === "opened";
+    const actionUrl = vaultWasOpened ? `${appOrigin}/` : isOwner ? `${appOrigin}/release/abort` : `${appOrigin}/hold-release`;
+    const subject = vaultWasOpened
+      ? "Your Lyfos vault was opened by a nominee"
+      : isOwner ? "A recovery request for your Lyfos vault was started" : "Your key is needed for a Lyfos recovery";
+    const intro = vaultWasOpened
+      ? `${recovery.nominee_email_at_request} just opened your vault read-only through the Circle of Trust recovery process. If you did not expect this, contact support immediately.`
+      : isOwner
+      ? `A recovery request from ${recovery.nominee_email_at_request} was started. Two other nominees are now being asked for supporting keys. If this is unexpected, abort immediately.`
+      : `A recovery request needs your independent support. Sign in to your own Lyfos account, inspect the request, and release only your key if you trust it.`;
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -110,7 +115,7 @@ async function sendForRequest(admin: ReturnType<typeof createClient>, requestId:
         to: delivery.recipient_email,
         subject,
         text: `${subject}\n\n${intro}\n\nContinue securely: ${actionUrl}\n\n— Lyfos`,
-        html: emailHtml({ subject, intro, actionUrl, actionLabel: isOwner ? "Review or abort" : "Review request" }),
+        html: emailHtml({ subject, intro, actionUrl, actionLabel: vaultWasOpened ? "Open Lyfos" : isOwner ? "Review or abort" : "Review request" }),
         tags: [{ name: "delivery_id", value: delivery.id }]
       })
     });

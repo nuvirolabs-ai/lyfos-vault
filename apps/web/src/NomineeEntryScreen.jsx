@@ -6,8 +6,7 @@ import {
   fetchMyReleaseRequests,
   getEntrustedInstructions,
   getRecipientRecoveryProgressDetailed,
-  listEntrustedVaults,
-  uploadDeathCertificate
+  listEntrustedVaults
 } from "./lib/releaseClaim.js";
 import { deriveHolderKeypairFromPassphrase, openSealedShare } from "./lib/shareCrypto.js";
 
@@ -125,21 +124,19 @@ function RecoveryGuide() {
     <section className="mt-8 rounded-2xl border border-black/8 bg-white p-5">
       <p className="text-[12px] font-semibold">Before you begin</p>
       <ol className="mt-3 grid gap-2 text-[12px] leading-5 text-[#6e6e73] md:grid-cols-2">
-        <li className="rounded-xl bg-[#f5f5f7] px-3 py-2.5"><strong className="text-[#1d1d1f]">1. Gather proof.</strong> Use an official death or incapacity document.</li>
-        <li className="rounded-xl bg-[#f5f5f7] px-3 py-2.5"><strong className="text-[#1d1d1f]">2. Submit once.</strong> Lyfos reviews it before anyone is asked for a key.</li>
-        <li className="rounded-xl bg-[#f5f5f7] px-3 py-2.5"><strong className="text-[#1d1d1f]">3. Two people help.</strong> Two other nominees must release their keys.</li>
-        <li className="rounded-xl bg-[#f5f5f7] px-3 py-2.5"><strong className="text-[#1d1d1f]">4. Wait 14 days.</strong> The owner is alerted and can stop the release.</li>
+        <li className="rounded-xl bg-[#f5f5f7] px-3 py-2.5"><strong className="text-[#1d1d1f]">1. Start recovery.</strong> Confirm your private recovery passphrase to begin.</li>
+        <li className="rounded-xl bg-[#f5f5f7] px-3 py-2.5"><strong className="text-[#1d1d1f]">2. Two people help.</strong> Two other nominees must independently release their keys, each on their own account.</li>
+        <li className="rounded-xl bg-[#f5f5f7] px-3 py-2.5"><strong className="text-[#1d1d1f]">3. Owner is notified.</strong> The owner gets an email the moment recovery starts, and again the moment the vault is opened.</li>
+        <li className="rounded-xl bg-[#f5f5f7] px-3 py-2.5"><strong className="text-[#1d1d1f]">4. Open read-only.</strong> Once two others have approved, type your recovery passphrase again to open the vault.</li>
       </ol>
-      <p className="mt-3 text-[11px] leading-5 text-[#86868b]">After the hold, type the recovery passphrase you created when accepting the invite. The entire vault opens read-only on this device.</p>
+      <p className="mt-3 text-[11px] leading-5 text-[#86868b]">Nobody — including you — can open the vault alone. It always takes you plus two other nominees, each using their own private passphrase.</p>
     </section>
   );
 }
 
 function EntrustedVaultCard({ vault, request, onChanged, holderUserId }) {
   const [open, setOpen] = useState(false);
-  const [summary, setSummary] = useState("");
   const [fallbackReason, setFallbackReason] = useState("");
-  const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [instructionPassphrase, setInstructionPassphrase] = useState("");
@@ -147,7 +144,7 @@ function EntrustedVaultCard({ vault, request, onChanged, holderUserId }) {
   const [unlockingInstructions, setUnlockingInstructions] = useState(false);
   const isBackup = vault.holder_role === "backup";
   const canRestart = ["rejected", "aborted", "expired"].includes(request?.state);
-  const canSubmit = personalInstructions !== null && summary.trim().length >= 20 && file && (!isBackup || fallbackReason.trim().length >= 10);
+  const canSubmit = personalInstructions !== null && (!isBackup || fallbackReason.trim().length >= 10);
   const status = useMemo(() => request ? request.state.replaceAll("_", " ") : "ready", [request]);
 
   async function reviewInstructions() {
@@ -179,13 +176,10 @@ function EntrustedVaultCard({ vault, request, onChanged, holderUserId }) {
     setBusy(true);
     setError("");
     try {
-      const evidencePath = await uploadDeathCertificate(file);
       await createRelationshipRecoveryRequest({
         holderId: vault.holder_id,
         requestKind: isBackup ? "backup" : "normal",
-        fallbackReason,
-        evidenceSummary: summary,
-        evidencePath
+        fallbackReason
       });
       setOpen(false);
       await onChanged();
@@ -225,7 +219,7 @@ function EntrustedVaultCard({ vault, request, onChanged, holderUserId }) {
           {personalInstructions === null ? (
             <div className="rounded-2xl bg-[#fff8eb] p-4 text-[#7a4b00]">
               <p className="text-[12px] font-semibold">First, read the owner's private instructions.</p>
-              <p className="mt-1 text-[11px] leading-5">This also confirms that your recovery passphrase matches before you submit evidence.</p>
+              <p className="mt-1 text-[11px] leading-5">This also confirms that your recovery passphrase matches before you start recovery.</p>
               <input type="password" autoComplete="current-password" value={instructionPassphrase} onChange={(event) => setInstructionPassphrase(event.target.value)} placeholder="Private recovery passphrase" className="mt-3 w-full rounded-xl border border-[#c88719]/25 bg-white px-3 py-2 text-[13px] outline-none focus:border-[#7a4b00]" />
               <button type="button" onClick={reviewInstructions} disabled={unlockingInstructions || instructionPassphrase.length < 12} className="mt-3 rounded-full bg-[#7a4b00] px-4 py-2 text-[11px] font-semibold text-white disabled:opacity-40">{unlockingInstructions ? "Opening…" : "Read private instructions"}</button>
             </div>
@@ -241,18 +235,10 @@ function EntrustedVaultCard({ vault, request, onChanged, holderUserId }) {
               <textarea value={fallbackReason} onChange={(event) => setFallbackReason(event.target.value)} rows={2} placeholder="Explain why backup recovery is necessary." className="mt-1.5 w-full rounded-xl border border-black/10 bg-[#fbfbfd] px-3 py-2 text-[13px] outline-none focus:border-[#1d1d1f]" />
             </label>
           )}
-          <label className="block">
-            <span className="text-[11px] font-medium">What happened</span>
-            <textarea value={summary} onChange={(event) => setSummary(event.target.value)} rows={3} placeholder="Briefly describe the death or incapacity and your relationship to the owner." className="mt-1.5 w-full rounded-xl border border-black/10 bg-[#fbfbfd] px-3 py-2 text-[13px] outline-none focus:border-[#1d1d1f]" />
-          </label>
-          <label className="block">
-            <span className="text-[11px] font-medium">Official evidence · PDF, JPG or PNG</span>
-            <input type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="mt-1.5 block w-full text-[12px] text-[#6e6e73]" />
-          </label>
           {error && <div className="rounded-xl bg-[#ff453a]/8 px-4 py-3 text-[12px] font-medium text-[#b42318]">{error}</div>}
           <div className="flex items-center justify-between">
             <button type="button" onClick={() => setOpen(false)} className="text-[12px] text-[#86868b]">Cancel</button>
-            <button type="submit" disabled={!canSubmit || busy} className="rounded-full bg-[#1d1d1f] px-5 py-2.5 text-[12px] font-semibold text-white disabled:opacity-40">{busy ? "Submitting…" : "Submit for review"}</button>
+            <button type="submit" disabled={!canSubmit || busy} className="rounded-full bg-[#1d1d1f] px-5 py-2.5 text-[12px] font-semibold text-white disabled:opacity-40">{busy ? "Starting…" : "Start recovery"}</button>
           </div>
         </form>
       )}

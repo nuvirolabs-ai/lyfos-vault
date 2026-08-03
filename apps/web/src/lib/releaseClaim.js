@@ -127,18 +127,14 @@ export async function getEntrustedInstructions(holderId) {
 export async function createRelationshipRecoveryRequest({
   holderId,
   requestKind,
-  fallbackReason,
-  evidenceSummary,
-  evidencePath
+  fallbackReason
 }) {
   if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
   const sb = getSupabase();
   const { data, error } = await sb.rpc("create_relationship_recovery_request", {
     p_holder_id: holderId,
     p_request_kind: requestKind,
-    p_fallback_reason: fallbackReason?.trim() || null,
-    p_evidence_summary: evidenceSummary?.trim() || null,
-    p_evidence_path: evidencePath || null
+    p_fallback_reason: fallbackReason?.trim() || null
   });
   if (error) throw error;
   return data;
