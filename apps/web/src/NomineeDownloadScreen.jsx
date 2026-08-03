@@ -14,6 +14,7 @@ import {
   sha256HexBytes
 } from "./lib/shareCrypto.js";
 import { decryptVaultWithRawKey } from "./lib/stage1Crypto.js";
+import { copyToClipboardWithAutoClear } from "./lib/clipboard.js";
 import {
   createRecoveredVaultViewModel,
   filterRecoveredItems,
@@ -323,7 +324,7 @@ function RecoveredRecord({ item }) {
 
   async function copyValue(key, value) {
     try {
-      await navigator.clipboard.writeText(String(value));
+      await copyToClipboardWithAutoClear(String(value));
       setCopied(key);
       window.setTimeout(() => setCopied((current) => current === key ? "" : current), 1500);
     } catch {

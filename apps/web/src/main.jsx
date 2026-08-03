@@ -26,6 +26,7 @@ import {
   saveDigitalLegacyPreMigrationBackup,
   saveStage1Record
 } from "./lib/stage1Store.js";
+import { copyToClipboardWithAutoClear } from "./lib/clipboard.js";
 import {
   createPendingAuditEvent,
   drainPendingAuditEvents,
@@ -1280,6 +1281,10 @@ function App() {
       session={session}
       onShowAuthScreen={() => setAuthPanelOpen(true)}
       onSignOut={async () => {
+        // Signing out of the account is separate from the vault's own
+        // lock state — without this, a decrypted vault stays live in
+        // this tab's memory even after the account session ends.
+        await lockVault("Signed out");
         await appendServerAuditEvent("sign_out", {}).catch(() => {});
         await signOut();
         setSession(null);
@@ -6715,7 +6720,7 @@ function RecoveryKeyPanel({ recoveryKey, recoveryConfirm, onGenerate, onConfirmC
 
   async function copy() {
     if (!recoveryKey) return;
-    try { await navigator.clipboard.writeText(recoveryKey); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* ignore */ }
+    try { await copyToClipboardWithAutoClear(recoveryKey); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* ignore */ }
   }
   function download() {
     if (!recoveryKey) return;

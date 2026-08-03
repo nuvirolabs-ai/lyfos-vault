@@ -8,16 +8,11 @@
     <meta name="theme-color" content="#f5f5f7" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <!-- Google Analytics (GA4) — product app. Vault tokens are stripped from the
-         recorded path so recovery/invite/claim secrets never reach analytics. -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-B6QDMDNL02"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      var p = location.pathname.replace(/\/(invite|claim|download|hold-release|release\/abort)\/.*/, '/$1');
-      gtag('config', 'G-B6QDMDNL02', { page_path: p, anonymize_ip: true });
-    </script>
+    <!-- No third-party analytics on this origin — this is the unlocked
+         vault. Marketing/product analytics belong on the marketing site,
+         a separate origin (see docs/LYFOS_DIGITAL_LEGACY_ASSESSMENT.md
+         DL-04). apps/web/src/lib/telemetry.js remains for an eventual
+         allowlisted, env-gated wrapper if usage analytics are needed here. -->
   </head>
   <body data-theme="light">
     <div id="root"></div>

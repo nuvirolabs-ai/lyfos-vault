@@ -125,15 +125,14 @@ export function makeReleaseProcessKeypair(): KeyPair { return makeBoxKeyPair(); 
 // Utilities
 // ============================================================
 export function randomBytes(n: number): Uint8Array {
-  // expo-crypto's getRandomBytes is sync via the polyfill we install at
-  // app entry (react-native-get-random-values). globalThis.crypto.getRandomValues
-  // works after that.
+  // react-native-get-random-values polyfills globalThis.crypto.getRandomValues
+  // at app entry. If that polyfill didn't load, fail closed instead of
+  // silently degrading to Math.random() (not a CSPRNG) — a key derived
+  // from weak randomness is worse than a crashed screen.
   const out = new Uint8Array(n);
   const g = (globalThis as any).crypto;
   if (g?.getRandomValues) { g.getRandomValues(out); return out; }
-  // Last resort — should never happen if entry polyfill loaded
-  for (let i = 0; i < n; i++) out[i] = Math.floor(Math.random() * 256);
-  return out;
+  throw new Error("Secure random number generator unavailable — cannot safely generate cryptographic material.");
 }
 
 export function utf8(s: string): Uint8Array {

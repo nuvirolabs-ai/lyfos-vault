@@ -21,6 +21,11 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  // Never cache cross-origin requests — Supabase auth/data calls live on
+  // a different origin and must never be written to Cache Storage. Let
+  // the browser handle them natively; only same-origin static assets and
+  // the app shell go through the caching logic below.
+  if (new URL(event.request.url).origin !== self.location.origin) return;
   // Network-first for HTML to make sure people pick up the new index.html
   // (which points at the new hashed asset filenames) ASAP. Cache-first would
   // strand returning visitors on the old version until they hard-refresh.
