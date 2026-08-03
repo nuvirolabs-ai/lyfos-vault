@@ -1,10 +1,12 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { RELEASE_POLICY } from "@os-one/vault-model";
+import { migrateLegacyVault } from "@os-one/digital-legacy";
 import { DIGITAL_LEGACY_FEATURE_FLAGS } from "./legacy/featureFlags.js";
 import MyLegacyScreen from "./legacy/MyLegacyScreen.jsx";
 import LegacyCategoryScreen from "./legacy/LegacyCategoryScreen.jsx";
 import LegacyRecordScreen from "./legacy/LegacyRecordScreen.jsx";
+import LegacyRecordForm from "./legacy/LegacyRecordForm.jsx";
 import {
   createStage1VaultRecord,
   decryptVaultWithPassphrase,
@@ -21,6 +23,7 @@ import {
   loadBackupHealth,
   loadStage1Record,
   saveBackupHealth,
+  saveDigitalLegacyPreMigrationBackup,
   saveStage1Record
 } from "./lib/stage1Store.js";
 import {
@@ -1359,6 +1362,18 @@ function App() {
         setNotice("Recovery key replaced. Export and verify a fresh backup so this change is recoverable.");
         return { ...replacement, record: nextRecord };
       }}
+      onDigitalLegacyMigrate={async () => {
+        // One-time, idempotent: migrateLegacyVault only reads vault.items,
+        // it never deletes or rewrites them. The pre-migration snapshot is
+        // the "verified encrypted backup" gate from
+        // docs/LEGACY_RECORD_MIGRATION.md — a safety net, not user-facing.
+        if (vault.digitalLegacy) return vault;
+        saveDigitalLegacyPreMigrationBackup(localStorage, storedRecord);
+        const { vault: migratedVault } = migrateLegacyVault(vault);
+        const auditedVault = appendAuditEvent(migratedVault, "Digital Legacy set up");
+        await saveVault(auditedVault, "digital_legacy_migrated");
+        return auditedVault;
+      }}
       onReset={resetVaultForTesting}
     />
   );
@@ -2531,7 +2546,7 @@ function OnboardingTour({ steps, onDone }) {
   );
 }
 
-function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange, onSave, onLock, backupHealth, backupSizeWarning, onExport, onReplaceRecoveryKey, onReset, session, onShowAuthScreen, onSignOut, subscription, entitlements, onSubscriptionChange }) {
+function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange, onSave, onLock, backupHealth, backupSizeWarning, onExport, onReplaceRecoveryKey, onDigitalLegacyMigrate, onReset, session, onShowAuthScreen, onSignOut, subscription, entitlements, onSubscriptionChange }) {
   const [screen, setScreen] = useState("home");
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -2552,12 +2567,36 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
   function openArea(id) { setPendingRecordId(null); setAreaId(id); setScreen("area"); }
   function openRecord(item) { const a = getAreaForType(item.type); setAreaId(a.id); setPendingRecordId(item.id); setScreen("area"); }
 
-  // Digital Legacy Phase 3 — read-only prototype, sample data only.
-  // See docs/LYFOS_DIGITAL_LEGACY_ASSESSMENT.md.
+  // Digital Legacy. Phase 3 shipped read-only sample data; Phase 4A
+  // (see docs/LYFOS_DIGITAL_LEGACY_ASSESSMENT.md) connects real
+  // non-secret create/edit to the actual encrypted vault.
   const [legacyCategoryId, setLegacyCategoryId] = useState(null);
   const [legacyRecordId, setLegacyRecordId] = useState(null);
+  const [legacyEditRecordId, setLegacyEditRecordId] = useState(null);
   function openLegacyCategory(id) { setLegacyCategoryId(id); setScreen("legacy-category"); }
   function openLegacyRecord(id) { setLegacyRecordId(id); setScreen("legacy-record"); }
+  function openLegacyRecordNew(categoryId) { setLegacyCategoryId(categoryId); setLegacyEditRecordId(null); setScreen("legacy-record-edit"); }
+  function openLegacyRecordEdit(id) { setLegacyEditRecordId(id); setScreen("legacy-record-edit"); }
+  async function markLegacyCategoryNotApplicable(categoryId) {
+    const now = new Date().toISOString();
+    const digitalLegacy = vault.digitalLegacy ?? { categoryReviews: [], customCategories: [], customServices: [], records: [] };
+    const nextReviews = [
+      ...digitalLegacy.categoryReviews.filter((r) => r.categoryId !== categoryId),
+      { categoryId, state: "not_applicable", reviewedAt: now }
+    ];
+    await onSave(appendAuditEvent({
+      ...vault,
+      digitalLegacy: { ...digitalLegacy, categoryReviews: nextReviews, updatedAt: now }
+    }, "Digital Legacy category marked not applicable"), "record_change");
+  }
+  // Migration runs once, lazily, the first time the owner opens My Legacy
+  // for real — never touches vault.items, see onDigitalLegacyMigrate above.
+  useEffect(() => {
+    if (!DIGITAL_LEGACY_FEATURE_FLAGS.dashboard) return;
+    if (screen !== "legacy" && screen !== "legacy-category" && screen !== "legacy-record" && screen !== "legacy-record-edit") return;
+    if (vault.digitalLegacy) return;
+    onDigitalLegacyMigrate?.();
+  }, [screen, vault.digitalLegacy]);
   const selectedArea = AREAS.find((a) => a.id === areaId) ?? AREAS[0];
   const initials = (session?.user?.email?.[0] ?? "L").toUpperCase();
 
@@ -2615,7 +2654,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
       ? [{ id: "legacy", label: "My Legacy", icon: "M12 3 L4 7 V12 C4 17 7.5 20.5 12 22 C16.5 20.5 20 17 20 12 V7 Z" }]
       : [])
   ];
-  function isRailActive(id) { return screen === id || (id === "legacy" && (screen === "legacy-category" || screen === "legacy-record")); }
+  function isRailActive(id) { return screen === id || (id === "legacy" && (screen === "legacy-category" || screen === "legacy-record" || screen === "legacy-record-edit")); }
 
   return (
     <main className="min-h-screen bg-[var(--bg)] text-[var(--ink)]">
@@ -2697,9 +2736,30 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
               {screen === "update"  && <UpdateScreen vault={vault} onSave={onSave} onNavigate={setScreen} />}
               {screen === "capture" && <CaptureScreen vault={vault} onSave={onSave} entitlements={entitlements} onNavigate={(s) => setScreen(s === "life" ? "home" : s)} />}
               {screen === "release" && (canUseRelease ? <ReleaseScreen vault={vault} onSave={onSave} session={session} vaultKey={vaultKey} entitlements={entitlements} autoPreview={releaseAutoPreview} /> : <PaidFeatureLock feature="Circle of Trust" body="The nominee release service is a paid feature because it needs verified key holders, invite email delivery, owner-protection holds, and release alerts." onOpenSettings={() => setScreen("settings")} />)}
-              {screen === "legacy"          && DIGITAL_LEGACY_FEATURE_FLAGS.dashboard && <MyLegacyScreen onOpenCategory={openLegacyCategory} onOpenRecord={openLegacyRecord} />}
-              {screen === "legacy-category" && DIGITAL_LEGACY_FEATURE_FLAGS.dashboard && <LegacyCategoryScreen categoryId={legacyCategoryId} onOpenRecord={openLegacyRecord} onBack={() => setScreen("legacy")} />}
-              {screen === "legacy-record"   && DIGITAL_LEGACY_FEATURE_FLAGS.dashboard && <LegacyRecordScreen recordId={legacyRecordId} onBack={() => setScreen(legacyCategoryId ? "legacy-category" : "legacy")} />}
+              {(screen === "legacy" || screen === "legacy-category" || screen === "legacy-record" || screen === "legacy-record-edit")
+                && DIGITAL_LEGACY_FEATURE_FLAGS.dashboard && !vault.digitalLegacy && (
+                <div className="py-16 text-center text-[13px] text-[var(--ink-3)]">Setting up My Legacy…</div>
+              )}
+              {screen === "legacy" && DIGITAL_LEGACY_FEATURE_FLAGS.dashboard && vault.digitalLegacy && (
+                <MyLegacyScreen digitalLegacy={vault.digitalLegacy} onOpenCategory={openLegacyCategory} onOpenRecord={openLegacyRecord} onMarkNotApplicable={markLegacyCategoryNotApplicable} />
+              )}
+              {screen === "legacy-category" && DIGITAL_LEGACY_FEATURE_FLAGS.dashboard && vault.digitalLegacy && (
+                <LegacyCategoryScreen digitalLegacy={vault.digitalLegacy} categoryId={legacyCategoryId} onOpenRecord={openLegacyRecord} onAddRecord={openLegacyRecordNew} onBack={() => setScreen("legacy")} />
+              )}
+              {screen === "legacy-record" && DIGITAL_LEGACY_FEATURE_FLAGS.dashboard && vault.digitalLegacy && (
+                <LegacyRecordScreen digitalLegacy={vault.digitalLegacy} vault={vault} onSave={onSave} recordId={legacyRecordId} onBack={() => setScreen(legacyCategoryId ? "legacy-category" : "legacy")} onEdit={openLegacyRecordEdit} />
+              )}
+              {screen === "legacy-record-edit" && DIGITAL_LEGACY_FEATURE_FLAGS.dashboard && DIGITAL_LEGACY_FEATURE_FLAGS.serviceCatalogue && vault.digitalLegacy && (
+                <LegacyRecordForm
+                  digitalLegacy={vault.digitalLegacy}
+                  vault={vault}
+                  onSave={onSave}
+                  categoryId={legacyCategoryId}
+                  recordId={legacyEditRecordId}
+                  onDone={(id) => { setLegacyRecordId(id); setScreen("legacy-record"); }}
+                  onCancel={() => setScreen(legacyEditRecordId ? "legacy-record" : "legacy-category")}
+                />
+              )}
               {screen === "area"    && <CategoryWorkspace vault={vault} area={selectedArea} initialRecordId={pendingRecordId} onSave={onSave} onCapture={() => setScreen("capture")} onClose={() => setScreen("home")} entitlements={entitlements} onOpenSettings={() => setScreen("settings")} />}
             {screen === "settings" && <SettingsPage vault={vault} onExport={onExport} onReset={onReset} onLoadDemo={loadDemoData} session={session} onShowAuthScreen={onShowAuthScreen} onSignOut={onSignOut} subscription={subscription} entitlements={entitlements} onSubscriptionChange={onSubscriptionChange} autoLockMs={autoLockMs} onAutoLockChange={onAutoLockChange} />}
 

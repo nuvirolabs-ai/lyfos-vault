@@ -5,6 +5,7 @@ import { normalizeImportedBackup } from "./stage2BackupManifest.js";
 export const STAGE1_STORAGE_KEY = "os-one.stage1.local-vault.v2";
 export const LEGACY_STORAGE_KEY = "os-one.local-vault.v1";
 export const BACKUP_HEALTH_STORAGE_KEY = "os-one.stage2.backup-health.v1";
+export const DIGITAL_LEGACY_MIGRATION_BACKUP_KEY = "os-one.digital-legacy.pre-migration-backup.v1";
 
 export function loadStage1Record(storage = globalThis.localStorage) {
   try {
@@ -24,6 +25,26 @@ export function clearStage1Record(storage = globalThis.localStorage) {
   storage.removeItem(STAGE1_STORAGE_KEY);
   storage.removeItem(LEGACY_STORAGE_KEY);
   storage.removeItem(BACKUP_HEALTH_STORAGE_KEY);
+  storage.removeItem(DIGITAL_LEGACY_MIGRATION_BACKUP_KEY);
+}
+
+// A one-time safety snapshot taken immediately before vault.digitalLegacy
+// is introduced (see docs/LEGACY_RECORD_MIGRATION.md's "verified encrypted
+// pre-migration backup" gate). Same encrypted-record shape as the main
+// Stage 1 record, just under its own key so it survives independently of
+// whatever the migration writes next.
+export function saveDigitalLegacyPreMigrationBackup(storage = globalThis.localStorage, record) {
+  storage.setItem(DIGITAL_LEGACY_MIGRATION_BACKUP_KEY, JSON.stringify(record));
+  return record;
+}
+
+export function loadDigitalLegacyPreMigrationBackup(storage = globalThis.localStorage) {
+  try {
+    const raw = storage.getItem(DIGITAL_LEGACY_MIGRATION_BACKUP_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
 }
 
 export function loadBackupHealth(storage = globalThis.localStorage) {

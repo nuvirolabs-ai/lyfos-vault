@@ -1,19 +1,9 @@
 import { useMemo, useState } from "react";
 import { getCategory, listServices, searchLegacyRecords } from "@os-one/digital-legacy";
-import { getSampleDigitalLegacy } from "./sampleLegacyData.js";
+import { DIGITAL_LEGACY_FEATURE_FLAGS } from "./featureFlags.js";
+import { STATUS_LABELS } from "./labels.js";
 import ServiceIcon from "./components/ServiceIcon.jsx";
 import LegacyEmptyState from "./components/LegacyEmptyState.jsx";
-
-const STATUS_LABELS = {
-  started: "Started",
-  protected: "Protected",
-  incomplete: "Incomplete",
-  needs_review: "Review due",
-  action_required: "Needs attention",
-  scheduled_for_release: "Scheduled for release",
-  released: "Released",
-  archived: "Archived"
-};
 
 const STATUS_TONE = {
   protected: "text-[var(--green-ink)]",
@@ -26,13 +16,12 @@ const STATUS_TONE = {
   archived: "text-[var(--ink-4)]"
 };
 
-export default function LegacyCategoryScreen({ categoryId, onOpenRecord, onBack }) {
-  const digitalLegacy = useMemo(() => getSampleDigitalLegacy(), []);
+export default function LegacyCategoryScreen({ digitalLegacy, categoryId, onOpenRecord, onAddRecord, onBack }) {
   const category = getCategory(categoryId);
   const [query, setQuery] = useState("");
 
   const categoryRecords = useMemo(
-    () => digitalLegacy.records.filter((r) => r.categoryId === categoryId),
+    () => digitalLegacy.records.filter((r) => r.categoryId === categoryId && r.status !== "archived"),
     [digitalLegacy, categoryId]
   );
   // Metadata-only search — never touches field values (search.js).
@@ -45,12 +34,22 @@ export default function LegacyCategoryScreen({ categoryId, onOpenRecord, onBack 
     <div className="space-y-6">
       <button onClick={onBack} className="text-[12px] font-medium text-[var(--ink-3)] hover:text-[var(--ink)]">‹ My Legacy</button>
 
-      <header className="flex items-center gap-4">
-        <ServiceIcon iconKey={category.iconKey} size="lg" />
-        <div className="min-w-0">
-          <h1 className="text-[24px] font-semibold tracking-tight text-[var(--ink)]">{category.name}</h1>
-          <p className="mt-1 text-[13px] text-[var(--ink-3)]">{category.description}</p>
+      <header className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <ServiceIcon iconKey={category.iconKey} size="lg" />
+          <div className="min-w-0">
+            <h1 className="text-[24px] font-semibold tracking-tight text-[var(--ink)]">{category.name}</h1>
+            <p className="mt-1 text-[13px] text-[var(--ink-3)]">{category.description}</p>
+          </div>
         </div>
+        {DIGITAL_LEGACY_FEATURE_FLAGS.serviceCatalogue && (
+          <button
+            onClick={() => onAddRecord(categoryId)}
+            className="rounded-full bg-[#1d1d1f] px-4 py-2 text-[12px] font-semibold text-white"
+          >
+            + Add record
+          </button>
+        )}
       </header>
 
       <input

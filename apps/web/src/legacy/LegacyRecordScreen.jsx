@@ -1,33 +1,9 @@
-import { useMemo } from "react";
-import { FIELD_TEMPLATES, getCategory, getFreshnessState, getService } from "@os-one/digital-legacy";
-import { getSampleDigitalLegacy } from "./sampleLegacyData.js";
+import { FIELD_TEMPLATES, deriveRecordStatus, getCategory, getFreshnessState, getService } from "@os-one/digital-legacy";
+import { appendAuditEvent } from "../lib/stage1Audit.js";
+import { DIGITAL_LEGACY_FEATURE_FLAGS } from "./featureFlags.js";
+import { AUDIENCE_LABELS, LEGACY_ACTION_LABELS, RECIPIENT_LABELS } from "./labels.js";
 import ServiceIcon from "./components/ServiceIcon.jsx";
 import LegacyEmptyState from "./components/LegacyEmptyState.jsx";
-
-const LEGACY_ACTION_LABELS = {
-  transfer: "Transfer this to the right person.",
-  memorialise: "Memorialise this account rather than deleting it.",
-  close: "Close this account.",
-  delete: "Delete this account and its data.",
-  archive: "Archive this — keep it, but stop using it.",
-  contact_provider: "Contact the provider directly.",
-  release_information: "Share the information needed, nothing more.",
-  custom: "See the note below."
-};
-
-const AUDIENCE_LABELS = {
-  owner_only: "Private — visible only to you",
-  existence_only: "Nominees would see this exists, not its details",
-  instructions_only: "Nominees would see your instructions, not stored values",
-  full_record: "Full record would be included in a release"
-};
-
-const RECIPIENT_LABELS = {
-  primary: "Primary nominee",
-  backup_fallback: "Backup nominee (fallback only)",
-  all_authorized: "All authorized nominees",
-  selected: "Selected nominees"
-};
 
 const FRESHNESS_LABELS = {
   current: "Reviewed recently.",
@@ -36,8 +12,7 @@ const FRESHNESS_LABELS = {
   potentially_outdated: "Hasn't been reviewed — details may be outdated."
 };
 
-export default function LegacyRecordScreen({ recordId, onBack }) {
-  const digitalLegacy = useMemo(() => getSampleDigitalLegacy(), []);
+export default function LegacyRecordScreen({ digitalLegacy, vault, onSave, recordId, onBack, onEdit }) {
   const record = digitalLegacy.records.find((r) => r.id === recordId);
 
   if (!record) {
@@ -52,10 +27,37 @@ export default function LegacyRecordScreen({ recordId, onBack }) {
   const category = getCategory(record.categoryId);
   const service = record.serviceTemplateId ? getService(record.serviceTemplateId) : null;
   const freshness = getFreshnessState(record.review?.lastReviewedAt);
+  const canEdit = DIGITAL_LEGACY_FEATURE_FLAGS.serviceCatalogue;
+
+  async function handleArchive() {
+    const label = record.accountLabel || service?.name || category?.name || "this record";
+    if (!window.confirm(`Archive "${label}"? It stays in your vault but leaves the active list.`)) return;
+    const now = new Date().toISOString();
+    const archivedRecord = { ...record, archivedAt: now, updatedAt: now };
+    archivedRecord.status = deriveRecordStatus(archivedRecord, { now });
+    const nextVault = {
+      ...vault,
+      digitalLegacy: {
+        ...digitalLegacy,
+        records: digitalLegacy.records.map((r) => (r.id === record.id ? archivedRecord : r)),
+        updatedAt: now
+      }
+    };
+    await onSave(appendAuditEvent(nextVault, "Digital Legacy record archived"), "record_change");
+    onBack();
+  }
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <button onClick={onBack} className="text-[12px] font-medium text-[var(--ink-3)] hover:text-[var(--ink)]">‹ Back</button>
+      <div className="flex items-center justify-between">
+        <button onClick={onBack} className="text-[12px] font-medium text-[var(--ink-3)] hover:text-[var(--ink)]">‹ Back</button>
+        {canEdit && record.status !== "archived" && (
+          <div className="flex items-center gap-3">
+            <button onClick={() => onEdit(record.id)} className="text-[12px] font-semibold text-[var(--green-ink)] hover:underline">Edit</button>
+            <button onClick={handleArchive} className="text-[12px] font-medium text-[var(--ink-3)] hover:text-[var(--red-2)]">Archive</button>
+          </div>
+        )}
+      </div>
 
       <header className="flex items-center gap-4">
         <ServiceIcon iconKey={service?.iconKey ?? category?.iconKey} size="lg" />
