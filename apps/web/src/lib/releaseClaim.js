@@ -167,6 +167,14 @@ export async function getRecipientRecoveryProgress(requestId) {
   return data ?? { approved: 0, refused: 0, waiting: 0, required: 2 };
 }
 
+export async function getRecipientRecoveryProgressDetailed(requestId) {
+  if (!isSupabaseConfigured()) return { recipient: null, supporters: [], required: 2 };
+  const sb = getSupabase();
+  const { data, error } = await sb.rpc("recipient_recovery_progress_detailed", { p_request_id: requestId });
+  if (error) throw error;
+  return data ?? { recipient: null, supporters: [], required: 2 };
+}
+
 export async function reportInvalidRecoverySupport(requestId, keyHolderId) {
   if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
   const sb = getSupabase();

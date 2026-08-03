@@ -7,6 +7,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 // @ts-ignore
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.106.2";
+import { corsPreflight, CORS_HEADERS } from "../_shared/cors.ts";
 
 // @ts-ignore
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -16,6 +17,8 @@ const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const STRIPE_KEY   = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 
 serve(async (req) => {
+  const preflight = corsPreflight(req);
+  if (preflight) return preflight;
   if (req.method !== "POST") return json({ ok: false, error: "method not allowed" }, 405);
   const auth = req.headers.get("Authorization") ?? "";
   if (!auth.startsWith("Bearer ")) return json({ ok: false, error: "missing bearer" }, 401);
@@ -55,5 +58,5 @@ serve(async (req) => {
 });
 
 function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...CORS_HEADERS } });
 }

@@ -1,5 +1,8 @@
-// AuthScreen — sign in / sign up / magic link. Apple-minimal, single
-// column, matches the Home aesthetic.
+// AuthScreen — single, simple flow: type your email and password and
+// press Continue. No separate sign-in/sign-up/magic-link tabs to
+// choose between first — we try to sign you in, and if there's no
+// matching account yet we offer to create one with the same details
+// you just typed. Apple-minimal, single column.
 //
 // This screen is only rendered when:
 //   - Supabase is configured (VITE_SUPABASE_URL set), AND
@@ -29,14 +32,15 @@ export function AuthScreen({
   lockedEmail = false,
   returnPath = "/"
 }) {
-  const [mode, setMode] = useState("signin"); // signin | signup | magic
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+  const [offerCreateAccount, setOfferCreateAccount] = useState(false);
   const [activationPending, setActivationPending] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [magicSent, setMagicSent] = useState(false);
 
   ensureDeviceToken(); // make sure we have a stable device id before any sign-in
 
@@ -50,26 +54,40 @@ export function AuthScreen({
     event.preventDefault();
     setError("");
     setInfo("");
+    setOfferCreateAccount(false);
     setBusy(true);
     try {
-      if (mode === "signin") {
-        const data = await signInWithPassword({ email: email.trim(), password });
-        if (data?.session) onSignedIn?.(data.session);
-      } else if (mode === "signup") {
-        if (password.length < MIN_PASSWORD) {
-          throw new Error(`Account password must be at least ${MIN_PASSWORD} characters. This is separate from your vault passphrase.`);
-        }
-        const data = await signUpWithPassword({ email: email.trim(), password, returnPath });
-        if (data?.session) {
-          onSignedIn?.(data.session);
-        } else {
-          setActivationPending(true);
-          setResendCooldown(60);
-          setInfo(`Check your email — we sent a confirmation link to ${email}. Click it to finish setting up your account.`);
-        }
-      } else if (mode === "magic") {
-        await signInWithMagicLink({ email: email.trim(), returnPath });
-        setInfo(`Sent a sign-in link to ${email}. Open it on this device to continue.`);
+      const data = await signInWithPassword({ email: email.trim(), password });
+      if (data?.session) onSignedIn?.(data.session);
+    } catch (err) {
+      if (isInvalidCredentials(err)) {
+        setOfferCreateAccount(true);
+        setInfo("We couldn't find a matching account. New here? Create one with the same email and password below.");
+      } else {
+        setError(humanizeAuthError(err));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createAccount() {
+    setError("");
+    setInfo("");
+    if (password.length < MIN_PASSWORD) {
+      setError(`Account password must be at least ${MIN_PASSWORD} characters. This is separate from your vault passphrase.`);
+      return;
+    }
+    setBusy(true);
+    try {
+      const data = await signUpWithPassword({ email: email.trim(), password, returnPath });
+      if (data?.session) {
+        onSignedIn?.(data.session);
+      } else {
+        setOfferCreateAccount(false);
+        setActivationPending(true);
+        setResendCooldown(60);
+        setInfo(`Check your email — we sent a confirmation link to ${email}. Click it to finish setting up your account.`);
       }
     } catch (err) {
       setError(humanizeAuthError(err));
@@ -96,6 +114,25 @@ export function AuthScreen({
     }
   }
 
+  async function sendMagicLink() {
+    setError("");
+    setInfo("");
+    if (!email.trim()) {
+      setError("Enter your email above first.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await signInWithMagicLink({ email: email.trim(), returnPath });
+      setMagicSent(true);
+      setInfo(`Sent a sign-in link to ${email}. Open it on this device to continue.`);
+    } catch (err) {
+      setError(humanizeAuthError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function resendActivation() {
     setError("");
     setBusy(true);
@@ -115,34 +152,11 @@ export function AuthScreen({
       <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 py-12">
         <header className="text-center">
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Lyfos</p>
-          <h1 className="mt-4 text-[36px] font-semibold leading-[1.1] tracking-tight md:text-[44px]">
-            {mode === "signup" ? "Create your account." : "Welcome back."}
-          </h1>
+          <h1 className="mt-4 text-[36px] font-semibold leading-[1.1] tracking-tight md:text-[44px]">Sign in or create your account.</h1>
           <p className="mx-auto mt-4 max-w-sm text-[14px] leading-6 text-[#6e6e73]">
-            {mode === "signup"
-              ? "Your account lets you open your vault on more than one device. Lyfos never sees your vault contents."
-              : "Sign in to sync your vault across devices. Your encrypted vault stays unreadable to Lyfos."}
+            One email, one password. Your account lets you open your vault on more than one device — Lyfos never sees your vault contents.
           </p>
         </header>
-
-        <div className="mt-10 flex justify-center">
-          <div className="inline-flex items-center gap-1 rounded-full border border-black/8 bg-white p-1 shadow-[0_2px_10px_rgba(0,0,0,0.03)]">
-            {[
-              ["signin", "Sign in"],
-              ["signup", "Sign up"],
-              ["magic",  "Magic link"]
-            ].map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => { setMode(id); setError(""); setInfo(""); }}
-                className={"rounded-full px-4 py-1.5 text-[12px] font-semibold transition " + (mode === id ? "bg-[#1d1d1f] text-white" : "text-[#6e6e73] hover:text-[#1d1d1f]")}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
 
         <form onSubmit={submit} className="mt-10 space-y-3">
           <label className="block">
@@ -153,43 +167,46 @@ export function AuthScreen({
               autoComplete="email"
               autoFocus
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => { setEmail(e.target.value); setOfferCreateAccount(false); }}
               disabled={lockedEmail}
               placeholder="you@example.com"
               className="mt-2 w-full rounded-xl border border-black/8 bg-white px-4 py-3 text-[15px] outline-none transition focus:border-[#1d1d1f] disabled:bg-[#f5f5f7] disabled:text-[#6e6e73]"
             />
           </label>
 
-          {mode !== "magic" && (
-            <label className="block">
-              <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">
-                {mode === "signup" ? `Account password (min ${MIN_PASSWORD} chars)` : "Account password"}
-              </span>
-              <input
-                type="password"
-                required
-                autoComplete={mode === "signup" ? "new-password" : "current-password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="mt-2 w-full rounded-xl border border-black/8 bg-white px-4 py-3 text-[15px] outline-none transition focus:border-[#1d1d1f]"
-              />
-            </label>
-          )}
+          <label className="block">
+            <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868b]">Password</span>
+            <input
+              type="password"
+              required
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => { setPassword(e.target.value); setOfferCreateAccount(false); }}
+              className="mt-2 w-full rounded-xl border border-black/8 bg-white px-4 py-3 text-[15px] outline-none transition focus:border-[#1d1d1f]"
+            />
+          </label>
 
           {error && <div className="rounded-xl bg-[#ff453a]/8 px-4 py-3 text-[13px] font-medium text-[#b42318]">{error}</div>}
           {info  && <div className="rounded-xl bg-[#34c759]/10 px-4 py-3 text-[13px] font-medium text-[#0b6b3a]">{info}</div>}
 
           <button
             type="submit"
-            disabled={busy || !email}
+            disabled={busy || !email || !password}
             className="mt-2 w-full rounded-full bg-[#1d1d1f] px-5 py-3 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {busy
-              ? "Working…"
-              : mode === "signin" ? "Sign in"
-              : mode === "signup" ? "Create account"
-              : "Email me a link"}
+            {busy ? "Working…" : "Continue"}
           </button>
+
+          {offerCreateAccount && (
+            <button
+              type="button"
+              onClick={createAccount}
+              disabled={busy}
+              className="w-full rounded-full border border-black/8 bg-white px-5 py-3 text-sm font-semibold text-[#1d1d1f] transition hover:bg-[#f5f5f7] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Create account with this email and password
+            </button>
+          )}
         </form>
 
         {activationPending && (
@@ -203,11 +220,15 @@ export function AuthScreen({
           </button>
         )}
 
-        {mode === "signin" && (
-          <button onClick={sendReset} disabled={busy} className="mt-4 text-center text-[12px] text-[#86868b] hover:text-[#1d1d1f]">
-            Forgot your password? · Send reset link
+        <div className="mt-5 flex items-center justify-center gap-4">
+          <button onClick={sendReset} disabled={busy} className="text-center text-[12px] text-[#86868b] hover:text-[#1d1d1f]">
+            Forgot password?
           </button>
-        )}
+          <span className="text-[12px] text-[#d2d2d7]">·</span>
+          <button onClick={sendMagicLink} disabled={busy || magicSent} className="text-center text-[12px] text-[#86868b] hover:text-[#1d1d1f] disabled:text-[#a1a1a6]">
+            {magicSent ? "Link sent" : "Email me a link instead"}
+          </button>
+        </div>
 
         {onContinueLocalOnly && (
           <div className="mt-12 border-t border-black/8 pt-6 text-center">
@@ -243,10 +264,15 @@ export function AuthScreen({
   );
 }
 
+function isInvalidCredentials(err) {
+  const raw = err?.message || String(err) || "";
+  return raw.includes("Invalid login credentials");
+}
+
 function humanizeAuthError(err) {
   const raw = err?.message || String(err) || "Something went wrong.";
   if (raw.includes("Invalid login credentials")) return "That email and password don't match an account.";
-  if (raw.includes("User already registered")) return "An account already exists for this email. Try signing in instead.";
+  if (raw.includes("User already registered")) return "An account already exists for this email. Enter the matching password above to sign in.";
   if (raw.toLowerCase().includes("rate limit")) return "Too many attempts. Wait a minute and try again.";
   if (raw.toLowerCase().includes("not configured")) return "Auth is not set up on this deployment. Use 'Continue without an account' for now.";
   return raw;

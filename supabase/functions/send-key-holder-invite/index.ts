@@ -15,11 +15,14 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 // @ts-ignore
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.106.2";
 import { buildExternalAppUrl } from "../_shared/public-app-url.ts";
+import { corsPreflight, CORS_HEADERS } from "../_shared/cors.ts";
 
 // @ts-ignore
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 // @ts-ignore
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// @ts-ignore
+const CRON_SHARED_SECRET = Deno.env.get("CRON_SHARED_SECRET") ?? "";
 // @ts-ignore
 const RESEND_KEY   = Deno.env.get("RESEND_API_KEY") ?? "";
 // @ts-ignore
@@ -28,6 +31,8 @@ const FROM_EMAIL   = Deno.env.get("FROM_EMAIL") ?? "Lyfos <hello@lyfos.in>";
 const APP_URL      = Deno.env.get("APP_URL") ?? "https://app.lyfos.in";
 
 serve(async (req) => {
+  const preflight = corsPreflight(req);
+  if (preflight) return preflight;
   if (req.method !== "POST") return json({ ok: false, error: "method not allowed" }, 405);
 
   const authHeader = req.headers.get("Authorization") ?? "";
@@ -38,7 +43,7 @@ serve(async (req) => {
     auth: { persistSession: false, autoRefreshToken: false }
   });
 
-  const isServiceDispatcher = jwt === SERVICE_KEY;
+  const isServiceDispatcher = Boolean(CRON_SHARED_SECRET) && jwt === CRON_SHARED_SECRET;
   let callerId: string | null = null;
   if (!isServiceDispatcher) {
     const { data: who, error: whoErr } = await admin.auth.getUser(jwt);
@@ -213,7 +218,7 @@ async function sha256(value: string): Promise<string> {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json" }
+    headers: { "content-type": "application/json", ...CORS_HEADERS }
   });
 }
 

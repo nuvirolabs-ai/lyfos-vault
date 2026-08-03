@@ -5,7 +5,7 @@ import {
   createRelationshipRecoveryRequest,
   fetchMyReleaseRequests,
   getEntrustedInstructions,
-  getRecipientRecoveryProgress,
+  getRecipientRecoveryProgressDetailed,
   listEntrustedVaults,
   uploadDeathCertificate
 } from "./lib/releaseClaim.js";
@@ -45,7 +45,7 @@ export function NomineeEntryScreen({ onReturnHome }) {
       const mine = nextRequests.filter((request) => request.nominee_user_id === session.user.id);
       const withProgress = await Promise.all(mine.map(async (request) => {
         if (request.state !== "collecting_support") return request;
-        const progress = await getRecipientRecoveryProgress(request.id);
+        const progress = await getRecipientRecoveryProgressDetailed(request.id);
         return { ...request, support_progress: progress };
       }));
       setRequests(withProgress);
@@ -211,11 +211,7 @@ function EntrustedVaultCard({ vault, request, onChanged, holderUserId }) {
         <div className="mt-5 rounded-2xl bg-[#f5f5f7] p-4">
           <p className="text-[13px] font-medium">{requestCopy(request)}</p>
           {request.state === "collecting_support" && request.support_progress && (
-            <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-              <ProgressCount label="Approved" value={request.support_progress.approved} />
-              <ProgressCount label="Refused" value={request.support_progress.refused} />
-              <ProgressCount label="Waiting" value={request.support_progress.waiting} />
-            </div>
+            <SupportRoster progress={request.support_progress} />
           )}
           {["ready_to_recover", "opened"].includes(request.state) && <a href="/download" className="mt-3 inline-block rounded-full bg-[#1d1d1f] px-5 py-2 text-[12px] font-semibold text-white">Open recovered vault</a>}
         </div>
@@ -264,8 +260,45 @@ function EntrustedVaultCard({ vault, request, onChanged, holderUserId }) {
   );
 }
 
-function ProgressCount({ label, value }) {
-  return <div className="rounded-xl bg-white px-2 py-2"><strong className="block text-[16px]">{value}</strong><span className="text-[10px] uppercase tracking-wider text-[#86868b]">{label}</span></div>;
+function SupportRoster({ progress }) {
+  const { recipient, supporters = [], required = 2 } = progress;
+  const approvedCount = supporters.filter((s) => s.status === "approved").length;
+  return (
+    <div className="mt-3">
+      {recipient && (
+        <div className="flex items-center justify-between rounded-xl bg-white px-3 py-2">
+          <span className="text-[13px] font-medium">You · {roleLabel(recipient.role)}</span>
+          <StatusBadge status="filed" />
+        </div>
+      )}
+      <p className="mt-2 text-[11px] text-[#86868b]">{approvedCount} of {required} needed have approved:</p>
+      <div className="mt-1.5 space-y-1.5">
+        {supporters.map((s, i) => (
+          <div key={`${s.label}-${i}`} className="flex items-center justify-between rounded-xl bg-white px-3 py-2">
+            <span className="text-[13px] font-medium">{s.label} · {roleLabel(s.role)}</span>
+            <StatusBadge status={s.status} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function roleLabel(role) {
+  if (role === "primary") return "Primary";
+  if (role === "backup") return "Backup";
+  return "Trusted";
+}
+
+function StatusBadge({ status }) {
+  const styles = {
+    filed: "bg-[#f5f5f7] text-[#6e6e73]",
+    approved: "bg-[#34c759]/12 text-[#0b6b3a]",
+    refused: "bg-[#ff453a]/10 text-[#b42318]",
+    waiting: "bg-[#f5f5f7] text-[#86868b]"
+  };
+  const text = { filed: "Filed", approved: "Approved", refused: "Refused", waiting: "Waiting" };
+  return <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider ${styles[status] || styles.waiting}`}>{text[status] || "Waiting"}</span>;
 }
 
 function requestCopy(request) {

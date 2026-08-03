@@ -1,32 +1,40 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.106.2";
 import { requireExternalAppUrl } from "../_shared/public-app-url.ts";
+import { corsPreflight, CORS_HEADERS } from "../_shared/cors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const CRON_SHARED_SECRET = Deno.env.get("CRON_SHARED_SECRET") ?? "";
 const RESEND_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 const FROM_EMAIL = Deno.env.get("FROM_EMAIL") ?? "Lyfos <hello@lyfos.in>";
 const APP_URL = Deno.env.get("APP_URL") ?? "https://app.lyfos.in";
 
+function json(body: unknown, status = 200) {
+  return Response.json(body, { status, headers: CORS_HEADERS });
+}
+
 serve(async (req) => {
-  if (req.method !== "POST") return Response.json({ error: "method not allowed" }, { status: 405 });
+  const preflight = corsPreflight(req);
+  if (preflight) return preflight;
+  if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
   const authHeader = req.headers.get("Authorization") ?? "";
-  if (!authHeader.startsWith("Bearer ")) return Response.json({ error: "missing bearer" }, { status: 401 });
-  if (!RESEND_KEY) return Response.json({ error: "email delivery is not configured" }, { status: 503 });
+  if (!authHeader.startsWith("Bearer ")) return json({ error: "missing bearer" }, 401);
+  if (!RESEND_KEY) return json({ error: "email delivery is not configured" }, 503);
 
   let appOrigin: string;
   try {
     appOrigin = requireExternalAppUrl(APP_URL);
   } catch {
-    return Response.json({ error: "APP_URL must be a public HTTPS URL" }, { status: 500 });
+    return json({ error: "APP_URL must be a public HTTPS URL" }, 500);
   }
 
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
   const jwt = authHeader.slice(7);
-  const isServiceDispatcher = jwt === SERVICE_KEY;
+  const isServiceDispatcher = Boolean(CRON_SHARED_SECRET) && jwt === CRON_SHARED_SECRET;
   if (!isServiceDispatcher) {
     const { data: caller } = await admin.auth.getUser(jwt);
-    if (caller.user?.app_metadata?.role !== "admin") return Response.json({ error: "not authorized" }, { status: 403 });
+    if (caller.user?.app_metadata?.role !== "admin") return json({ error: "not authorized" }, 403);
   }
 
   const body = await req.json().catch(() => ({}));
@@ -41,10 +49,10 @@ serve(async (req) => {
       .in("state", ["queued", "delayed", "failed"])
       .not("related_request_id", "is", null)
       .limit(250);
-    if (queuedError) return Response.json({ error: queuedError.message }, { status: 500 });
+    if (queuedError) return json({ error: queuedError.message }, 500);
     requestIds = [...new Set((queued ?? []).map((row) => row.related_request_id).filter(Boolean))];
   } else {
-    return Response.json({ error: "request_id required" }, { status: 400 });
+    return json({ error: "request_id required" }, 400);
   }
 
   let sent = 0;
@@ -57,7 +65,7 @@ serve(async (req) => {
     if (result.error) errors.push(`${requestId}: ${result.error}`);
   }
 
-  return Response.json({ ok: failed === 0 && errors.length === 0, sent, failed, requests: requestIds.length, errors });
+  return json({ ok: failed === 0 && errors.length === 0, sent, failed, requests: requestIds.length, errors });
 });
 
 async function sendForRequest(admin: ReturnType<typeof createClient>, requestId: string, appOrigin: string) {
