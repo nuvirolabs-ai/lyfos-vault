@@ -19,6 +19,16 @@ export function shouldLockForVisibility(visibilityState) {
   return visibilityState === "hidden";
 }
 
+// "Recently authenticated" — separate from "vault is unlocked". A tab can
+// stay unlocked for a whole session; sensitive actions (reveal, copy,
+// export, critical delete) should still ask for the passphrase again if
+// it's been a while, in case someone else is now at the keyboard.
+export const RECENT_AUTH_MS = 5 * 60 * 1000;
+
+export function isRecentlyAuthenticated(unlockedAt, now = Date.now(), thresholdMs = RECENT_AUTH_MS) {
+  return Boolean(unlockedAt) && (now - unlockedAt) < thresholdMs;
+}
+
 export function loadAutoLockPolicy(storage = globalThis.localStorage) {
   const raw = Number(storage.getItem(AUTO_LOCK_POLICY_KEY));
   return LOCK_TIMEOUT_OPTIONS.some((option) => option.ms === raw) ? raw : DEFAULT_AUTO_LOCK_MS;

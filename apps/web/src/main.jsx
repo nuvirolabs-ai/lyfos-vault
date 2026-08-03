@@ -32,6 +32,7 @@ import {
   drainPendingAuditEvents,
   formatLockReason,
   getAutoLockLabel,
+  isRecentlyAuthenticated,
   loadAutoLockPolicy,
   LOCK_TIMEOUT_OPTIONS,
   saveAutoLockPolicy,
@@ -915,6 +916,17 @@ function App() {
   const [authBypass, setAuthBypass] = useState(false);     // user chose "continue without account"
   const [authPanelOpen, setAuthPanelOpen] = useState(false); // user clicked "Sign in" from Settings while having a local vault
   const [subscription, setSubscription] = useState(null);
+  // Recent-auth gate: some actions (reveal, copy secrets, export, critical
+  // delete) require the passphrase to have been entered within the last
+  // few minutes, not just "vault is currently unlocked". `unlockedAt` is
+  // the timestamp of the last successful passphrase entry; `pendingReauth`
+  // holds the action waiting on a fresh reauth prompt, if any.
+  const [unlockedAt, setUnlockedAt] = useState(null);
+  const [pendingReauth, setPendingReauth] = useState(null);
+  function runWithRecentAuth(action) {
+    if (isRecentlyAuthenticated(unlockedAt)) { action(); return; }
+    setPendingReauth({ action });
+  }
   const entitlements = useMemo(() => entitlementsFor(subscription), [subscription]);
   const backupSizeWarning = useMemo(() => getBackupSizeWarning({
     encryptedPayloadBytes: storedRecord ? new TextEncoder().encode(JSON.stringify(storedRecord, null, 2)).byteLength : 0,
@@ -1087,6 +1099,8 @@ function App() {
     const currentRecord = storedRecordRef.current;
     setVaultKey(null);
     setVault(null);
+    setUnlockedAt(null);
+    setPendingReauth(null);
     setLockNotice(formatLockReason(lockReason));
     setNotice(formatLockReason(lockReason));
     if (currentVault && currentKey && currentRecord) {
@@ -1150,6 +1164,7 @@ function App() {
     setStoredRecord(record);
     setVaultKey(key);
     setVault(nextVault);
+    setUnlockedAt(Date.now());
     setLockNotice("");
     setNotice("Vault created and encrypted locally.");
   }
@@ -1189,6 +1204,7 @@ function App() {
     setStoredRecord(nextRecord);
     setVaultKey(key);
     setVault(auditedVault);
+    setUnlockedAt(Date.now());
     setLockNotice("");
     setNotice("");
   }
@@ -1250,6 +1266,7 @@ function App() {
           setStoredRecord(record);
           setVaultKey(key);
           setVault(nextVault);
+          setUnlockedAt(Date.now());
           updateBackupHealth(markBackupUnknownAfterRestore({ health: backupHealth }));
           setNotice("Encrypted backup restored after decrypt preview.");
         }}
@@ -1276,6 +1293,16 @@ function App() {
       }}
       onSave={saveVault}
       onLock={lockVault}
+      storedRecord={storedRecord}
+      pendingReauth={pendingReauth}
+      runWithRecentAuth={runWithRecentAuth}
+      onReauthConfirmed={() => {
+        setUnlockedAt(Date.now());
+        const action = pendingReauth?.action;
+        setPendingReauth(null);
+        action?.();
+      }}
+      onReauthCancel={() => setPendingReauth(null)}
       backupHealth={backupHealth}
       backupSizeWarning={backupSizeWarning}
       session={session}
@@ -1289,7 +1316,7 @@ function App() {
         await signOut();
         setSession(null);
       }}
-      onExport={async () => {
+      onExport={() => runWithRecentAuth(async () => {
         const exportedAt = new Date().toISOString();
         const exportPackage = prepareStage2BackupExport({
           encryptedVaultContainer: storedRecord,
@@ -1306,7 +1333,7 @@ function App() {
         setStoredRecord(nextRecord);
         setVault(auditedVault);
         setNotice("Encrypted backup downloaded. It can only be restored with the vault phrase or recovery key.");
-      }}
+      })}
       onReplaceRecoveryKey={async ({ newRecoveryKey, confirmation }) => {
         const replacement = await confirmRecoveryKeyReplacement({
           encryptedRecord: storedRecord,
@@ -1341,7 +1368,7 @@ function App() {
         await saveVault(auditedVault, "digital_legacy_migrated");
         return auditedVault;
       }}
-      onReset={resetVaultForTesting}
+      onReset={() => runWithRecentAuth(resetVaultForTesting)}
     />
   );
 }
@@ -2525,7 +2552,7 @@ function OnboardingTour({ steps, onDone }) {
   );
 }
 
-function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange, onSave, onLock, backupHealth, backupSizeWarning, onExport, onReplaceRecoveryKey, onDigitalLegacyMigrate, onReset, session, onShowAuthScreen, onSignOut, subscription, entitlements, onSubscriptionChange }) {
+function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange, onSave, onLock, backupHealth, backupSizeWarning, onExport, onReplaceRecoveryKey, onDigitalLegacyMigrate, onReset, session, onShowAuthScreen, onSignOut, subscription, entitlements, onSubscriptionChange, storedRecord, pendingReauth, runWithRecentAuth, onReauthConfirmed, onReauthCancel }) {
   const [screen, setScreen] = useState(() => (DIGITAL_LEGACY_FEATURE_FLAGS.dashboard ? "legacy" : "home"));
   // The screen that counts as "home" for cross-cutting UI (sync nudge,
   // wide layout, onboarding tour) — follows whichever screen is actually
@@ -2782,7 +2809,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
                   onCancel={() => setScreen(legacyEditRecordId ? "legacy-record" : "legacy-category")}
                 />
               )}
-              {screen === "area"    && <CategoryWorkspace vault={vault} area={selectedArea} initialRecordId={pendingRecordId} onSave={onSave} onCapture={() => setScreen("capture")} onClose={() => setScreen("home")} entitlements={entitlements} onOpenSettings={() => setScreen("settings")} />}
+              {screen === "area"    && <CategoryWorkspace vault={vault} area={selectedArea} initialRecordId={pendingRecordId} onSave={onSave} onCapture={() => setScreen("capture")} onClose={() => setScreen("home")} entitlements={entitlements} onOpenSettings={() => setScreen("settings")} runWithRecentAuth={runWithRecentAuth} />}
             {screen === "settings" && <SettingsPage vault={vault} onExport={onExport} onReset={onReset} onLoadDemo={loadDemoData} session={session} onShowAuthScreen={onShowAuthScreen} onSignOut={onSignOut} subscription={subscription} entitlements={entitlements} onSubscriptionChange={onSubscriptionChange} autoLockMs={autoLockMs} onAutoLockChange={onAutoLockChange} />}
 
               <footer className="mt-14 flex flex-wrap items-center justify-between gap-4 border-t border-[var(--line)] py-6 text-[11px] font-medium text-[var(--ink-4)]">
@@ -2802,7 +2829,52 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
       </div>
 
       {showTour && screen === primaryScreen && <OnboardingTour steps={TOUR_STEPS} onDone={finishTour} />}
+      {pendingReauth && <ReauthPrompt storedRecord={storedRecord} onConfirmed={onReauthConfirmed} onCancel={onReauthCancel} />}
     </main>
+  );
+}
+
+function ReauthPrompt({ storedRecord, onConfirmed, onCancel }) {
+  const [passphrase, setPassphrase] = useState("");
+  const [error, setError] = useState("");
+  const [checking, setChecking] = useState(false);
+
+  async function handleConfirm(e) {
+    e.preventDefault();
+    setError("");
+    setChecking(true);
+    try {
+      await decryptVaultWithPassphrase(storedRecord, passphrase);
+      onConfirmed();
+    } catch (err) {
+      setError(err?.message || "Could not verify your passphrase.");
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-4">
+      <form onSubmit={handleConfirm} className="w-full max-w-sm rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-[0_20px_54px_rgba(0,0,0,0.22)]">
+        <p className="text-[15px] font-semibold text-[var(--ink)]">Confirm it's you</p>
+        <p className="mt-1.5 text-[13px] leading-5 text-[var(--ink-3)]">This action needs a fresh check — re-enter your vault passphrase to continue.</p>
+        <input
+          type="password"
+          autoFocus
+          value={passphrase}
+          onChange={(e) => { setPassphrase(e.target.value); setError(""); }}
+          placeholder="Your passphrase"
+          className="mt-4 w-full rounded-lg border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--green)]"
+        />
+        {error && <p className="mt-2 text-[12px] font-medium text-[var(--red-2)]">{error}</p>}
+        <div className="mt-4 flex gap-2">
+          <button type="button" onClick={onCancel} className="flex-1 rounded-full border border-[var(--line-2)] px-4 py-2 text-[13px] font-semibold text-[var(--ink)]">Cancel</button>
+          <button type="submit" disabled={checking || !passphrase} className="flex-1 rounded-full bg-[#1d1d1f] px-4 py-2 text-[13px] font-semibold text-white disabled:cursor-wait disabled:opacity-50">
+            {checking ? "Checking…" : "Confirm"}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -4813,7 +4885,7 @@ function BackupSizeNotice({ warning }) {
   );
 }
 
-function CategoryWorkspace({ vault, area, initialRecordId, onSave, onCapture, onClose, entitlements, onOpenSettings }) {
+function CategoryWorkspace({ vault, area, initialRecordId, onSave, onCapture, onClose, entitlements, onOpenSettings, runWithRecentAuth }) {
   const [mode, setMode] = useState("overview");
   const [selectedId, setSelectedId] = useState(null);
   const [editingRecord, setEditingRecord] = useState(null);
@@ -4970,6 +5042,7 @@ function CategoryWorkspace({ vault, area, initialRecordId, onSave, onCapture, on
               <RecordDetailPanel
                 record={selectedRecord}
                 area={area}
+                runWithRecentAuth={runWithRecentAuth}
                 onClose={closeDrawer}
                 onEdit={() => startEdit(selectedRecord)}
                 onDelete={() => deleteRecord(selectedRecord)}
@@ -4997,21 +5070,33 @@ function CategoryWorkspace({ vault, area, initialRecordId, onSave, onCapture, on
   );
 }
 
-function RecordDetailPanel({ record, area, onClose, onEdit, onDelete, onAttach, onAttachmentDelete, onAttachmentReplace, onReveal, onHide, onExtract }) {
+function RecordDetailPanel({ record, area, onClose, onEdit, onDelete, onAttach, onAttachmentDelete, onAttachmentReplace, onReveal, onHide, onExtract, runWithRecentAuth }) {
   const [revealed, setRevealed] = useState(false);
   const emergency = record.emergencyEligible;
   const fields = [
     ["Identifier / account", record.username],
     ["Email", record.email],
-    ["Bank details", record.bankDetails],
-    ["Card details", record.cardDetails],
     ["Financial value", record.financial?.value ? formatINR(Number(record.financial.value)) : ""]
+  ].filter(([, v]) => v && String(v).trim());
+  // Masked like the secret field already was — bank/card details used to
+  // render unmasked always (assessment DL-02). Same reveal gate for all
+  // three now, behind a fresh passphrase check.
+  const sensitiveFields = [
+    ["Sensitive value", record.secret],
+    ["Bank details", record.bankDetails],
+    ["Card details", record.cardDetails]
   ].filter(([, v]) => v && String(v).trim());
   const stroke = AREA_TONE[area?.id] || "var(--ink-3)";
   const tint = "color-mix(in srgb, " + stroke + " 14%, transparent)";
 
   function toggleReveal() {
-    setRevealed((cur) => { const next = !cur; next ? onReveal?.() : onHide?.(); return next; });
+    if (revealed) { setRevealed(false); onHide?.(); return; }
+    const show = () => { setRevealed(true); onReveal?.(); };
+    if (runWithRecentAuth) runWithRecentAuth(show); else show();
+  }
+
+  function handleDelete() {
+    if (runWithRecentAuth) runWithRecentAuth(onDelete); else onDelete();
   }
 
   return (
@@ -5046,14 +5131,19 @@ function RecordDetailPanel({ record, area, onClose, onEdit, onDelete, onAttach, 
               <span className="flex-1 break-words text-[13.5px] font-medium text-[var(--ink)]">{v}</span>
             </div>
           ))}
-          {record.secret && (
-            <div className={cx("flex items-center gap-4 px-4 py-3", fields.length > 0 && "border-t border-[var(--line)]")}>
-              <span className="w-32 shrink-0 text-[13px] text-[var(--ink-3)]">Sensitive value</span>
-              <span className="flex-1 break-all text-[13.5px] font-medium text-[var(--ink)]">{revealed ? record.secret : maskSecret(record.secret)}</span>
+          {sensitiveFields.length > 0 && (
+            <div className={cx("flex items-center justify-between gap-4 px-4 py-2.5", fields.length > 0 && "border-t border-[var(--line)]")}>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-[var(--ink-4)]">Sensitive</span>
               <button onClick={toggleReveal} className="shrink-0 text-[12px] font-semibold text-[var(--accent)]">{revealed ? "Hide" : "Reveal"}</button>
             </div>
           )}
-          {fields.length === 0 && !record.secret && (
+          {sensitiveFields.map(([k, v]) => (
+            <div key={k} className="flex items-center gap-4 border-t border-[var(--line)] px-4 py-3">
+              <span className="w-32 shrink-0 text-[13px] text-[var(--ink-3)]">{k}</span>
+              <span className="flex-1 break-all text-[13.5px] font-medium text-[var(--ink)]">{revealed ? v : maskSecret(v)}</span>
+            </div>
+          ))}
+          {fields.length === 0 && sensitiveFields.length === 0 && (
             <div className="px-4 py-3 text-[13px] text-[var(--ink-3)]">No details added yet.</div>
           )}
         </div>
@@ -5085,7 +5175,7 @@ function RecordDetailPanel({ record, area, onClose, onEdit, onDelete, onAttach, 
 
       <div className="flex gap-3 border-t border-[var(--line)] px-4 py-3.5">
         <button onClick={onEdit} className="flex-1 rounded-xl border border-[var(--line-2)] bg-[var(--surface)] px-4 py-2.5 text-[13.5px] font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-2)]">Edit</button>
-        <button onClick={onDelete} className="rounded-xl border border-[var(--red-2)] px-4 py-2.5 text-[13.5px] font-semibold text-[var(--red-2)] transition hover:bg-[var(--red-soft)]">Delete</button>
+        <button onClick={handleDelete} className="rounded-xl border border-[var(--red-2)] px-4 py-2.5 text-[13.5px] font-semibold text-[var(--red-2)] transition hover:bg-[var(--red-soft)]">Delete</button>
       </div>
     </div>
   );
