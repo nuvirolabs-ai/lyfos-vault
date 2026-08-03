@@ -58,7 +58,7 @@ import { loadMyReleaseSettings, upsertMyReleaseSettings, rotateMyClaimToken, fet
 import { fetchMySubscription, fetchMyBillingEvents, fetchMyBillingProfile, upsertMyBillingProfile, fetchInvoiceUrl, joinVaultFallWaitlist, cancelSubscriptionAtPeriodEnd, resumeSubscription } from "./lib/billing.js";
 import { planFor, entitlementsFor, daysLeftFor, paidPlans } from "./lib/plans.js";
 import { isSupabaseConfigured } from "./lib/supabaseClient.js";
-import { getSession, onAuthStateChange, signOut, appendServerAuditEvent, ensureDeviceToken, getDeviceToken, deleteAccount } from "./lib/auth.js";
+import { getSession, onAuthStateChange, signOut, appendServerAuditEvent, ensureDeviceToken, getDeviceToken, deleteAccount, signInWithPassword, signUpWithPassword } from "./lib/auth.js";
 import {
   pushEncryptedRecord,
   fetchEncryptedRecord,
@@ -69,7 +69,7 @@ import {
   renameDevice as renameDeviceFromSync,
   revokeDevice as revokeDeviceFromSync
 } from "./lib/vaultSync.js";
-import { AuthScreen } from "./AuthScreen.jsx";
+import { AuthScreen, isInvalidCredentials, humanizeAuthError } from "./AuthScreen.jsx";
 import { InviteAcceptScreen } from "./InviteAcceptScreen.jsx";
 import { ClaimScreen } from "./ClaimScreen.jsx";
 import { NomineeEntryScreen } from "./NomineeEntryScreen.jsx";
@@ -1173,13 +1173,67 @@ function App() {
     return <main className="min-h-screen bg-[var(--surface-2)]" aria-hidden="true" />;
   }
 
-  // Account gate. Render AuthScreen when:
-  //  (a) user explicitly opened it from Settings ("Sign in" while having
-  //      a local vault), OR
-  //  (b) Supabase configured AND no session AND no local vault AND user
-  //      hasn't chosen to bypass.
-  const showAuthGate = authPanelOpen || (isSupabaseConfigured() && !session && !storedRecord && !authBypass);
-  if (showAuthGate) {
+  // Shared between WelcomeScreen (fresh device) and EntryScreen (local
+  // vault already present) so vault-creation/unlock behavior — including
+  // the legacy-KDF auto-upgrade — only lives in one place.
+  function handleVaultCreated(record, key, nextVault) {
+    setStoredRecord(record);
+    setVaultKey(key);
+    setVault(nextVault);
+    setLockNotice("");
+    setNotice("Vault created and encrypted locally.");
+  }
+
+  async function handleVaultUnlocked(key, nextVault, usedEnvelope, secret, sourceRecord) {
+    const pendingEvents = drainPendingAuditEvents(localStorage);
+    let recordForPersist = sourceRecord;
+
+    // Auto-upgrade: legacy PBKDF2 envelope → Argon2id, using the
+    // secret the user just typed. Best-effort; failures don't block
+    // unlock. Only the envelope just successfully unwrapped is upgraded
+    // (the other envelope's secret isn't in memory).
+    try {
+      if (envelopeIsLegacyKdf(sourceRecord, usedEnvelope) && secret) {
+        const upgraded = await upgradeEnvelopeKdf({
+          record: sourceRecord,
+          vaultKey: key,
+          kind: usedEnvelope,
+          secret
+        });
+        recordForPersist = upgraded;
+        saveStage1Record(localStorage, upgraded);
+        setStoredRecord(upgraded);
+        if (typeof console !== "undefined") {
+          console.info(`[lyfos] upgraded ${usedEnvelope} envelope to Argon2id.`);
+        }
+      }
+    } catch (err) {
+      if (typeof console !== "undefined") console.warn("[lyfos] KDF upgrade failed (non-fatal):", err?.message ?? err);
+    }
+
+    const auditedVault = appendAuditEvent(
+      appendAuditEvents(nextVault, pendingEvents),
+      usedEnvelope === "recovery" ? "Vault unlocked with recovery key" : "Vault unlocked with phrase"
+    );
+    const nextRecord = await persistVault(key, auditedVault, recordForPersist);
+    setStoredRecord(nextRecord);
+    setVaultKey(key);
+    setVault(auditedVault);
+    setLockNotice("");
+    setNotice("");
+  }
+
+  function handleUnlockFailed(event) {
+    createPendingAuditEvent(localStorage, event);
+  }
+
+  // Account gate. Render WelcomeScreen (account + vault, merged into
+  // one page) when Supabase is configured, there's no session and no
+  // local vault yet, and the user hasn't chosen to bypass accounts.
+  // Render the auth-only AuthScreen when the user explicitly opened it
+  // from Settings ("Sign in") while already having a local vault —
+  // that vault doesn't need creating or unlocking again here.
+  if (authPanelOpen) {
     return (
       <AuthScreen
         onSignedIn={(s) => {
@@ -1187,9 +1241,23 @@ function App() {
           setAuthPanelOpen(false);
           appendServerAuditEvent("sign_in", { method: "password" }).catch(() => {});
         }}
-        onContinueLocalOnly={authPanelOpen
-          ? () => setAuthPanelOpen(false)
-          : () => setAuthBypass(true)}
+        onContinueLocalOnly={() => setAuthPanelOpen(false)}
+        onNomineeEntry={() => { window.location.assign("/claim"); }}
+      />
+    );
+  }
+
+  if (isSupabaseConfigured() && !session && !storedRecord && !authBypass) {
+    return (
+      <WelcomeScreen
+        onSignedIn={(s) => {
+          setSession(s);
+          appendServerAuditEvent("sign_in", { method: "password" }).catch(() => {});
+        }}
+        onCreated={handleVaultCreated}
+        onUnlocked={handleVaultUnlocked}
+        onUnlockFailed={handleUnlockFailed}
+        onContinueLocalOnly={() => setAuthBypass(true)}
         onNomineeEntry={() => { window.location.assign("/claim"); }}
       />
     );
@@ -1201,52 +1269,9 @@ function App() {
         record={storedRecord}
         notice={notice}
         lockNotice={lockNotice}
-        onCreated={(record, key, nextVault) => {
-          setStoredRecord(record);
-          setVaultKey(key);
-          setVault(nextVault);
-          setLockNotice("");
-          setNotice("Vault created and encrypted locally.");
-        }}
-        onUnlocked={async (key, nextVault, usedEnvelope, secret) => {
-          const pendingEvents = drainPendingAuditEvents(localStorage);
-          let recordForPersist = storedRecord;
-
-          // Auto-upgrade: legacy PBKDF2 envelope → Argon2id, using the
-          // secret the user just typed. Best-effort; failures don't block
-          // unlock. Only the envelope just successfully unwrapped is upgraded
-          // (the other envelope's secret isn't in memory).
-          try {
-            if (envelopeIsLegacyKdf(storedRecord, usedEnvelope) && secret) {
-              const upgraded = await upgradeEnvelopeKdf({
-                record: storedRecord,
-                vaultKey: key,
-                kind: usedEnvelope,
-                secret
-              });
-              recordForPersist = upgraded;
-              saveStage1Record(localStorage, upgraded);
-              setStoredRecord(upgraded);
-              if (typeof console !== "undefined") {
-                console.info(`[lyfos] upgraded ${usedEnvelope} envelope to Argon2id.`);
-              }
-            }
-          } catch (err) {
-            if (typeof console !== "undefined") console.warn("[lyfos] KDF upgrade failed (non-fatal):", err?.message ?? err);
-          }
-
-          const auditedVault = appendAuditEvent(
-            appendAuditEvents(nextVault, pendingEvents),
-            usedEnvelope === "recovery" ? "Vault unlocked with recovery key" : "Vault unlocked with phrase"
-          );
-          const nextRecord = await persistVault(key, auditedVault, recordForPersist);
-          setStoredRecord(nextRecord);
-          setVaultKey(key);
-          setVault(auditedVault);
-          setLockNotice("");
-          setNotice("");
-        }}
-        onUnlockFailed={(event) => createPendingAuditEvent(localStorage, event)}
+        onCreated={handleVaultCreated}
+        onUnlocked={handleVaultUnlocked}
+        onUnlockFailed={handleUnlockFailed}
         onImported={(record) => {
           setStoredRecord(record);
           setNotice("Encrypted backup imported. Unlock it with its vault phrase or recovery key.");
@@ -1373,6 +1398,235 @@ function PassStrength({ passphrase }) {
   );
 }
 
+// WelcomeScreen — the fresh-device entry point when there's no session
+// and no local vault yet. Combines what used to be two separate
+// screens (AuthScreen, then EntryScreen) into one form: email +
+// account password + vault passphrase, one submit, straight into the
+// vault. The account password and vault passphrase remain two
+// cryptographically separate secrets under the hood — the account
+// password is checked by Supabase Auth as normal, while the vault
+// passphrase is used only on this device to derive the vault key and
+// is never sent anywhere. Merging the *screens* removes the friction;
+// it does not merge the *secrets*.
+function WelcomeScreen({ onCreated, onUnlocked, onUnlockFailed, onSignedIn, onContinueLocalOnly, onNomineeEntry }) {
+  const [email, setEmail] = useState("");
+  const [accountPassword, setAccountPassword] = useState("");
+  const [passphrase, setPassphrase] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [recoveryKey, setRecoveryKey] = useState("");
+  const [recoveryConfirm, setRecoveryConfirm] = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [busyLabel, setBusyLabel] = useState("");
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const busy = Boolean(busyLabel);
+
+  async function submit(event) {
+    event.preventDefault();
+    setError("");
+    setInfo("");
+    if (accountPassword.length < 12) { setError("Account password must be at least 12 characters. This is separate from your vault passphrase below."); return; }
+    if (passphrase.length < 12) { setError("Use at least 12 characters for your vault passphrase."); return; }
+    if (passphrase !== confirm) { setError("Vault passphrases do not match."); return; }
+    if (!recoveryKey) { setError("Generate a recovery key before creating the vault."); return; }
+    if (!recoveryConfirm) { setError("Save the recovery phrase, tick the checkbox, then answer the three word checks."); return; }
+    if (normalizeRecoveryKey(recoveryConfirm) !== recoveryKey) { setError("The recovery phrase check does not match. Recheck the requested words."); return; }
+
+    let session;
+    setBusyLabel("Signing in…");
+    try {
+      const data = await signInWithPassword({ email: email.trim(), password: accountPassword });
+      session = data?.session;
+    } catch (err) {
+      if (!isInvalidCredentials(err)) {
+        setBusyLabel("");
+        setError(humanizeAuthError(err));
+        return;
+      }
+      setBusyLabel("Creating account…");
+      try {
+        const data = await signUpWithPassword({ email: email.trim(), password: accountPassword, returnPath: "/" });
+        session = data?.session;
+      } catch (signUpErr) {
+        setBusyLabel("");
+        setError(humanizeAuthError(signUpErr));
+        return;
+      }
+      if (!session) {
+        setBusyLabel("");
+        setInfo(`Check your email — we sent a confirmation link to ${email}. Click it, then come back and enter your vault passphrase again to continue.`);
+        return;
+      }
+    }
+
+    onSignedIn(session);
+
+    let serverRecord = null;
+    setBusyLabel("Checking for an existing vault…");
+    try {
+      const result = await fetchEncryptedRecord();
+      serverRecord = result?.record ?? null;
+    } catch {
+      // No existing cloud record reachable — proceed as a brand-new vault.
+    }
+
+    try {
+      if (serverRecord) {
+        setBusyLabel("Unlocking…");
+        const unlocked = await decryptVaultWithPassphrase(serverRecord, passphrase);
+        saveStage1Record(localStorage, serverRecord);
+        await onUnlocked(unlocked.vaultKey, unlocked.vault, unlocked.usedEnvelope, passphrase, serverRecord);
+      } else {
+        setBusyLabel("Creating vault…");
+        const nextVault = createEmptyVault();
+        const nextRecord = await createStage1VaultRecord({ vault: nextVault, passphrase, recoveryKey });
+        saveStage1Record(localStorage, nextRecord);
+        const unlocked = await decryptVaultWithPassphrase(nextRecord, passphrase);
+        onCreated(nextRecord, unlocked.vaultKey, nextVault);
+      }
+    } catch (err) {
+      onUnlockFailed?.("Failed unlock attempt right after sign-in");
+      setError(err?.message || "That vault passphrase didn't work.");
+    } finally {
+      setBusyLabel("");
+    }
+  }
+
+  return (
+    <main className="min-h-screen bg-[var(--bg)] text-[var(--ink)]">
+      <header className="flex h-14 items-center px-6">
+        <div className="flex items-center gap-2.5 font-semibold">
+          <span className="grid h-6 w-6 place-items-center rounded-md bg-[var(--accent)]">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M8.2 11V8.3a3.8 3.8 0 0 1 7.6 0V11" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" /><rect x="5.4" y="10.6" width="13.2" height="9.4" rx="2.7" fill="#fff" /><circle cx="12" cy="14.7" r="1.55" fill="var(--accent)" /><path d="M12 15.7l-1.05 3.5h2.1z" fill="var(--accent)" /></svg>
+          </span>
+          Lyfos
+        </div>
+      </header>
+
+      <div className="mx-auto flex min-h-[calc(100vh-3.5rem)] max-w-md flex-col items-center px-5 pb-16 pt-6">
+        <div className="grid h-16 w-16 place-items-center rounded-[18px] bg-[var(--green-soft)]">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none"><path d="M8.2 11V8.3a3.8 3.8 0 0 1 7.6 0V11" stroke="var(--accent)" strokeWidth="2.1" strokeLinecap="round" /><rect x="5.4" y="10.6" width="13.2" height="9.4" rx="2.7" fill="var(--accent)" /><circle cx="12" cy="14.7" r="1.55" fill="var(--green-soft)" /><path d="M12 15.7l-1.05 3.5h2.1z" fill="var(--green-soft)" /></svg>
+        </div>
+
+        <div className="mt-5 text-center">
+          <h1 className="text-[26px] font-semibold tracking-tight text-[var(--ink)]">Start your vault</h1>
+          <p className="mt-2 text-[14px] leading-relaxed text-[var(--ink-2)]">One page, one submit. Your account lets you sync across devices; your vault passphrase is what actually protects your data — Lyfos never sees it.</p>
+        </div>
+
+        <form onSubmit={submit} className="mt-7 w-full">
+          <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-[var(--shadow,0_12px_40px_rgba(0,0,0,0.06))]">
+            <span className="text-[13px] font-medium text-[var(--ink-2)]">Email</span>
+            <input
+              className="mt-2 h-[50px] w-full rounded-xl border border-[var(--line-2)] bg-[var(--surface-2)] px-3.5 text-[15px] text-[var(--ink)] outline-none transition placeholder:text-[var(--ink-4)] focus:border-[var(--accent)]"
+              type="email"
+              required
+              autoComplete="email"
+              autoFocus
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="you@example.com"
+            />
+
+            <span className="mt-4 block text-[13px] font-medium text-[var(--ink-2)]">Account password</span>
+            <input
+              className="mt-2 h-[50px] w-full rounded-xl border border-[var(--line-2)] bg-[var(--surface-2)] px-3.5 text-[15px] text-[var(--ink)] outline-none transition placeholder:text-[var(--ink-4)] focus:border-[var(--accent)]"
+              type="password"
+              required
+              autoComplete="current-password"
+              value={accountPassword}
+              onChange={(event) => setAccountPassword(event.target.value)}
+              placeholder="At least 12 characters"
+            />
+            <p className="mt-1.5 text-[11px] text-[var(--ink-3)]">Lets you sign in and sync across devices. Different from your vault passphrase below.</p>
+
+            <div className="mb-2 mt-5 flex items-baseline justify-between">
+              <span className="text-[13px] font-medium text-[var(--ink-2)]">Vault passphrase</span>
+            </div>
+            <div className="flex h-[50px] items-center gap-2.5 rounded-xl border border-[var(--line-2)] bg-[var(--surface-2)] px-3.5 transition focus-within:border-[var(--accent)]">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--ink-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11 V8 a4 4 0 0 1 8 0 v3" /></svg>
+              <input
+                className="flex-1 bg-transparent text-[15px] text-[var(--ink)] outline-none placeholder:text-[var(--ink-4)]"
+                type={showPass ? "text" : "password"}
+                value={passphrase}
+                onChange={(event) => setPassphrase(event.target.value)}
+                autoComplete="new-password"
+                placeholder="At least 12 characters"
+              />
+              <button type="button" onClick={() => setShowPass((s) => !s)} aria-label="Show passphrase" className="grid place-items-center p-1 text-[var(--ink-3)] transition hover:text-[var(--ink)]">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12 C 4 7 8 4.5 12 4.5 C 16 4.5 20 7 22 12 C 20 17 16 19.5 12 19.5 C 8 19.5 4 17 2 12 Z" /><circle cx="12" cy="12" r="3" /></svg>
+              </button>
+            </div>
+            <input
+              className="mt-2.5 h-[50px] w-full rounded-xl border border-[var(--line-2)] bg-[var(--surface-2)] px-3.5 text-[15px] text-[var(--ink)] outline-none transition placeholder:text-[var(--ink-4)] focus:border-[var(--accent)]"
+              type="password"
+              value={confirm}
+              onChange={(event) => setConfirm(event.target.value)}
+              autoComplete="new-password"
+              placeholder="Confirm vault passphrase"
+            />
+            <PassStrength passphrase={passphrase} />
+            <div className="mt-4">
+              <RecoveryKeyPanel
+                recoveryKey={recoveryKey}
+                recoveryConfirm={recoveryConfirm}
+                onGenerate={() => { const key = generateRecoveryKey(); setRecoveryKey(key); setRecoveryConfirm(""); }}
+                onConfirmChange={setRecoveryConfirm}
+              />
+            </div>
+
+            {(error || info) && (
+              <div aria-live="polite" className={cx("mt-4 rounded-xl px-4 py-3 text-[13px] font-medium", error ? "bg-[var(--red-soft)] text-[var(--red-2)]" : "bg-[var(--green-soft)] text-[var(--green-ink)]")}>
+                {error || info}
+              </div>
+            )}
+
+            <button className="mt-4 h-[50px] w-full rounded-xl bg-[var(--accent)] text-[15px] font-semibold text-white transition hover:bg-[var(--accent-hover)] disabled:cursor-wait disabled:opacity-50" disabled={busy}>
+              {busy ? busyLabel : "Create account and open vault"}
+            </button>
+          </div>
+
+          {onContinueLocalOnly && (
+            <div className="mt-5 text-center">
+              <button type="button" onClick={onContinueLocalOnly} className="text-[12.5px] font-medium text-[var(--ink-3)] hover:text-[var(--ink)]">
+                Or continue without an account · this device only
+              </button>
+            </div>
+          )}
+
+          <div className="mt-6 flex items-center justify-center gap-2 text-[12.5px] text-[var(--ink-3)]">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3 L20 6 V12 C 20 17 16 20 12 21 C 8 20 4 17 4 12 V6 Z" /></svg>
+            Your vault passphrase never leaves this device.
+          </div>
+
+          {onNomineeEntry && (
+            <div className="mt-5 text-center">
+              <button type="button" onClick={onNomineeEntry} className="rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-4 py-2 text-[12.5px] font-semibold text-[var(--ink-2)] transition hover:text-[var(--ink)]">
+                I am a nominee
+              </button>
+            </div>
+          )}
+
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            {["Zero-knowledge", "End-to-end encrypted", "You hold the keys"].map((t) => (
+              <span key={t} className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-[12px] text-[var(--ink-2)]">{t}</span>
+            ))}
+          </div>
+        </form>
+
+        <footer className="mt-auto pt-12 text-center text-[11px] text-[var(--ink-4)]">
+          <p>
+            By continuing you agree to the{" "}
+            <a href="/legal/terms.html" className="underline">Terms</a>,{" "}
+            <a href="/legal/privacy.html" className="underline">Privacy</a> and{" "}
+            <a href="/legal/product-disclaimer.html" className="underline">Product disclaimer</a>.
+          </p>
+          <p className="mt-3">Lyfos · Locally encrypted on this device.</p>
+        </footer>
+      </div>
+    </main>
+  );
+}
+
 function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlockFailed, onImported, onRestoreConfirmed, backupHealth, onBackupHealthChange, onReset, onNomineeEntry }) {
   const [passphrase, setPassphrase] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -1394,7 +1648,7 @@ function EntryScreen({ record, notice, lockNotice, onCreated, onUnlocked, onUnlo
         const unlocked = unlockMode === "recovery"
           ? await decryptVaultWithRecoveryKey(record, passphrase)
           : await decryptVaultWithPassphrase(record, passphrase);
-        await onUnlocked(unlocked.vaultKey, unlocked.vault, unlocked.usedEnvelope, passphrase);
+        await onUnlocked(unlocked.vaultKey, unlocked.vault, unlocked.usedEnvelope, passphrase, record);
         return;
       }
 

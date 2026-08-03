@@ -264,12 +264,12 @@ export function AuthScreen({
   );
 }
 
-function isInvalidCredentials(err) {
+export function isInvalidCredentials(err) {
   const raw = err?.message || String(err) || "";
   return raw.includes("Invalid login credentials");
 }
 
-function humanizeAuthError(err) {
+export function humanizeAuthError(err) {
   const raw = err?.message || String(err) || "Something went wrong.";
   if (raw.includes("Invalid login credentials")) return "That email and password don't match an account.";
   if (raw.includes("User already registered")) return "An account already exists for this email. Enter the matching password above to sign in.";
