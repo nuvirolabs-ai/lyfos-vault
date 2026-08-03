@@ -1,18 +1,16 @@
 // Lyfos — Razorpay webhook handler.
 //
-// Receives subscription + payment events from Razorpay and reconciles
-// the public.subscriptions and public.billing_events tables. Idempotent
-// (we de-dup by provider_event_id in billing_events).
+// Vault is a one-time purchase, not a recurring subscription. This
+// listens for the Payment Link completing and marks the purchase
+// 'active' with no expiry (current_period_end stays null — there is
+// nothing to renew). Idempotent (de-dup by provider_event_id in
+// billing_events).
 //
 // Validates the X-Razorpay-Signature header before doing anything.
 //
 // Events we listen for:
-//   subscription.activated  — first successful charge; plan goes active
-//   subscription.charged    — recurring renewal; extend current_period_end
-//   subscription.halted     — repeated payment failures; status=past_due
-//   subscription.cancelled  — user / admin cancellation; status=cancelled
-//   subscription.completed  — natural end of total_count; status=expired
-//   payment.failed          — log only; halted will follow if it persists
+//   payment_link.paid — the one-time purchase succeeded; plan goes active
+//   payment.failed     — log only, for support visibility
 //
 // Required secrets:
 //   RAZORPAY_WEBHOOK_SECRET — set the same value in Razorpay dashboard
@@ -48,7 +46,7 @@ serve(async (req) => {
   try { body = JSON.parse(raw); } catch { return text("bad json", 400); }
 
   const eventType = body?.event;
-  const eventId   = body?.id ?? body?.payload?.subscription?.entity?.id ?? body?.payload?.payment?.entity?.id;
+  const eventId   = body?.id ?? body?.payload?.payment_link?.entity?.id ?? body?.payload?.payment?.entity?.id;
 
   // Idempotency: if we've seen this event before, ack.
   if (eventId) {
@@ -63,20 +61,8 @@ serve(async (req) => {
 
   try {
     switch (eventType) {
-      case "subscription.activated":
-        await handleSubscriptionActivated(body, eventId);
-        break;
-      case "subscription.charged":
-        await handleSubscriptionCharged(body, eventId);
-        break;
-      case "subscription.halted":
-        await handleSubscriptionHalted(body, eventId);
-        break;
-      case "subscription.cancelled":
-        await handleSubscriptionCancelled(body, eventId);
-        break;
-      case "subscription.completed":
-        await handleSubscriptionCompleted(body, eventId);
+      case "payment_link.paid":
+        await handlePaymentLinkPaid(body, eventId);
         break;
       case "payment.failed":
         await handlePaymentFailed(body, eventId);
@@ -96,11 +82,12 @@ serve(async (req) => {
 // Handlers
 // ============================================================
 
-async function handleSubscriptionActivated(body: any, eventId: string) {
-  const sub = body?.payload?.subscription?.entity;
-  if (!sub) return;
-  const lyfosUserId = sub?.notes?.lyfos_user_id;
-  const lyfosPlan   = sub?.notes?.lyfos_plan ?? "vault";
+async function handlePaymentLinkPaid(body: any, eventId: string) {
+  const link = body?.payload?.payment_link?.entity;
+  const pay  = body?.payload?.payment?.entity;
+  if (!link) return;
+  const lyfosUserId = link?.notes?.lyfos_user_id;
+  const lyfosPlan   = link?.notes?.lyfos_plan ?? "vault";
   if (!lyfosUserId) return;
 
   await admin.from("subscriptions").upsert({
@@ -108,31 +95,14 @@ async function handleSubscriptionActivated(body: any, eventId: string) {
     plan: lyfosPlan,
     status: "active",
     provider: "razorpay",
-    razorpay_subscription_id: sub.id,
-    razorpay_customer_id: sub.customer_id,
-    current_period_start: sub.current_start ? toIso(sub.current_start) : null,
-    current_period_end:   sub.current_end   ? toIso(sub.current_end)   : null,
+    razorpay_subscription_id: null,
+    razorpay_customer_id: null,
+    current_period_start: new Date().toISOString(),
+    current_period_end: null, // one-time lifetime purchase — nothing to renew
     cancel_at_period_end: false,
     cancelled_at: null,
     grace_until: null
   }, { onConflict: "user_id" });
-
-  await logEvent(lyfosUserId, "subscription.activated", body, eventId, null);
-}
-
-async function handleSubscriptionCharged(body: any, eventId: string) {
-  const sub = body?.payload?.subscription?.entity;
-  const pay = body?.payload?.payment?.entity;
-  if (!sub) return;
-  const lyfosUserId = sub?.notes?.lyfos_user_id;
-  if (!lyfosUserId) return;
-
-  await admin.from("subscriptions").update({
-    status: "active",
-    current_period_start: sub.current_start ? toIso(sub.current_start) : null,
-    current_period_end:   sub.current_end   ? toIso(sub.current_end)   : null,
-    grace_until: null
-  }).eq("razorpay_subscription_id", sub.id);
 
   const { data: inserted } = await admin.from("billing_events").insert({
     user_id: lyfosUserId,
@@ -140,7 +110,7 @@ async function handleSubscriptionCharged(body: any, eventId: string) {
     event_type: "payment.captured",
     provider_event_id: eventId,
     provider_payment_id: pay?.id ?? null,
-    amount_paise: pay?.amount ?? null,
+    amount_paise: pay?.amount ?? link?.amount ?? null,
     currency: pay?.currency ?? "INR",
     payload: scrub(body)
   }).select("id").single();
@@ -155,53 +125,10 @@ async function handleSubscriptionCharged(body: any, eventId: string) {
   }
 }
 
-async function handleSubscriptionHalted(body: any, eventId: string) {
-  const sub = body?.payload?.subscription?.entity;
-  if (!sub) return;
-  const lyfosUserId = sub?.notes?.lyfos_user_id;
-  if (!lyfosUserId) return;
-
-  const graceUntil = new Date(Date.now() + 7 * 86_400_000).toISOString();
-  await admin.from("subscriptions").update({
-    status: "past_due",
-    grace_until: graceUntil
-  }).eq("razorpay_subscription_id", sub.id);
-
-  await logEvent(lyfosUserId, "subscription.halted", body, eventId, null);
-}
-
-async function handleSubscriptionCancelled(body: any, eventId: string) {
-  const sub = body?.payload?.subscription?.entity;
-  if (!sub) return;
-  const lyfosUserId = sub?.notes?.lyfos_user_id;
-  if (!lyfosUserId) return;
-
-  await admin.from("subscriptions").update({
-    status: "cancelled",
-    cancelled_at: new Date().toISOString(),
-    cancel_at_period_end: false
-  }).eq("razorpay_subscription_id", sub.id);
-
-  await logEvent(lyfosUserId, "subscription.cancelled", body, eventId, null);
-}
-
-async function handleSubscriptionCompleted(body: any, eventId: string) {
-  const sub = body?.payload?.subscription?.entity;
-  if (!sub) return;
-  const lyfosUserId = sub?.notes?.lyfos_user_id;
-  if (!lyfosUserId) return;
-
-  await admin.from("subscriptions").update({
-    status: "expired"
-  }).eq("razorpay_subscription_id", sub.id);
-
-  await logEvent(lyfosUserId, "subscription.completed", body, eventId, null);
-}
-
 async function handlePaymentFailed(body: any, eventId: string) {
   const pay = body?.payload?.payment?.entity;
   const lyfosUserId =
-    body?.payload?.subscription?.entity?.notes?.lyfos_user_id ?? null;
+    body?.payload?.payment_link?.entity?.notes?.lyfos_user_id ?? null;
   await admin.from("billing_events").insert({
     user_id: lyfosUserId,
     provider: "razorpay",
@@ -231,8 +158,6 @@ async function verifyHmacSha256(secret: string, payload: string, expectedHex: st
   for (let i = 0; i < hex.length; i++) diff |= hex.charCodeAt(i) ^ expectedHex.charCodeAt(i);
   return diff === 0;
 }
-
-function toIso(seconds: number) { return new Date(seconds * 1000).toISOString(); }
 
 async function logEvent(userId: string | null, eventType: string, body: any, eventId: string, paymentId: string | null) {
   await admin.from("billing_events").insert({

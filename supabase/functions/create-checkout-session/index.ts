@@ -1,26 +1,22 @@
 // Lyfos — create checkout session.
 //
 // Called by the client (authenticated user) to start an upgrade.
-// Creates the provider-side subscription + customer if needed and
-// returns a checkout URL the client redirects to. Razorpay is the
-// primary provider; Stripe is wired up but only active when
-// STRIPE_SECRET_KEY is set.
-//
-// Required Razorpay setup (one-time, in Razorpay dashboard):
-//   1. Create one recurring Plan (Settings → Subscriptions → Plans):
-//        - "Lyfos Vault yearly" · amount 99900 paise · period yearly
-//      Note the plan ID (plan_xxx).
-//   2. Configure webhook: <project>.supabase.co/functions/v1/razorpay-webhook
-//      Subscribe to: subscription.activated, subscription.charged,
-//                    subscription.halted, subscription.cancelled,
-//                    payment.failed
-//      Set a webhook secret; pass it as RAZORPAY_WEBHOOK_SECRET.
+// Vault is a one-time purchase, not a recurring subscription: this
+// creates a Razorpay Payment Link for the plan's amount and returns
+// its hosted checkout URL. The client redirects there; Razorpay's
+// webhook (razorpay-webhook, on payment_link.paid) is what actually
+// marks the purchase active once payment is confirmed — this
+// function never marks anyone as upgraded itself.
 //
 // Required Edge Function secrets:
 //   RAZORPAY_KEY_ID         (from API Keys page)
 //   RAZORPAY_KEY_SECRET     (from API Keys page)
-//   RAZORPAY_PLAN_VAULT     (plan_xxx for the Vault yearly plan)
 //   APP_URL                 (already set from Phase 2)
+//
+// Required Razorpay dashboard setup:
+//   Configure a webhook at <project>.supabase.co/functions/v1/razorpay-webhook
+//   subscribed to: payment_link.paid, payment.failed
+//   Set a signing secret; pass it as RAZORPAY_WEBHOOK_SECRET.
 //
 // Optional Stripe:
 //   STRIPE_SECRET_KEY
@@ -45,15 +41,17 @@ const PAID_LAUNCH_LOCKED = (Deno.env.get("PAID_LAUNCH_LOCKED") ?? "true") !== "f
 const RZP_KEY      = Deno.env.get("RAZORPAY_KEY_ID") ?? "";
 // @ts-ignore
 const RZP_SECRET   = Deno.env.get("RAZORPAY_KEY_SECRET") ?? "";
-// @ts-ignore
-const RZP_PLAN_VAULT  = Deno.env.get("RAZORPAY_PLAN_VAULT")  ?? "";
-// @ts-ignore
 
 // @ts-ignore
 const STRIPE_KEY = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 // @ts-ignore
 const STRIPE_PRICE_VAULT  = Deno.env.get("STRIPE_PRICE_VAULT")  ?? "";
-// @ts-ignore
+
+// One-time amounts, in the smallest currency unit — kept in sync with
+// apps/web/src/lib/plans.js (PLANS.vault.amountInr / amountUsd).
+const PLAN_AMOUNTS: Record<string, { inr: number; usd: number }> = {
+  vault: { inr: 99900, usd: 900 }
+};
 
 serve(async (req) => {
   const preflight = corsPreflight(req);
@@ -80,22 +78,21 @@ serve(async (req) => {
   try { body = await req.json(); } catch { body = {}; }
   const plan = body?.plan;
   const provider = body?.provider ?? "razorpay";
-  if (plan !== "vault") return json({ ok: false, error: "plan must be 'vault'" }, 400);
+  const amounts = PLAN_AMOUNTS[plan];
+  if (!amounts) return json({ ok: false, error: "plan must be 'vault'" }, 400);
 
-  // Reject if already on a paid plan (active or trialing). We allow
-  // upgrade from past_due so the user can fix payment.
+  // Reject if already purchased. Vault is a one-time lifetime purchase —
+  // once 'active', there's nothing further to buy.
   const { data: existing } = await admin.from("subscriptions").select("*").eq("user_id", user.id).maybeSingle();
-  if (existing && existing.plan !== "free" && ["active","trialing"].includes(existing.status)) {
-    return json({ ok: false, error: "already subscribed", current: existing.plan }, 409);
+  if (existing && existing.plan !== "free" && existing.status === "active") {
+    return json({ ok: false, error: "already purchased", current: existing.plan }, 409);
   }
 
   if (provider === "razorpay") {
     if (!RZP_KEY || !RZP_SECRET) {
       return json({ ok: false, error: "razorpay not configured on this deployment" }, 503);
     }
-    const planId = RZP_PLAN_VAULT;
-    if (!planId) return json({ ok: false, error: "razorpay plan id missing for " + plan }, 503);
-    return await createRazorpaySubscription({ admin, user, plan, planId });
+    return await createRazorpayPaymentLink({ user, plan, amountPaise: amounts.inr });
   }
 
   if (provider === "stripe") {
@@ -104,96 +101,67 @@ serve(async (req) => {
     }
     const priceId = STRIPE_PRICE_VAULT;
     if (!priceId) return json({ ok: false, error: "stripe price id missing for " + plan }, 503);
-    return await createStripeSession({ admin, user, plan, priceId });
+    return await createStripeSession({ user, plan, priceId });
   }
 
   return json({ ok: false, error: "unknown provider" }, 400);
 });
 
 // ============================================================
-// Razorpay
+// Razorpay — one-time Payment Link
 // ============================================================
-async function createRazorpaySubscription({ admin, user, plan, planId }: any) {
+async function createRazorpayPaymentLink({ user, plan, amountPaise }: any) {
   const headers = {
     Authorization: "Basic " + btoa(`${RZP_KEY}:${RZP_SECRET}`),
     "content-type": "application/json"
   };
 
-  // Find or create a Razorpay customer linked to this user
-  let customerId: string | null = null;
-  const { data: subRow } = await admin.from("subscriptions").select("razorpay_customer_id").eq("user_id", user.id).maybeSingle();
-  if (subRow?.razorpay_customer_id) customerId = subRow.razorpay_customer_id;
-
-  if (!customerId) {
-    const cr = await fetch("https://api.razorpay.com/v1/customers", {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        name: user.user_metadata?.name ?? user.email?.split("@")[0] ?? "Lyfos user",
-        email: user.email,
-        fail_existing: "0" // re-use if email already a customer
-      })
-    });
-    if (!cr.ok) {
-      const t = await cr.text();
-      return json({ ok: false, error: `razorpay customer create failed: ${t.slice(0,200)}` }, 502);
-    }
-    const c = await cr.json();
-    customerId = c.id;
-  }
-
-  // Create the subscription
-  const sub = await fetch("https://api.razorpay.com/v1/subscriptions", {
+  const link = await fetch("https://api.razorpay.com/v1/payment_links", {
     method: "POST",
     headers,
     body: JSON.stringify({
-      plan_id: planId,
-      customer_id: customerId,
-      total_count: 60, // 60 yearly = 60 years max; we'd renew yearly via subscription.charged
-      customer_notify: 1,
-      notes: { lyfos_user_id: user.id, lyfos_plan: plan }
+      amount: amountPaise,
+      currency: "INR",
+      description: `Lyfos ${plan} — one-time, lifetime access`,
+      customer: {
+        name: user.user_metadata?.name ?? user.email?.split("@")[0] ?? "Lyfos user",
+        email: user.email
+      },
+      notify: { email: true, sms: false },
+      reminder_enable: true,
+      notes: { lyfos_user_id: user.id, lyfos_plan: plan },
+      callback_url: `${APP_URL}/?upgrade=success`,
+      callback_method: "get"
     })
   });
-  if (!sub.ok) {
-    const t = await sub.text();
-    return json({ ok: false, error: `razorpay subscription create failed: ${t.slice(0,200)}` }, 502);
+  if (!link.ok) {
+    const t = await link.text();
+    return json({ ok: false, error: `razorpay payment link create failed: ${t.slice(0,200)}` }, 502);
   }
-  const subscription = await sub.json();
-
-  // Optimistically insert a 'trialing' row — the webhook will flip it
-  // to 'active' once Razorpay confirms first charge.
-  await admin.from("subscriptions").upsert({
-    user_id: user.id,
-    plan,
-    status: "trialing",
-    provider: "razorpay",
-    razorpay_customer_id: customerId,
-    razorpay_subscription_id: subscription.id
-  }, { onConflict: "user_id" });
+  const paymentLink = await link.json();
 
   return json({
     ok: true,
     provider: "razorpay",
-    subscription_id: subscription.id,
-    checkoutUrl: subscription.short_url, // hosted Razorpay checkout page
-    customer_id: customerId
+    payment_link_id: paymentLink.id,
+    checkoutUrl: paymentLink.short_url // hosted Razorpay checkout page
   });
 }
 
 // ============================================================
 // Stripe (stub — wired but inactive without keys)
 // ============================================================
-async function createStripeSession({ admin, user, plan, priceId }: any) {
+async function createStripeSession({ user, plan, priceId }: any) {
   const params = new URLSearchParams();
-  params.append("mode", "subscription");
+  params.append("mode", "payment");
   params.append("customer_email", user.email ?? "");
   params.append("line_items[0][price]", priceId);
   params.append("line_items[0][quantity]", "1");
   params.append("success_url", `${APP_URL}/?upgrade=success`);
   params.append("cancel_url",  `${APP_URL}/?upgrade=cancelled`);
   params.append("client_reference_id", user.id);
-  params.append("subscription_data[metadata][lyfos_user_id]", user.id);
-  params.append("subscription_data[metadata][lyfos_plan]", plan);
+  params.append("payment_intent_data[metadata][lyfos_user_id]", user.id);
+  params.append("payment_intent_data[metadata][lyfos_plan]", plan);
 
   const cr = await fetch("https://api.stripe.com/v1/checkout/sessions", {
     method: "POST",

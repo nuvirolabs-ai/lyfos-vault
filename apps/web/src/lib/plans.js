@@ -30,21 +30,22 @@ export const PLANS = {
   vault: {
     id: "vault",
     label: "Vault",
-    amountInr: 99900,    // 999 INR in paise
-    amountUsd: 900,       // $9 USD in cents
-    interval: "year",
+    amountInr: 99900,    // 999 INR in paise — one-time, not recurring
+    amountUsd: 900,       // $9 USD in cents — one-time, not recurring
+    interval: "once",
     checkoutEnabled: true,
     vaultItemLimit: Infinity,
     keyHolderLimit: 5,
     balanceSheetEnabled: true,
     releaseEnabled: true,
-    summary: "Unlimited family vault with balance sheet and release.",
+    summary: "Unlimited family vault with balance sheet and release — one-time payment, yours for life.",
     bullets: [
       "Unlimited vault entries",
       "Personal balance sheet",
       "Circle of Trust with 5 nominees/key holders",
       "Primary or backup recipient + 2 supporting nominees",
-      "Invite emails and release alerts"
+      "Invite emails and release alerts",
+      "One-time payment — no subscription, no renewal"
     ]
   }
 };
@@ -74,8 +75,17 @@ export function entitlementsFor(subscription) {
   const status = subscription.status ?? "active";
   const plan   = planFor(planId);
 
-  // Active or trialing → full plan entitlements
-  if (status === "active" || status === "trialing") {
+  // Active → full plan entitlements
+  if (status === "active") {
+    return { ...plan, effective: planId, source: status };
+  }
+
+  // Trialing → full plan entitlements until current_period_end passes
+  if (status === "trialing") {
+    const trialExpired = subscription.current_period_end
+      ? new Date(subscription.current_period_end).getTime() < Date.now()
+      : false;
+    if (trialExpired) return { ...planFor("free"), effective: "free", source: "trial_expired" };
     return { ...plan, effective: planId, source: status };
   }
 

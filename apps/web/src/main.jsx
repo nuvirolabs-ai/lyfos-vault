@@ -55,7 +55,7 @@ import { listMyKeyHolders, createKeyHolderInvite, requeueKeyHolderInvite, revoke
 import { buildExternalAppUrl } from "./lib/appUrls.js";
 import { validateCircleForActivation } from "./lib/recoveryCeremony.js";
 import { loadMyReleaseSettings, upsertMyReleaseSettings, rotateMyClaimToken, fetchActiveReleaseAgainstMe, ownerAbortRelease, isValidNomineeEmail } from "./lib/releaseClaim.js";
-import { fetchMySubscription, fetchMyBillingEvents, fetchMyBillingProfile, upsertMyBillingProfile, fetchInvoiceUrl, joinVaultFallWaitlist, cancelSubscriptionAtPeriodEnd, resumeSubscription, startUpgrade } from "./lib/billing.js";
+import { fetchMySubscription, fetchMyBillingEvents, fetchMyBillingProfile, upsertMyBillingProfile, fetchInvoiceUrl, joinVaultFallWaitlist, startUpgrade } from "./lib/billing.js";
 import { planFor, entitlementsFor, daysLeftFor, paidPlans } from "./lib/plans.js";
 import { isSupabaseConfigured } from "./lib/supabaseClient.js";
 import { getSession, onAuthStateChange, signOut, appendServerAuditEvent, ensureDeviceToken, getDeviceToken, deleteAccount, signInWithPassword, signUpWithPassword } from "./lib/auth.js";
@@ -2144,7 +2144,23 @@ function RailItem({ active, onClick, icon, label, count, dot, dataTour, pulse, l
   );
 }
 
-function PaidFeatureLock({ feature, body, onOpenSettings }) {
+function PaidFeatureLock({ feature, body, onOpenSettings, hasSession }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleUpgrade() {
+    if (!hasSession) { onOpenSettings?.(); return; }
+    setError("");
+    setBusy(true);
+    try {
+      const { checkoutUrl } = await startUpgrade({ plan: "vault" });
+      window.location.assign(checkoutUrl);
+    } catch (err) {
+      setError(err?.message || "Couldn't start checkout.");
+      setBusy(false);
+    }
+  }
+
   return (
     <section className="mx-auto max-w-xl py-8 text-center">
       <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-[var(--green-soft)]">
@@ -2156,10 +2172,15 @@ function PaidFeatureLock({ feature, body, onOpenSettings }) {
       <p className="mt-6 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)]">Paid feature</p>
       <h1 className="mt-3 text-[34px] font-semibold leading-[1.1] tracking-tight md:text-[42px]">{feature}</h1>
       <p className="mx-auto mt-4 max-w-md text-[14px] leading-6 text-[var(--ink-2)]">{body}</p>
-      <button onClick={onOpenSettings} className="mt-7 rounded-full bg-[#1d1d1f] px-6 py-3 text-[13px] font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition hover:bg-black">
-        Upgrade to Vault
+      {error && <div className="mx-auto mt-4 max-w-md rounded-md bg-[#ff453a]/8 px-3 py-2 text-[12px] font-medium text-[var(--red-2)]">{error}</div>}
+      <button
+        onClick={handleUpgrade}
+        disabled={busy}
+        className="mt-7 rounded-full bg-[#1d1d1f] px-6 py-3 text-[13px] font-semibold text-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition hover:bg-black disabled:cursor-wait disabled:opacity-50"
+      >
+        {busy ? "Opening Razorpay…" : hasSession ? "Upgrade to Vault" : "Sign in to upgrade"}
       </button>
-      <p className="mt-3 text-[11px] text-[var(--ink-4)]">Free Forever includes 11 vault entries. Vault is ₹999/year in India or $9/year internationally.</p>
+      <p className="mt-3 text-[11px] text-[var(--ink-4)]">New accounts get a 30-day free trial of Vault. After that, it's a one-time ₹999 (India) or $9 (international) payment — yours for life, no subscription.</p>
     </section>
   );
 }
@@ -2594,7 +2615,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
             <div className="min-w-0 flex-1">
               {screen === "home"    && <FamilyHomeDashboard vault={vault} onNavigate={setScreen} onOpenArea={openArea} onOpenRecord={openRecord} />}
               {screen === "records" && <AllRecords vault={vault} onOpenRecord={openRecord} />}
-              {screen === "money"   && (canUseBalanceSheet ? <BalanceSheetDashboard vault={vault} onSave={onSave} onNavigate={setScreen} /> : <PaidFeatureLock feature="Personal balance sheet" body="Free Forever keeps your first 11 vault entries safe. Upgrade when you want assets, liabilities, net worth history, and the calm financial view inside Lyfos." onOpenSettings={() => setScreen("settings")} />)}
+              {screen === "money"   && (canUseBalanceSheet ? <BalanceSheetDashboard vault={vault} onSave={onSave} onNavigate={setScreen} /> : <PaidFeatureLock feature="Personal balance sheet" body="Free Forever keeps your first 11 vault entries safe. Upgrade when you want assets, liabilities, net worth history, and the calm financial view inside Lyfos." onOpenSettings={() => setScreen("settings")} hasSession={Boolean(session)} />)}
               {screen === "setup"   && <SetupScreen vault={vault} onSave={onSave} onNavigate={setScreen} />}
               {screen === "update"  && <UpdateScreen vault={vault} onSave={onSave} onNavigate={setScreen} />}
               {screen === "capture" && <CaptureScreen vault={vault} onSave={onSave} entitlements={entitlements} onNavigate={(s) => setScreen(s === "life" ? "home" : s)} />}
@@ -2861,31 +2882,6 @@ function BillingSection({ subscription, entitlements, session, onSubscriptionCha
     }
   }
 
-  async function cancel() {
-    if (!window.confirm("Cancel at the end of your current billing period? You'll keep access until then.")) return;
-    setBusy(true);
-    setError("");
-    try {
-      await cancelSubscriptionAtPeriodEnd();
-      const fresh = await fetchMySubscription();
-      onSubscriptionChange?.(fresh);
-    } catch (err) {
-      setError(err?.message || "Couldn't cancel.");
-    } finally { setBusy(false); }
-  }
-
-  async function resume() {
-    setBusy(true);
-    setError("");
-    try {
-      await resumeSubscription();
-      const fresh = await fetchMySubscription();
-      onSubscriptionChange?.(fresh);
-    } catch (err) {
-      setError(err?.message || "Couldn't resume.");
-    } finally { setBusy(false); }
-  }
-
   async function openInvoice(path) {
     try {
       const url = await fetchInvoiceUrl(path);
@@ -2909,31 +2905,19 @@ function BillingSection({ subscription, entitlements, session, onSubscriptionCha
             <p className="mt-0.5 text-[12px] text-[var(--ink-3)]">
               {subscription?.plan === "free" || !subscription
                 ? "Free Forever · 11 entries, upgrade for balance sheet and release"
-                : subscription.status === "active"  ? `Active${renewal !== null ? ` · renews in ${renewal} day${renewal === 1 ? "" : "s"}` : ""}`
-                : subscription.status === "past_due" ? `Past due · grace period ends in ${renewal ?? "?"} days`
-                : subscription.status === "trialing" ? `Trialing${renewal !== null ? ` · ${renewal} day${renewal === 1 ? "" : "s"} left` : ""}`
-                : subscription.status === "cancelled" ? `Cancelled · access until ${renewal} day${renewal === 1 ? "" : "s"}`
+                : subscription.status === "active"   ? "Lifetime access · one-time purchase, nothing to renew"
+                : subscription.status === "trialing" ? `Free trial${renewal !== null ? ` · ${renewal} day${renewal === 1 ? "" : "s"} left` : ""}`
+                : subscription.status === "expired"  ? "Trial ended · upgrade for lifetime access"
                 : `Status: ${subscription.status}`}
             </p>
-            {subscription?.cancel_at_period_end && (
-              <p className="mt-1 text-[11px] font-medium text-[var(--red-2)]">Will not renew. <button onClick={resume} className="underline" disabled={busy}>Resume</button></p>
-            )}
           </div>
-          {subscription?.plan === "free" || !subscription ? (
+          {subscription?.status !== "active" && (
             <button
               onClick={() => setShowPlans((v) => !v)}
               className="rounded-full bg-[#1d1d1f] px-4 py-1.5 text-[11px] font-semibold text-white"
               disabled={busy}
             >
               Upgrade
-            </button>
-          ) : (
-            <button
-              onClick={cancel}
-              disabled={busy || subscription.cancel_at_period_end}
-              className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-4 py-1.5 text-[11px] font-semibold text-[var(--ink)] disabled:opacity-40"
-            >
-              Cancel
             </button>
           )}
         </div>
@@ -2952,7 +2936,7 @@ function BillingSection({ subscription, entitlements, session, onSubscriptionCha
                       </div>
                       <p className="mt-0.5 text-[11px] text-[var(--ink-3)]">{p.summary}</p>
                     </div>
-                    <p className="text-[15px] font-semibold tabular-nums">{formatCurrency(p.amountInr / 100, "INR")}<span className="text-[10px] font-normal text-[var(--ink-3)]"> / year</span></p>
+                    <p className="text-[15px] font-semibold tabular-nums">{formatCurrency(p.amountInr / 100, "INR")}<span className="text-[10px] font-normal text-[var(--ink-3)]"> one-time</span></p>
                   </div>
                   <ul className="mt-3 list-disc space-y-1 pl-4 text-[12px] leading-5 text-[var(--ink-2)]">
                     {p.bullets.map((b) => <li key={b}>{b}</li>)}
@@ -2963,7 +2947,7 @@ function BillingSection({ subscription, entitlements, session, onSubscriptionCha
                       disabled={busy}
                       className="mt-3 w-full rounded-full bg-[#1d1d1f] px-4 py-2.5 text-[12px] font-semibold text-white disabled:cursor-wait disabled:opacity-50"
                     >
-                      {busy ? "Opening Razorpay…" : `Get ${p.label} · ${formatCurrency(p.amountInr / 100, "INR")}/year`}
+                      {busy ? "Opening Razorpay…" : `Get ${p.label} · ${formatCurrency(p.amountInr / 100, "INR")} one-time`}
                     </button>
                   ) : (
                     <div className="mt-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
@@ -5955,7 +5939,7 @@ function FreeReleaseUpgradePrompt() {
         Finalizing splits your vault key into 5 cryptographic shares and turns on the live release service. It's the central paid feature.
       </p>
       <p className="mt-3 text-[13px] leading-5 text-[var(--amber-ink)]">
-        Open <strong>Settings → Billing</strong> to upgrade to Lyfos Vault (₹999/year in India or $9/year internationally).
+        Open <strong>Settings → Billing</strong> to upgrade to Lyfos Vault — a one-time ₹999 (India) or $9 (international) payment, yours for life.
       </p>
     </div>
   );

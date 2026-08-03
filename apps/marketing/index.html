@@ -48,7 +48,7 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
   "@context":"https://schema.org",
   "@graph":[
     {"@type":"Organization","@id":"https://lyfos.in/#org","name":"Lyfos","url":"https://lyfos.in/","logo":"https://lyfos.in/icon.svg","description":"A zero-knowledge vault built for life recovery.","sameAs":["https://app.lyfos.in"]},
-    {"@type":"SoftwareApplication","name":"Lyfos","applicationCategory":"SecurityApplication","operatingSystem":"Web browser","offers":[{"@type":"Offer","price":"0","priceCurrency":"INR","name":"Free"},{"@type":"Offer","price":"999","priceCurrency":"INR","name":"Vault (per year)"}],"description":"Encrypted vault for passwords, IDs, money and insurance — recoverable by the people you trust, never by Lyfos."},
+    {"@type":"SoftwareApplication","name":"Lyfos","applicationCategory":"SecurityApplication","operatingSystem":"Web browser","offers":[{"@type":"Offer","price":"0","priceCurrency":"INR","name":"Free"},{"@type":"Offer","price":"999","priceCurrency":"INR","name":"Vault (one-time)"}],"description":"Encrypted vault for passwords, IDs, money and insurance — recoverable by the people you trust, never by Lyfos."},
     {"@type":"FAQPage","mainEntity":[
       {"@type":"Question","name":"Can Lyfos read my vault?","acceptedAnswer":{"@type":"Answer","text":"No. Your vault is encrypted on your device with a key derived from a passphrase only you know. We only ever store ciphertext and hold no key to decrypt it."}},
       {"@type":"Question","name":"What if I lose my passphrase?","acceptedAnswer":{"@type":"Answer","text":"Your 24-word recovery phrase can open the vault. Write it down at setup — if you lose both the passphrase and the phrase, no one, including Lyfos, can recover the vault."}},
@@ -794,7 +794,7 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
         <div class="crow"><div class="feat-name">No one person can open it alone</div><div class="cell lyf yes">✓</div><div class="cell no">✗</div><div class="cell no">✗</div></div>
         <div class="crow"><div class="feat-name">Protects you if released by mistake</div><div class="cell lyf yes">✓</div><div class="cell no">—</div><div class="cell no">✗</div></div>
         <div class="crow"><div class="feat-name">Works the day it's actually needed</div><div class="cell lyf yes">✓</div><div class="cell no">✗</div><div class="cell no">Slowly</div></div>
-        <div class="crow"><div class="feat-name">Costs</div><div class="cell lyf">₹999/yr</div><div class="cell">₹2–4k/yr</div><div class="cell">₹10k+</div></div>
+        <div class="crow"><div class="feat-name">Costs</div><div class="cell lyf">₹999 once</div><div class="cell">₹2–4k/yr</div><div class="cell">₹10k+</div></div>
       </div>
     </div>
   </section>
@@ -810,7 +810,7 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
         <div class="faq-item"><button class="faq-q">How is this different from a password manager?</button><div class="faq-a"><p>A password manager keeps <em>you</em> logged in. Lyfos is built so the people you trust can recover everything if you're not there — a 3-of-5 release with a 14-day owner-protection hold — without ever giving anyone access while you are.</p></div></div>
         <div class="faq-item"><button class="faq-q">What if one of my five trusted people is unavailable?</button><div class="faq-a"><p>Recovery needs any 3 of your 5 holders, so it tolerates someone who's unreachable, has fallen out with the family, or has passed away. You can also update your circle any time.</p></div></div>
         <div class="faq-item"><button class="faq-q">What happens to my vault if Lyfos shuts down?</button><div class="faq-a"><p>Lyfos is local-first. You always hold a copy, and your standard BIP39 recovery phrase decrypts it with or without our servers, app, or company. You're never locked in.</p></div></div>
-        <div class="faq-item"><button class="faq-q">Is my subscription tied to my family being able to recover?</button><div class="faq-a"><p>Your records stay yours and readable even on the free tier or after a lapse. The paid plan adds the live release service, unlimited records, and encrypted multi-device sync.</p></div></div>
+        <div class="faq-item"><button class="faq-q">Is my family's ability to recover tied to an ongoing payment?</button><div class="faq-a"><p>No — Vault is a one-time purchase. Your records stay yours and readable on the free tier too. The paid plan adds the live release service, unlimited records, and encrypted multi-device sync, permanently once purchased.</p></div></div>
       </div>
     </div>
   </section>
@@ -845,8 +845,8 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
         </div>
         <div class="price feature reveal">
           <div class="tag">Vault · full product</div>
-          <div class="amt">₹999<span> / year</span></div>
-          <p class="tiny" style="margin:6px 0 0;color:var(--ink-2);">$9/year internationally</p>
+          <div class="amt">₹999<span> one-time</span></div>
+          <p class="tiny" style="margin:6px 0 0;color:var(--ink-2);">$9 internationally, one-time</p>
           <ul>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Unlimited entries</li>
             <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Personal balance sheet</li>
@@ -855,7 +855,7 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
           <a class="btn btn-green btn-lg" href="https://app.lyfos.in" style="margin-top:12px;display:inline-block;">Get Vault →</a>
         </div>
       </div>
-      <p class="tiny reveal" style="margin-top:22px;"><a href="/pricing/" style="color:var(--green-ink);border-bottom:1px solid color-mix(in srgb,var(--green) 35%,transparent);">compare all plans →</a> · GST invoices · cancel anytime</p>
+      <p class="tiny reveal" style="margin-top:22px;"><a href="/pricing/" style="color:var(--green-ink);border-bottom:1px solid color-mix(in srgb,var(--green) 35%,transparent);">compare all plans →</a> · GST invoices · one-time, no subscription</p>
     </div>
   </section>
 

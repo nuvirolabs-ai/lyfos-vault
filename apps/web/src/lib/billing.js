@@ -125,26 +125,3 @@ export async function joinVaultFallWaitlist({ email, source = "vault-fall-intere
   return data;
 }
 
-/**
- * Cancel the user's subscription at the end of the current period.
- * Provider-side cancellation is handled by the Edge Function.
- */
-export async function cancelSubscriptionAtPeriodEnd() {
-  if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
-  const sb = getSupabase();
-  const { data, error } = await sb.functions.invoke("cancel-subscription", { body: {} });
-  if (error) throw error;
-  return data;
-}
-
-/**
- * Resume a previously cancelled subscription (only valid if cancel_at_period_end
- * is true and current_period_end hasn't passed).
- */
-export async function resumeSubscription() {
-  if (!isSupabaseConfigured()) throw new Error("Cloud sync not configured");
-  const sb = getSupabase();
-  const { data, error } = await sb.functions.invoke("resume-subscription", { body: {} });
-  if (error) throw error;
-  return data;
-}
