@@ -21,8 +21,8 @@ body[data-theme="light"], :root {
   --surface-3: #f2f2f5;
   --ink: #1d1d1f;
   --ink-2: #6e6e73;
-  --ink-3: #86868b;
-  --ink-4: #a1a1a6;
+  --ink-3: #707075;
+  --ink-4: #707075;
   --ink-5: #c7c7cc;
   --line: rgba(0, 0, 0, 0.08);
   --line-2: rgba(0, 0, 0, 0.12);
@@ -53,7 +53,7 @@ body[data-theme="dark"] {
   --ink: #f4f4f5;
   --ink-2: #a9a9b2;
   --ink-3: #82828b;
-  --ink-4: #6b6b73;
+  --ink-4: #8a8a92;
   --ink-5: #3a3a3c;
   --line: rgba(255, 255, 255, 0.10);
   --line-2: rgba(255, 255, 255, 0.16);
