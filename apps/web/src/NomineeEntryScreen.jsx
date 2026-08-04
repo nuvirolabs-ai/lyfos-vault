@@ -62,7 +62,7 @@ export function NomineeEntryScreen({ onReturnHome }) {
     return (
       <div>
         <Intro />
-        <div className="mt-6"><AuthScreen returnPath="/claim" onSignedIn={setSession} /></div>
+        <div className="mt-4"><AuthScreen returnPath="/claim" onSignedIn={setSession} title="Sign in" subtitle="" /></div>
       </div>
     );
   }
@@ -109,12 +109,21 @@ export function NomineeEntryScreen({ onReturnHome }) {
   );
 }
 
+// A little more gravity than the owner's own sign-in screen, on
+// purpose — this is someone else's vault, and the one rule that
+// matters most (always your own account, never the owner's) needs to
+// land before the form does. Amber, not red: serious, not alarming.
 function Intro() {
   return (
-    <div className="mx-auto max-w-md px-5 pt-12 text-center">
-      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Lyfos nominee</p>
-      <h1 className="mt-4 text-[34px] font-semibold leading-[1.08] tracking-tight">Recover a vault you were entrusted with.</h1>
-      <p className="mt-4 text-[14px] leading-6 text-[#6e6e73]">Sign in with the same email that accepted the Circle of Trust invitation.</p>
+    <div className="mx-auto max-w-sm px-5 pt-14 text-center">
+      <div className="mx-auto grid h-14 w-14 place-items-center rounded-[16px] bg-[#fdf4e3]">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#7a4b00" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="8" cy="15" r="4" />
+          <path d="M11 12 L20 3 M17 6 l3 3 M14 9 l2 2" />
+        </svg>
+      </div>
+      <h1 className="mt-5 text-[24px] font-semibold leading-[1.2] tracking-tight text-[#1d1d1f]">Recovering someone else's vault.</h1>
+      <p className="mt-2 text-[13px] leading-5 text-[#6e6e73]">Sign in with your own account — the one that accepted the invite.</p>
     </div>
   );
 }

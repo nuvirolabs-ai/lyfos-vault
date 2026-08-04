@@ -30,7 +30,9 @@ export function AuthScreen({
   onNomineeEntry,
   initialEmail = "",
   lockedEmail = false,
-  returnPath = "/"
+  returnPath = "/",
+  title = "Sign in or create your account.",
+  subtitle = "One email, one password. Your account lets you open your vault on more than one device — Lyfos never sees your vault contents."
 }) {
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
@@ -152,10 +154,12 @@ export function AuthScreen({
       <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 py-12">
         <header className="text-center">
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#86868b]">Lyfos</p>
-          <h1 className="mt-4 text-[36px] font-semibold leading-[1.1] tracking-tight md:text-[44px]">Sign in or create your account.</h1>
-          <p className="mx-auto mt-4 max-w-sm text-[14px] leading-6 text-[#6e6e73]">
-            One email, one password. Your account lets you open your vault on more than one device — Lyfos never sees your vault contents.
-          </p>
+          <h1 className="mt-4 text-[36px] font-semibold leading-[1.1] tracking-tight md:text-[44px]">{title}</h1>
+          {subtitle && (
+            <p className="mx-auto mt-4 max-w-sm text-[14px] leading-6 text-[#6e6e73]">
+              {subtitle}
+            </p>
+          )}
         </header>
 
         <form onSubmit={submit} className="mt-10 space-y-3">
