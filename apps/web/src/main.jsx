@@ -7210,4 +7210,39 @@ function ThemeToggle() {
   );
 }
 
-createRoot(document.getElementById("root")).render(<><App /><ThemeToggle /></>);
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(error, info) {
+    console.error("Lyfos crashed:", error, info?.componentStack);
+  }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[var(--bg)] p-6 text-[var(--ink)]">
+        <div className="w-full max-w-sm rounded-[28px] border border-[var(--line)] bg-[var(--surface)] p-8 text-center shadow-[0_20px_60px_rgba(0,0,0,0.08)]">
+          <div className="mx-auto grid h-16 w-16 place-items-center rounded-[18px] bg-[var(--amber-soft)]">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--amber-ink)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v4M12 17h.01" /><path d="M10.3 3.9 1.9 18a2 2 0 0 0 1.7 3h16.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /></svg>
+          </div>
+          <h1 className="mt-5 text-xl font-semibold">Something went wrong</h1>
+          <p className="mt-2 text-[14px] leading-6 text-[var(--ink-2)]">
+            Lyfos hit an unexpected error. Your vault stays encrypted on this device — nothing was sent anywhere or lost. Reloading usually fixes it.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-6 h-12 w-full rounded-full bg-[var(--accent)] text-[15px] font-semibold text-white transition hover:bg-[var(--accent-hover)]"
+          >
+            Reload Lyfos
+          </button>
+        </div>
+      </div>
+    );
+  }
+}
+
+createRoot(document.getElementById("root")).render(<ErrorBoundary><App /><ThemeToggle /></ErrorBoundary>);
