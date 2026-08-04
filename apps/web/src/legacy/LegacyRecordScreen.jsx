@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { FIELD_TEMPLATES, deriveRecordStatus, getCategory, getFreshnessState, getService } from "@os-one/digital-legacy";
 import { appendAuditEvent } from "../lib/stage1Audit.js";
 import { DIGITAL_LEGACY_FEATURE_FLAGS } from "./featureFlags.js";
@@ -13,7 +14,8 @@ const FRESHNESS_LABELS = {
   potentially_outdated: "Hasn't been reviewed — details may be outdated."
 };
 
-export default function LegacyRecordScreen({ digitalLegacy, vault, onSave, recordId, onBack, onEdit }) {
+export default function LegacyRecordScreen({ digitalLegacy, vault, onSave, recordId, onBack, onEdit, runWithRecentAuth }) {
+  const [revealed, setRevealed] = useState(false);
   const record = digitalLegacy.records.find((r) => r.id === recordId);
 
   if (!record) {
@@ -32,6 +34,12 @@ export default function LegacyRecordScreen({ digitalLegacy, vault, onSave, recor
   const freshness = getFreshnessState(record.review?.lastReviewedAt);
   const canEdit = DIGITAL_LEGACY_FEATURE_FLAGS.serviceCatalogue;
   const needsOwnerReview = record.migration?.classification === "needs_owner_review";
+
+  function toggleReveal() {
+    if (revealed) { setRevealed(false); return; }
+    const show = () => setRevealed(true);
+    if (runWithRecentAuth) runWithRecentAuth(show); else show();
+  }
 
   async function handleArchive() {
     const label = record.accountLabel || service?.name || category?.name || "this record";
@@ -78,23 +86,29 @@ export default function LegacyRecordScreen({ digitalLegacy, vault, onSave, recor
       )}
 
       <section className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">Details</p>
+        <div className="flex items-center justify-between">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">Details</p>
+          {record.fields.some((f) => FIELD_TEMPLATES[f.fieldKey]?.revealRequiresReauthentication) && (
+            <button onClick={toggleReveal} className="text-[12px] font-semibold text-[var(--green-ink)] hover:underline">
+              {revealed ? "Hide" : "Reveal"}
+            </button>
+          )}
+        </div>
         {record.fields.length === 0 ? (
           <p className="mt-3 text-[13px] text-[var(--ink-3)]">No details added yet.</p>
         ) : (
           <dl className="mt-3 divide-y divide-[var(--line)]">
             {record.fields.map((field) => {
               const template = FIELD_TEMPLATES[field.fieldKey];
-              // Any field whose template requires reauthentication to reveal
-              // stays masked here, unconditionally — reveal is a Phase 4B
-              // control gated on a recent-auth service that doesn't exist
-              // yet (assessment DL-02/DL-03). This screen never bypasses it.
-              const masked = template?.revealRequiresReauthentication;
+              // Sensitive fields (password, PIN, recovery code) stay masked
+              // until the owner passes the shared recent-auth gate — the
+              // same one that guards reveal on the original vault items.
+              const sensitive = template?.revealRequiresReauthentication;
               return (
                 <div key={field.fieldKey} className="flex items-start justify-between gap-4 py-2.5">
                   <dt className="shrink-0 text-[12.5px] text-[var(--ink-3)]">{template?.label ?? field.fieldKey}</dt>
-                  <dd className="max-w-[60%] text-right text-[13px] text-[var(--ink)]">
-                    {masked ? <span className="text-[var(--ink-4)]">•••• Hidden — needs reauthentication in a later release</span> : String(field.value ?? "—")}
+                  <dd className="max-w-[60%] break-words text-right text-[13px] text-[var(--ink)]">
+                    {sensitive && !revealed ? <span className="text-[var(--ink-4)]">•••• •••• ••••</span> : String(field.value ?? "—")}
                   </dd>
                 </div>
               );

@@ -11,6 +11,7 @@ import {
 } from "@os-one/digital-legacy";
 import { appendAuditEvent } from "../lib/stage1Audit.js";
 import { readFilesAsAttachments } from "../lib/stage1Attachments.js";
+import { DIGITAL_LEGACY_FEATURE_FLAGS } from "./featureFlags.js";
 import { AUDIENCE_LABELS, LEGACY_ACTION_LABELS, RECIPIENT_LABELS, REVIEW_FREQUENCY_LABELS } from "./labels.js";
 import ServiceIcon from "./components/ServiceIcon.jsx";
 import AttachmentList from "./components/AttachmentList.jsx";
@@ -30,6 +31,9 @@ function fieldInput(template, value, onChange) {
   }
   if (template.fieldType === "date") {
     return <input type="date" {...props} />;
+  }
+  if (["password", "pin", "recovery-code"].includes(template.fieldType)) {
+    return <input type="password" autoComplete="off" placeholder={template.placeholder || undefined} {...props} />;
   }
   return <input type="text" placeholder={template.placeholder || undefined} {...props} />;
 }
@@ -63,9 +67,15 @@ export default function LegacyRecordForm({ digitalLegacy, vault, onSave, categor
   const allowedFieldKeys = useMemo(() => {
     const suggested = selectedService?.suggestedFieldKeys ?? [];
     const existingKeys = existingRecord?.fields?.map((f) => f.fieldKey) ?? [];
-    return [...new Set([...suggested, ...existingKeys])]
+    // Password/PIN/recovery code aren't in any service's curated suggestion
+    // list (that catalogue predates credential storage) — offer them on
+    // every record instead of touching the domain package's data, so any
+    // account can hold whichever one actually applies to it.
+    const credentialKeys = DIGITAL_LEGACY_FEATURE_FLAGS.credentialFields ? ["password", "pin", "recovery-code"] : [];
+    return [...new Set([...suggested, ...credentialKeys, ...existingKeys])]
       // "account-label" duplicates the record's own top-level Label field.
-      .filter((key) => key !== "account-label" && FIELD_TEMPLATES[key]?.storagePolicy === "allowed");
+      .filter((key) => key !== "account-label" && ["allowed", "feature_gated"].includes(FIELD_TEMPLATES[key]?.storagePolicy))
+      .filter((key) => FIELD_TEMPLATES[key]?.storagePolicy !== "feature_gated" || DIGITAL_LEGACY_FEATURE_FLAGS.credentialFields);
   }, [selectedService, existingRecord]);
 
   const basicFieldKeys = useMemo(
@@ -175,7 +185,7 @@ export default function LegacyRecordForm({ digitalLegacy, vault, onSave, categor
         attachments,
         createdAt: existingRecord?.createdAt
       };
-      const options = { now };
+      const options = { now, featureFlags: DIGITAL_LEGACY_FEATURE_FLAGS };
       if (existingRecord) options.idFactory = () => existingRecord.id;
       const record = createLegacyRecord(input, options);
       const nextRecords = existingRecord

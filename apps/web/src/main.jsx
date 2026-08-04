@@ -2790,7 +2790,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
                 <LegacyCategoryScreen digitalLegacy={vault.digitalLegacy} categoryId={legacyCategoryId} onOpenRecord={openLegacyRecord} onAddRecord={openLegacyRecordNew} onBack={() => setScreen("legacy")} />
               )}
               {screen === "legacy-record" && DIGITAL_LEGACY_FEATURE_FLAGS.dashboard && vault.digitalLegacy && (
-                <LegacyRecordScreen digitalLegacy={vault.digitalLegacy} vault={vault} onSave={onSave} recordId={legacyRecordId} onBack={() => setScreen(legacyCategoryId ? "legacy-category" : "legacy")} onEdit={openLegacyRecordEdit} />
+                <LegacyRecordScreen digitalLegacy={vault.digitalLegacy} vault={vault} onSave={onSave} recordId={legacyRecordId} onBack={() => setScreen(legacyCategoryId ? "legacy-category" : "legacy")} onEdit={openLegacyRecordEdit} runWithRecentAuth={runWithRecentAuth} />
               )}
               {screen === "legacy-record-edit" && DIGITAL_LEGACY_FEATURE_FLAGS.dashboard && DIGITAL_LEGACY_FEATURE_FLAGS.serviceCatalogue && vault.digitalLegacy && (
                 <LegacyRecordForm

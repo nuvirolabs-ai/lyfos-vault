@@ -61,7 +61,7 @@ export default function MyLegacyScreen({ digitalLegacy, onOpenCategory, onOpenRe
         <p className="text-[12px] font-medium uppercase tracking-[0.16em] text-[var(--ink-3)]">My Legacy</p>
         <h1 className="mt-3 max-w-2xl text-[32px] font-semibold leading-[1.1] tracking-tight text-[var(--ink)] md:text-[40px]">Everything your family would need to find.</h1>
         <p className="mt-3 max-w-xl text-[13.5px] leading-6 text-[var(--ink-2)]">
-          Kept inside your encrypted vault, alongside everything else. Passwords, PINs and recovery codes aren't available here yet — this only holds account labels, instructions, and where to look.
+          Passwords, accounts, and instructions — encrypted, and ready for your family.
         </p>
       </header>
 
