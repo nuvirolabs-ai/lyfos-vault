@@ -61,6 +61,22 @@ export default function MyLegacyScreen({ digitalLegacy, onOpenCategory, onOpenRe
     });
   }, [activeRecords, digitalLegacy.categoryReviews]);
 
+  // "Needs your attention" has two honest states, not one message
+  // stretched to cover both: while categories are still untouched, point
+  // at the single most useful next one (sensitive categories first);
+  // once every category has real records or is deliberately marked not
+  // applicable, and no record has an issue, it's genuinely all clear.
+  const SENSITIVITY_RANK = { critical: 0, high: 1, standard: 2 };
+  const suggestedCategory = useMemo(() => {
+    if (priorityActions.length > 0) return null;
+    const untouched = categoryRows.filter(({ recordsInCategory, reviewEntry }) => recordsInCategory.length === 0 && reviewEntry?.state !== "not_applicable");
+    if (!untouched.length) return null;
+    return [...untouched].sort((a, b) =>
+      (SENSITIVITY_RANK[a.category.sensitivityLevel] ?? 3) - (SENSITIVITY_RANK[b.category.sensitivityLevel] ?? 3)
+      || a.category.sortOrder - b.category.sortOrder
+    )[0].category;
+  }, [priorityActions, categoryRows]);
+
   return (
     <div className="space-y-10">
       <header>
@@ -72,7 +88,7 @@ export default function MyLegacyScreen({ digitalLegacy, onOpenCategory, onOpenRe
 
       <section>
         <h2 className="mb-3 text-[16px] font-semibold text-[var(--ink)]">Needs your attention</h2>
-        <PriorityActions actions={priorityActions} records={activeRecords} onOpenRecord={onOpenRecord} />
+        <PriorityActions actions={priorityActions} records={activeRecords} onOpenRecord={onOpenRecord} suggestedCategory={suggestedCategory} onOpenCategory={onOpenCategory} />
       </section>
 
       <section id="legacy-categories">
