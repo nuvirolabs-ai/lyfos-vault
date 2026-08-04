@@ -2595,6 +2595,18 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
   function openLegacyRecord(id) { setLegacyRecordId(id); setScreen("legacy-record"); }
   function openLegacyRecordNew(categoryId) { setLegacyCategoryId(categoryId); setLegacyEditRecordId(null); setScreen("legacy-record-edit"); }
   function openLegacyRecordEdit(id) { setLegacyEditRecordId(id); setScreen("legacy-record-edit"); }
+  // The global "+Add" affordance used to just setScreen("legacy") — a
+  // no-op when My Legacy is already the home screen, which it usually
+  // is, so the button looked broken. It now always lands you on the
+  // category grid, scrolling to it if you're already there.
+  function goToAddRecord() {
+    if (DIGITAL_LEGACY_FEATURE_FLAGS.dashboard) {
+      setScreen("legacy");
+      requestAnimationFrame(() => document.getElementById("legacy-categories")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    } else {
+      setScreen("capture");
+    }
+  }
   async function markLegacyCategoryNotApplicable(categoryId) {
     const now = new Date().toISOString();
     const digitalLegacy = vault.digitalLegacy ?? { categoryReviews: [], customCategories: [], customServices: [], records: [] };
@@ -2695,7 +2707,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
   return (
     <main className="min-h-screen bg-[var(--bg)] text-[var(--ink)]">
       {/* Top bar */}
-      <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-[var(--line)] bg-[var(--surface)] px-4">
+      <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-[var(--line)] bg-[var(--surface)] pl-4 pr-16">
         <div className="flex items-center gap-2.5 font-semibold">
           <span className="grid h-6 w-6 place-items-center rounded-md bg-[var(--accent)]">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M8.2 11V8.3a3.8 3.8 0 0 1 7.6 0V11" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" /><rect x="5.4" y="10.6" width="13.2" height="9.4" rx="2.7" fill="#fff" /><circle cx="12" cy="14.7" r="1.55" fill="var(--accent)" /><path d="M12 15.7l-1.05 3.5h2.1z" fill="var(--accent)" /></svg>
@@ -2741,7 +2753,7 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
           )}
           {!railCollapsed && <div className="mt-6 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">You</div>}
           <div className="mt-1.5 space-y-0.5">
-            <RailItem collapsed={railCollapsed} active={screen === "capture" || screen === "legacy-record-edit"} onClick={() => setScreen(DIGITAL_LEGACY_FEATURE_FLAGS.dashboard ? "legacy" : "capture")} icon="M12 5 V19 M5 12 H19" label="Add a record" count={freeLimitReached ? `${vault.items.length}/${entitlements.vaultItemLimit}` : undefined} dataTour="add" pulse={hint("capture")} />
+            <RailItem collapsed={railCollapsed} active={screen === "capture" || screen === "legacy-record-edit"} onClick={goToAddRecord} icon="M12 5 V19 M5 12 H19" label="Add a record" count={freeLimitReached ? `${vault.items.length}/${entitlements.vaultItemLimit}` : undefined} dataTour="add" pulse={hint("capture")} />
             <RailItem collapsed={railCollapsed} active={screen === "settings"} onClick={() => setScreen("settings")} icon="M12 9 a3 3 0 1 0 0 6 a3 3 0 0 0 0-6 Z M12 2 v3 M12 19 v3 M5 5 l2 2 M17 17 l2 2 M2 12 h3 M19 12 h3 M5 19 l2-2 M17 7 l2-2" label="Settings" />
           </div>
         </aside>
@@ -2753,11 +2765,11 @@ function VaultExperience({ vault, vaultKey, notice, autoLockMs, onAutoLockChange
             {railWorkspace.map((n) => (
               <button key={n.id} onClick={() => setScreen(n.id)} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", isRailActive(n.id) ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]", n.locked && !isRailActive(n.id) && "opacity-60", hint(n.id) && "tour-pulse")}>{n.label}{n.locked ? " · Locked" : ""}</button>
             ))}
-            <button onClick={() => setScreen(DIGITAL_LEGACY_FEATURE_FLAGS.dashboard ? "legacy" : "capture")} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", (screen === "capture" || screen === "legacy-record-edit") ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]", hint("capture") && "tour-pulse")}>+ Add</button>
+            <button onClick={goToAddRecord} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", (screen === "capture" || screen === "legacy-record-edit") ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]", hint("capture") && "tour-pulse")}>+ Add</button>
             <button onClick={() => setScreen("settings")} className={cx("shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium", screen === "settings" ? "bg-[var(--ink)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)]")}>Settings</button>
           </div>
           {/* Mobile: a persistent "add" affordance for the most common action */}
-          <button onClick={() => setScreen(DIGITAL_LEGACY_FEATURE_FLAGS.dashboard ? "legacy" : "capture")} aria-label="Add a record" className="fixed bottom-5 right-5 z-30 inline-flex h-14 items-center gap-2 rounded-full bg-[var(--accent)] px-5 text-white shadow-[0_10px_28px_rgba(22,163,74,0.28)] transition hover:translate-y-[-1px] lg:hidden">
+          <button onClick={goToAddRecord} aria-label="Add a record" className="fixed bottom-5 right-5 z-30 inline-flex h-14 items-center gap-2 rounded-full bg-[var(--accent)] px-5 text-white shadow-[0_10px_28px_rgba(22,163,74,0.28)] transition hover:translate-y-[-1px] lg:hidden">
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5 V19 M5 12 H19" /></svg>
             <span className="text-[13px] font-semibold">Add record</span>
           </button>
