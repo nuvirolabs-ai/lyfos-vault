@@ -26,24 +26,29 @@ export function calculateCoverageScore(digitalLegacy = {}) {
 
 function readinessForRecord(record) {
   const fields = record.fields ?? [];
+  // Every new record starts with instructions.action defaulting to
+  // "custom" (LEGACY_ACTION_LABELS.custom = "See the note below") and
+  // releasePolicy.trigger hardcoded to "existing_circle" — neither is
+  // ever a decision the owner made. Criteria only credit a field once
+  // its value could only exist because someone actually chose it, so
+  // an untouched record can't be scored as if it were ready.
   const criteria = {
     accountIdentified: hasValue(record.accountLabel)
       || fields.some((field) => ["identity_information", "account_information"].includes(field.classification) && hasValue(field.value)),
     recoveryPathDocumented: fields.some((field) => field.fieldKey === "recovery-path" && hasValue(field.value)),
-    legacyActionSelected: hasValue(record.instructions?.action),
+    legacyActionSelected: record.instructions?.action && record.instructions.action !== "custom"
+      ? true
+      : hasValue(record.instructions?.customText),
     nomineeAssigned: record.releasePolicy?.audience !== "owner_only"
       && hasValue(record.releasePolicy?.recipientMode),
     supportingInformationIncluded: (record.attachments ?? []).length > 0
-      || fields.some((field) => field.classification === "supporting_document" && hasValue(field.value)),
-    releaseConditionConfigured: hasValue(record.releasePolicy?.audience)
-      && hasValue(record.releasePolicy?.trigger)
+      || fields.some((field) => field.classification === "supporting_document" && hasValue(field.value))
   };
   const value = (criteria.accountIdentified ? 15 : 0)
-    + (criteria.recoveryPathDocumented ? 20 : 0)
+    + (criteria.recoveryPathDocumented ? 25 : 0)
     + (criteria.legacyActionSelected ? 20 : 0)
-    + (criteria.nomineeAssigned ? 20 : 0)
-    + (criteria.supportingInformationIncluded ? 10 : 0)
-    + (criteria.releaseConditionConfigured ? 15 : 0);
+    + (criteria.nomineeAssigned ? 25 : 0)
+    + (criteria.supportingInformationIncluded ? 15 : 0);
   return { recordId: record.id, value, criteria };
 }
 

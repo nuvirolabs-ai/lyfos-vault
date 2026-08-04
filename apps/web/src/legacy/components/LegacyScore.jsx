@@ -1,4 +1,24 @@
 import { useEffect, useRef, useState } from "react";
+import { getWeeklyTrend, loadScoreHistory, recordScoreSnapshot } from "../../lib/legacyScoreHistory.js";
+
+function Sparkline({ history }) {
+  const points = history.slice(-30);
+  if (points.length < 2) return null;
+  const scores = points.map((p) => p.score);
+  const max = Math.max(...scores, 1);
+  const min = Math.min(...scores, 0);
+  const range = Math.max(max - min, 1);
+  const w = 100;
+  const h = 28;
+  const coords = points
+    .map((p, i) => `${(i / (points.length - 1)) * w},${h - ((p.score - min) / range) * h}`)
+    .join(" ");
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="mt-4 h-7 w-full" aria-hidden="true">
+      <polyline points={coords} fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 // Copy deliberately says "prepared", never "secure"/"guaranteed"/"100%
 // protected" — this score is a transparent estimate, not a security
@@ -10,6 +30,13 @@ export default function LegacyScore({ score }) {
   // style, instead of snapping straight to the value.
   const [displayed, setDisplayed] = useState(0);
   const frameRef = useRef(null);
+  const [history, setHistory] = useState(() => loadScoreHistory());
+
+  useEffect(() => {
+    setHistory(recordScoreSnapshot(score.overall));
+    // Only re-snapshot when the score itself changes, not on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [score.overall]);
 
   useEffect(() => {
     const target = score.overall;
@@ -30,17 +57,26 @@ export default function LegacyScore({ score }) {
     return () => cancelAnimationFrame(frameRef.current);
   }, [score.overall]);
 
+  const trend = getWeeklyTrend(history, score.overall);
+
   return (
     <div className="flex flex-wrap items-center gap-8 rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-7 md:flex-nowrap md:gap-12 md:p-10">
-      <div
-        className="legacy-score-ring grid h-32 w-32 shrink-0 place-items-center rounded-full"
-        style={{ "--score-pct": `${displayed}%` }}
-      >
-        <div className="grid h-24 w-24 place-items-center rounded-full bg-[var(--surface)] text-[28px] font-semibold tracking-tight text-[var(--ink)]">
-          {displayed}%
+      <div className="shrink-0 text-center">
+        <div
+          className="legacy-score-ring grid h-32 w-32 place-items-center rounded-full"
+          style={{ "--score-pct": `${displayed}%` }}
+        >
+          <div className="grid h-24 w-24 place-items-center rounded-full bg-[var(--surface)] text-[28px] font-semibold tracking-tight text-[var(--ink)]">
+            {displayed}%
+          </div>
         </div>
+        {trend !== null && trend !== 0 && (
+          <p className={`mt-2 text-[11px] font-semibold ${trend > 0 ? "text-[var(--green-ink)]" : "text-[var(--ink-3)]"}`}>
+            {trend > 0 ? "↑" : "↓"} {Math.abs(trend)} this week
+          </p>
+        )}
       </div>
-      <div className="min-w-0 max-w-md">
+      <div className="min-w-0 max-w-md flex-1">
         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--ink-3)]">Digital Legacy</p>
         <div className="mt-3 flex items-center gap-2">
           <h2 className="text-[20px] font-semibold leading-tight text-[var(--ink)]">{score.label}</h2>
@@ -61,6 +97,7 @@ export default function LegacyScore({ score }) {
             <dd className="mt-0.5 font-semibold text-[var(--ink)]">{score.freshness.value}%</dd>
           </div>
         </dl>
+        <Sparkline history={history} />
       </div>
     </div>
   );

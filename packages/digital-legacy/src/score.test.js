@@ -49,7 +49,7 @@ test("coverage counts categories with records or explicit not-applicable review"
   assert.equal(score.value, 21);
 });
 
-test("readiness follows 15/20/20/20/10/15 weights and never requires a password", () => {
+test("readiness follows 15/25/20/25/15 weights and never requires a password", () => {
   const ready = calculateReadinessScore([record()]);
   assert.equal(ready.value, 100);
   assert.equal(ready.records[0].criteria.authenticationSecret, undefined);
@@ -58,7 +58,29 @@ test("readiness follows 15/20/20/20/10/15 weights and never requires a password"
     releasePolicy: { audience: "owner_only", recipientMode: "primary", nomineeHolderIds: [], trigger: "manual", enforcement: "intent_only" },
     attachments: []
   })]);
-  assert.equal(noNomineeOrAttachment.value, 70);
+  assert.equal(noNomineeOrAttachment.value, 60);
+});
+
+test("readiness never credits untouched form defaults as real decisions", () => {
+  // The form seeds every new record with action "custom" (no note written)
+  // and audience "owner_only" — nobody chose either. Only the label was
+  // actually typed, so readiness should reflect that, not look "half done".
+  const untouched = calculateReadinessScore([record({
+    fields: [],
+    instructions: { action: "custom" },
+    releasePolicy: { audience: "owner_only", recipientMode: "primary", nomineeHolderIds: [], trigger: "existing_circle", enforcement: "intent_only" },
+    attachments: []
+  })]);
+  assert.equal(untouched.value, 15);
+  assert.equal(untouched.records[0].criteria.legacyActionSelected, false);
+
+  const withCustomNote = calculateReadinessScore([record({
+    fields: [],
+    instructions: { action: "custom", customText: "Call my sister first." },
+    releasePolicy: { audience: "owner_only", recipientMode: "primary", nomineeHolderIds: [], trigger: "existing_circle", enforcement: "intent_only" },
+    attachments: []
+  })]);
+  assert.equal(withCustomNote.records[0].criteria.legacyActionSelected, true);
 });
 
 test("freshness uses configurable current, review, stale and outdated bands", () => {

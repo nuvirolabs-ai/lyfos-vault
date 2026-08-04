@@ -1,4 +1,5 @@
 import ServiceIcon from "./ServiceIcon.jsx";
+import { getCategoryColor } from "../categoryColors.js";
 
 const TONE_CLASSES = {
   protected: "text-[var(--green-ink)]",
@@ -20,9 +21,10 @@ const CARD_TONE_CLASSES = {
 // Fixed height with an always-reserved second row (invisible when
 // unused) — so every card in the grid is the same height whether or
 // not "Mark not applicable" is showing, and rows line up cleanly.
-export default function CategoryCard({ category, recordCount, state, onClick, onMarkNotApplicable }) {
+export default function CategoryCard({ category, recordCount, state, onClick, onMarkNotApplicable, readiness = 0 }) {
+  const color = getCategoryColor(category.iconKey);
   return (
-    <div className={`flex h-[86px] flex-col justify-between rounded-2xl border px-4 py-3 transition-[transform,box-shadow,border-color] duration-150 hover:-translate-y-0.5 hover:border-[var(--line-2)] hover:opacity-100 hover:shadow-[0_8px_20px_rgba(0,0,0,0.08)] active:translate-y-0 ${CARD_TONE_CLASSES[state.tone] ?? CARD_TONE_CLASSES.neutral}`}>
+    <div className={`flex h-[92px] flex-col rounded-2xl border px-4 py-3 transition-[transform,box-shadow,border-color] duration-150 hover:-translate-y-0.5 hover:border-[var(--line-2)] hover:opacity-100 hover:shadow-[0_8px_20px_rgba(0,0,0,0.08)] active:translate-y-0 ${CARD_TONE_CLASSES[state.tone] ?? CARD_TONE_CLASSES.neutral}`}>
       <button onClick={onClick} className="flex flex-1 items-center gap-3 text-left">
         <ServiceIcon iconKey={category.iconKey} />
         <span className="min-w-0 flex-1">
@@ -33,11 +35,14 @@ export default function CategoryCard({ category, recordCount, state, onClick, on
           {state.label} <span aria-hidden="true">›</span>
         </span>
       </button>
+      <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-[var(--surface-3)]" role="progressbar" aria-label={`${category.name} readiness`} aria-valuenow={readiness} aria-valuemin={0} aria-valuemax={100}>
+        <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${readiness}%`, background: color.ink }} />
+      </div>
       <button
         onClick={onMarkNotApplicable}
         tabIndex={onMarkNotApplicable ? 0 : -1}
         aria-hidden={onMarkNotApplicable ? undefined : "true"}
-        className={`self-start pl-[52px] text-left text-[11px] font-medium text-[var(--ink-3)] underline decoration-dotted hover:text-[var(--ink)] ${onMarkNotApplicable ? "" : "invisible"}`}
+        className={`mt-1.5 self-start pl-[52px] text-left text-[11px] font-medium text-[var(--ink-3)] underline decoration-dotted hover:text-[var(--ink)] ${onMarkNotApplicable ? "" : "invisible"}`}
       >
         Mark not applicable
       </button>

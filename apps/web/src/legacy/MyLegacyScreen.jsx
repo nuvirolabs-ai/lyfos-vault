@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { LEGACY_CATEGORIES, calculateDigitalLegacyScore, createPriorityActions, getCategory } from "@os-one/digital-legacy";
+import { LEGACY_CATEGORIES, calculateDigitalLegacyScore, calculateReadinessScore, createPriorityActions, getCategory } from "@os-one/digital-legacy";
 import { DIGITAL_LEGACY_FEATURE_FLAGS } from "./featureFlags.js";
 import LegacyScore from "./components/LegacyScore.jsx";
 import PriorityActions from "./components/PriorityActions.jsx";
@@ -50,7 +50,8 @@ export default function MyLegacyScreen({ digitalLegacy, onOpenCategory, onOpenRe
       .map((category) => {
         const recordsInCategory = activeRecords.filter((r) => r.categoryId === category.id);
         const reviewEntry = digitalLegacy.categoryReviews.find((r) => r.categoryId === category.id);
-        return { category, recordsInCategory, reviewEntry };
+        const readiness = recordsInCategory.length ? calculateReadinessScore(recordsInCategory).value : 0;
+        return { category, recordsInCategory, reviewEntry, readiness };
       });
     return rows.sort((a, b) => {
       const aEmpty = a.recordsInCategory.length === 0;
@@ -74,10 +75,10 @@ export default function MyLegacyScreen({ digitalLegacy, onOpenCategory, onOpenRe
         <PriorityActions actions={priorityActions} records={activeRecords} onOpenRecord={onOpenRecord} />
       </section>
 
-      <section>
+      <section id="legacy-categories">
         <h2 className="mb-3 text-[16px] font-semibold text-[var(--ink)]">Categories</h2>
         <div className="grid gap-2 md:grid-cols-2">
-          {categoryRows.map(({ category, recordsInCategory, reviewEntry }, index) => {
+          {categoryRows.map(({ category, recordsInCategory, reviewEntry, readiness }, index) => {
             const showMarkNotApplicable = DIGITAL_LEGACY_FEATURE_FLAGS.serviceCatalogue
               && recordsInCategory.length === 0
               && reviewEntry?.state !== "not_applicable";
@@ -89,6 +90,7 @@ export default function MyLegacyScreen({ digitalLegacy, onOpenCategory, onOpenRe
                   state={categoryState(recordsInCategory, reviewEntry)}
                   onClick={() => onOpenCategory(category.id)}
                   onMarkNotApplicable={showMarkNotApplicable ? () => onMarkNotApplicable(category.id) : undefined}
+                  readiness={readiness}
                 />
               </div>
             );
