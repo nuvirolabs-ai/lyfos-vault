@@ -908,6 +908,14 @@ function App() {
   const [vaultKey, setVaultKey] = useState(null);
   const [vault, setVault] = useState(null);
   const [notice, setNotice] = useState("");
+  // A one-time confirmation ("Vault created...", "Synced from cloud...")
+  // shouldn't sit on screen forever — auto-dismiss so it doesn't pile up
+  // as permanent clutter above the actual page content.
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(""), 5000);
+    return () => clearTimeout(timer);
+  }, [notice]);
   const [lockNotice, setLockNotice] = useState("");
   const [autoLockMs, setAutoLockMs] = useState(() => loadAutoLockPolicy(localStorage));
   const [backupHealth, setBackupHealth] = useState(() => loadBackupHealth(localStorage));

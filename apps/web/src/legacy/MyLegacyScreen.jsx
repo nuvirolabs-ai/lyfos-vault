@@ -11,6 +11,11 @@ import CategoryCard from "./components/CategoryCard.jsx";
 // (docs/LYFOS_DIGITAL_LEGACY_ASSESSMENT.md §"Current vault model").
 const ATTENTION_ORDER = ["action_required", "incomplete", "needs_review", "started"];
 
+function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+}
+
 function categoryState(recordsInCategory, reviewEntry) {
   if (recordsInCategory.length === 0) {
     return reviewEntry?.state === "not_applicable"
@@ -58,11 +63,8 @@ export default function MyLegacyScreen({ digitalLegacy, onOpenCategory, onOpenRe
   return (
     <div className="space-y-10">
       <header>
-        <p className="text-[12px] font-medium uppercase tracking-[0.16em] text-[var(--ink-3)]">My Legacy</p>
-        <h1 className="mt-3 max-w-2xl text-[32px] font-semibold leading-[1.1] tracking-tight text-[var(--ink)] md:text-[40px]">Everything your family would need to find.</h1>
-        <p className="mt-3 max-w-xl text-[13.5px] leading-6 text-[var(--ink-2)]">
-          Passwords, accounts, and instructions — encrypted, and ready for your family.
-        </p>
+        <h1 className="text-[28px] font-semibold tracking-tight text-[var(--ink)] md:text-[34px]">{greeting()}</h1>
+        <p className="mt-1 text-[13px] text-[var(--ink-3)]">{new Intl.DateTimeFormat("en-IN", { dateStyle: "long" }).format(new Date())}</p>
       </header>
 
       <LegacyScore score={score} />
