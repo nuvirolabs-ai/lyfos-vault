@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 
 // Copy deliberately says "prepared", never "secure"/"guaranteed"/"100%
 // protected" — this score is a transparent estimate, not a security
-// claim (docs/LEGACY_SCORE_SPECIFICATION.md).
+// claim (docs/LEGACY_SCORE_SPECIFICATION.md). Signaled with a plain
+// "Estimated" tag rather than a "not a guarantee" disclaimer sentence
+// — same honesty, no negative framing.
 export default function LegacyScore({ score }) {
   // Ring and number animate in together on mount/change, Activity-ring
   // style, instead of snapping straight to the value.
@@ -40,8 +42,11 @@ export default function LegacyScore({ score }) {
       </div>
       <div className="min-w-0 max-w-md">
         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--ink-3)]">Digital Legacy</p>
-        <h2 className="mt-3 text-[20px] font-semibold leading-tight text-[var(--ink)]">{score.label}</h2>
-        <p className="mt-2 text-[13px] leading-5 text-[var(--ink-3)]">A transparent estimate of coverage, readiness and freshness — not a security guarantee.</p>
+        <div className="mt-3 flex items-center gap-2">
+          <h2 className="text-[20px] font-semibold leading-tight text-[var(--ink)]">{score.label}</h2>
+          <span className="rounded-full bg-[var(--surface-2)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--ink-3)]">Estimated</span>
+        </div>
+        <p className="mt-2 text-[13px] leading-5 text-[var(--ink-3)]">Updates as you add more.</p>
         <dl className="mt-4 grid grid-cols-3 gap-3 text-[12px]">
           <div>
             <dt className="text-[var(--ink-4)]">Coverage</dt>
