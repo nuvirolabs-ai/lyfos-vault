@@ -1,15 +1,41 @@
+import { useEffect, useRef, useState } from "react";
+
 // Copy deliberately says "prepared", never "secure"/"guaranteed"/"100%
 // protected" — this score is a transparent estimate, not a security
 // claim (docs/LEGACY_SCORE_SPECIFICATION.md).
 export default function LegacyScore({ score }) {
+  // Ring and number animate in together on mount/change, Activity-ring
+  // style, instead of snapping straight to the value.
+  const [displayed, setDisplayed] = useState(0);
+  const frameRef = useRef(null);
+
+  useEffect(() => {
+    const target = score.overall;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      setDisplayed(target);
+      return;
+    }
+    const start = performance.now();
+    const duration = 900;
+    cancelAnimationFrame(frameRef.current);
+    function tick(now) {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setDisplayed(Math.round(target * eased));
+      if (t < 1) frameRef.current = requestAnimationFrame(tick);
+    }
+    frameRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frameRef.current);
+  }, [score.overall]);
+
   return (
     <div className="flex flex-wrap items-center gap-8 rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-7 md:flex-nowrap md:gap-12 md:p-10">
       <div
-        className="grid h-32 w-32 shrink-0 place-items-center rounded-full"
-        style={{ background: `conic-gradient(var(--accent) ${score.overall}%, var(--surface-3) ${score.overall}% 100%)` }}
+        className="legacy-score-ring grid h-32 w-32 shrink-0 place-items-center rounded-full"
+        style={{ "--score-pct": `${displayed}%` }}
       >
         <div className="grid h-24 w-24 place-items-center rounded-full bg-[var(--surface)] text-[28px] font-semibold tracking-tight text-[var(--ink)]">
-          {score.overall}%
+          {displayed}%
         </div>
       </div>
       <div className="min-w-0 max-w-md">

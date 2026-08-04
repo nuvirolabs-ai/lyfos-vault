@@ -605,3 +605,20 @@ button:disabled {
 @media (prefers-reduced-motion: reduce) {
   .tour-pulse { animation: none; }
 }
+
+/* ============================================================
+   My Legacy — card entrance stagger + animated score ring.
+   Reduced-motion is already handled globally above (kills all
+   animation-duration), so no extra override needed here.
+   ============================================================ */
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-card-in {
+  animation: card-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.legacy-score-ring {
+  background: conic-gradient(var(--accent) var(--score-pct), var(--surface-3) var(--score-pct) 100%);
+}

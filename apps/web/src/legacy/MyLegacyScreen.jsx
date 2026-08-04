@@ -75,26 +75,19 @@ export default function MyLegacyScreen({ digitalLegacy, onOpenCategory, onOpenRe
       <section>
         <h2 className="mb-3 text-[16px] font-semibold text-[var(--ink)]">Categories</h2>
         <div className="grid gap-2 md:grid-cols-2">
-          {categoryRows.map(({ category, recordsInCategory, reviewEntry }) => {
+          {categoryRows.map(({ category, recordsInCategory, reviewEntry }, index) => {
             const showMarkNotApplicable = DIGITAL_LEGACY_FEATURE_FLAGS.serviceCatalogue
               && recordsInCategory.length === 0
               && reviewEntry?.state !== "not_applicable";
             return (
-              <div key={category.id}>
+              <div key={category.id} className="animate-card-in" style={{ animationDelay: `${Math.min(index, 10) * 35}ms` }}>
                 <CategoryCard
                   category={category}
                   recordCount={recordsInCategory.length}
                   state={categoryState(recordsInCategory, reviewEntry)}
                   onClick={() => onOpenCategory(category.id)}
+                  onMarkNotApplicable={showMarkNotApplicable ? () => onMarkNotApplicable(category.id) : undefined}
                 />
-                {showMarkNotApplicable && (
-                  <button
-                    onClick={() => onMarkNotApplicable(category.id)}
-                    className="ml-2 mt-1 text-[11px] font-medium text-[var(--ink-3)] underline decoration-dotted hover:text-[var(--ink)]"
-                  >
-                    Mark not applicable
-                  </button>
-                )}
               </div>
             );
           })}
