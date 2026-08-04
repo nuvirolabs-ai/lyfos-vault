@@ -106,7 +106,12 @@ test("release settings are explicitly intent only in the whole-vault architectur
 test("record status is derived from record facts rather than trusted input", () => {
   const current = makeRecord();
   assert.equal(deriveRecordStatus(current, { now: NOW }), "protected");
-  assert.equal(deriveRecordStatus({ ...current, fields: [] }, { now: NOW }), "incomplete");
+  // The label alone is the mandatory bar — losing the other fields
+  // (recovery path, etc.) shouldn't demote a record that still says
+  // what it's for.
+  assert.equal(deriveRecordStatus({ ...current, fields: [] }, { now: NOW }), "protected");
+  assert.equal(deriveRecordStatus({ ...current, accountLabel: "", fields: [] }, { now: NOW }), "started");
+  assert.equal(deriveRecordStatus({ ...current, accountLabel: "", fields: [current.fields[2]] }, { now: NOW }), "incomplete");
   assert.equal(deriveRecordStatus({ ...current, archivedAt: NOW }, { now: NOW }), "archived");
   assert.equal(deriveRecordStatus({ ...current, releasedAt: NOW }, { now: NOW }), "released");
   assert.equal(deriveRecordStatus({

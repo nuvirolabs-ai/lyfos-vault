@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { RELEASE_POLICY } from "@os-one/vault-model";
-import { LEGACY_CATEGORIES, getCategory, migrateLegacyVault, searchLegacyRecords } from "@os-one/digital-legacy";
+import { LEGACY_CATEGORIES, getCategory, migrateLegacyVault, refreshDigitalLegacyStatuses, searchLegacyRecords } from "@os-one/digital-legacy";
 import { DIGITAL_LEGACY_FEATURE_FLAGS } from "./legacy/featureFlags.js";
 import MyLegacyScreen from "./legacy/MyLegacyScreen.jsx";
 import LegacyCategoryScreen from "./legacy/LegacyCategoryScreen.jsx";
@@ -1204,10 +1204,19 @@ function App() {
       if (typeof console !== "undefined") console.warn("[lyfos] KDF upgrade failed (non-fatal):", err?.message ?? err);
     }
 
-    const auditedVault = appendAuditEvent(
+    let auditedVault = appendAuditEvent(
       appendAuditEvents(nextVault, pendingEvents),
       usedEnvelope === "recovery" ? "Vault unlocked with recovery key" : "Vault unlocked with phrase"
     );
+    // Record status is computed once and stored at save time — bring any
+    // records saved under older status rules in line with the current
+    // ones, so a status-logic fix doesn't need every record re-opened
+    // and re-saved by hand to take effect. No-op (no extra write) when
+    // nothing's actually stale.
+    if (auditedVault.digitalLegacy) {
+      const refreshed = refreshDigitalLegacyStatuses(auditedVault.digitalLegacy);
+      if (refreshed.changed) auditedVault = { ...auditedVault, digitalLegacy: refreshed.digitalLegacy };
+    }
     const nextRecord = await persistVault(key, auditedVault, recordForPersist);
     setStoredRecord(nextRecord);
     setVaultKey(key);
@@ -7219,7 +7228,7 @@ function ThemeToggle() {
       aria-label="Switch theme"
       title={dark ? "Switch to light" : "Switch to dark"}
       onClick={() => setTheme(dark ? "light" : "dark")}
-      className="fixed right-4 top-4 z-30 grid h-9 w-9 place-items-center rounded-full border border-[var(--line-2)] bg-[var(--surface)] text-[var(--ink-2)] shadow-[0_2px_8px_rgba(0,0,0,0.08)] transition hover:text-[var(--ink)]"
+      className="fixed right-4 top-2.5 z-30 grid h-9 w-9 place-items-center rounded-full border border-[var(--line-2)] bg-[var(--surface)] text-[var(--ink-2)] shadow-[0_2px_8px_rgba(0,0,0,0.08)] transition hover:text-[var(--ink)]"
     >
       {dark ? (
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4.2" /><path d="M12 2 V4 M12 20 V22 M4 12 H2 M22 12 H20 M5 5 l1.5 1.5 M17.5 17.5 L19 19 M19 5 l-1.5 1.5 M6.5 17.5 L5 19" /></svg>
