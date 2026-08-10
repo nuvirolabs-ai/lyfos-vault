@@ -1,3 +1,14 @@
+<!--
+  NOT the source of og-social-20260810.png.
+
+  This is an older card design ("A vault your family can actually open").
+  The card actually served to WhatsApp/LinkedIn/X is the PNG, which reads
+  "Yours. Then theirs." and was produced outside this repo.
+
+  Do not rasterise this file over the PNG — it would silently replace the
+  live social card with the wrong artwork. If the PNG needs changing,
+  re-export it from its original design source. Its type is Inter 600.
+-->
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" font-family="Helvetica, Arial, sans-serif">
   <defs>
     <radialGradient id="glow" cx="50%" cy="0%" r="70%">
