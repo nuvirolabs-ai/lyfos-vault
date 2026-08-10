@@ -38,6 +38,20 @@
 
   gtag('config', 'G-B6QDMDNL02');
 </script>
+<!-- Pick the pricing currency before paint so nobody sees the wrong one flash.
+     India gets INR; everywhere else gets USD. Detection is local-only — no IP
+     lookup, no geo API call, nothing leaves the browser. -->
+<script>(function(){var c='usd';try{
+  var saved=localStorage.getItem('lyfos-currency');
+  if(saved==='inr'||saved==='usd'){c=saved;}
+  else{
+    var tz='';try{tz=Intl.DateTimeFormat().resolvedOptions().timeZone||'';}catch(e){}
+    var offsetIsIST=false;try{offsetIsIST=new Date().getTimezoneOffset()===-330;}catch(e){}
+    var lang='';try{lang=navigator.language||'';}catch(e){}
+    if(/^Asia\/(Kolkata|Calcutta)$/i.test(tz)||offsetIsIST||/-IN$/i.test(lang)) c='inr';
+  }
+}catch(e){}
+document.documentElement.setAttribute('data-currency',c);})();</script>
 <!-- Set motion preference before paint: follow the OS by default, allow override. -->
 <script>(function(){try{var m=localStorage.getItem('lyfos-motion')||'on';document.documentElement.setAttribute('data-motion',m);}catch(e){document.documentElement.setAttribute('data-motion','on');}
 /* Always open at the hero — never restore the visitor's last scroll position. */
@@ -48,7 +62,7 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
   "@context":"https://schema.org",
   "@graph":[
     {"@type":"Organization","@id":"https://lyfos.in/#org","name":"Lyfos","url":"https://lyfos.in/","logo":"https://lyfos.in/icon.svg","description":"A zero-knowledge vault built for life recovery.","sameAs":["https://app.lyfos.in"]},
-    {"@type":"SoftwareApplication","name":"Lyfos","applicationCategory":"SecurityApplication","operatingSystem":"Web browser","offers":[{"@type":"Offer","price":"0","priceCurrency":"INR","name":"Free"},{"@type":"Offer","price":"999","priceCurrency":"INR","name":"Vault (one-time)"}],"description":"Encrypted vault for passwords, IDs, money and insurance — recoverable by the people you trust, never by Lyfos."},
+    {"@type":"SoftwareApplication","name":"Lyfos","applicationCategory":"SecurityApplication","operatingSystem":"Web browser","offers":[{"@type":"Offer","price":"0","priceCurrency":"INR","name":"Free","eligibleRegion":"IN"},{"@type":"Offer","price":"999","priceCurrency":"INR","name":"Vault (one-time)","eligibleRegion":"IN"},{"@type":"Offer","price":"0","priceCurrency":"USD","name":"Free"},{"@type":"Offer","price":"9","priceCurrency":"USD","name":"Vault (one-time)"}],"description":"Encrypted vault for passwords, IDs, money and insurance — recoverable by the people you trust, never by Lyfos."},
     {"@type":"FAQPage","mainEntity":[
       {"@type":"Question","name":"Can Lyfos read my vault?","acceptedAnswer":{"@type":"Answer","text":"No. Your vault is encrypted on your device with a key derived from a passphrase only you know. We only ever store ciphertext and hold no key to decrypt it."}},
       {"@type":"Question","name":"What if I lose my passphrase?","acceptedAnswer":{"@type":"Answer","text":"Your 24-word recovery phrase can open the vault. Write it down at setup — if you lose both the passphrase and the phrase, no one, including Lyfos, can recover the vault."}},
@@ -84,6 +98,14 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
   ::selection { background:var(--green-soft); }
   .wrap { max-width:var(--maxw); margin:0 auto; padding:0 24px; }
   .eyebrow { font-size:12px; font-weight:600; letter-spacing:.18em; text-transform:uppercase; color:var(--green-ink); }
+
+  /* Currency swap. Both variants live in the DOM; <html data-currency> picks one
+     before first paint, so there's no flash of the wrong price. */
+  .cur { display:none; }
+  html[data-currency="inr"] .cur-inr,
+  html[data-currency="usd"] .cur-usd { display:inline; }
+  html[data-currency="inr"] .cur-inr.cur-b,
+  html[data-currency="usd"] .cur-usd.cur-b { display:block; }
 
   /* nav */
   nav { position:sticky; top:0; z-index:50; backdrop-filter:saturate(180%) blur(20px); -webkit-backdrop-filter:saturate(180%) blur(20px); background:color-mix(in srgb,var(--bg) 80%,transparent); border-bottom:1px solid transparent; transition:border-color .2s; }
@@ -322,17 +344,50 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
   .sec-foot a { color:#46d98a; }
 
   /* pricing */
-  .pricing { padding:96px 0; border-top:1px solid var(--border); text-align:center; }
-  .pricing h2 { font-size:clamp(28px,4vw,44px); letter-spacing:-.03em; font-weight:600; }
-  .price-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; max-width:1020px; margin:44px auto 0; text-align:left; }
-  @media (max-width:880px){ .price-grid { grid-template-columns:1fr; max-width:480px; } }
-  .price { border:1px solid var(--border); border-radius:22px; padding:30px; background:var(--surface); box-shadow:var(--shadow-sm); }
-  .price.feature { border-color:color-mix(in srgb,var(--green) 40%,transparent); box-shadow:var(--shadow); }
+  .pricing { padding:104px 0 96px; border-top:1px solid var(--border); text-align:center; }
+  .pricing h2 { font-size:clamp(30px,4.6vw,52px); line-height:1.04; letter-spacing:-.038em; font-weight:600; }
+  .pricing .p-lede { max-width:54ch; margin:18px auto 0; color:var(--ink-2); font-size:clamp(16.5px,1.9vw,19px); }
+  .pricing .p-lede b { color:var(--ink); font-weight:600; }
+
+  .cur-note { display:inline-flex; align-items:center; gap:9px; margin:26px auto 0; padding:8px 15px; border:1px solid var(--border); border-radius:999px; background:var(--surface); font-size:12.5px; color:var(--ink-3); }
+  .cur-note svg { width:14px; height:14px; color:var(--ink-3); flex:none; }
+  .cur-note .sep { color:var(--ink-4); }
+  .cur-note button { background:none; border:0; padding:0; font:inherit; font-weight:600; color:var(--green-ink); cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
+  @media (max-width:560px){
+    .cur-note { flex-wrap:wrap; justify-content:center; text-align:center; border-radius:16px; padding:11px 18px; max-width:min(100%,320px); }
+    .cur-note .sep { display:none; }
+    .cur-note svg { display:none; }
+  }
+
+  /* Two cards, two columns — the grid used to declare three, which pushed the
+     pair off-centre against the centred heading. */
+  .price-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.16fr); gap:20px; max-width:1000px; margin:44px auto 0; text-align:left; align-items:start; }
+  @media (max-width:900px){ .price-grid { grid-template-columns:minmax(0,1fr); max-width:540px; gap:26px; } }
+
+  .price { position:relative; display:flex; flex-direction:column; border:1px solid var(--border); border-radius:26px; padding:34px 30px; background:var(--surface); box-shadow:var(--shadow-sm); }
+  .price.feature { padding:40px 36px; border-color:color-mix(in srgb,var(--green) 45%,transparent); box-shadow:var(--shadow); background:linear-gradient(180deg,color-mix(in srgb,var(--green) 4%,var(--surface)) 0%,var(--surface) 46%); }
+  .price .ribbon { position:absolute; top:-13px; left:34px; padding:6px 14px; border-radius:999px; background:var(--green); color:#fff; font-size:10.5px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; box-shadow:0 10px 24px var(--green-soft); }
   .price .tag { font-size:11px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3); } .price.feature .tag { color:var(--green-ink); }
-  .price .amt { font-size:38px; font-weight:600; letter-spacing:-.03em; margin-top:10px; } .price .amt span { font-size:15px; color:var(--ink-3); font-weight:500; }
-  .price ul { list-style:none; margin:20px 0 0; display:flex; flex-direction:column; gap:10px; }
-  .price li { display:flex; gap:9px; font-size:14.5px; color:var(--ink-2); } .price li svg { width:17px; height:17px; color:var(--green); flex:none; margin-top:2px; }
-  .price .btn { width:100%; margin-top:24px; }
+  .price .amt { display:flex; align-items:baseline; flex-wrap:wrap; gap:9px; margin-top:14px; font-size:clamp(40px,5vw,52px); line-height:1; font-weight:600; letter-spacing:-.045em; }
+  .price.feature .amt { font-size:clamp(48px,6.4vw,68px); }
+  .price .amt .per { font-size:14.5px; font-weight:500; letter-spacing:0; color:var(--ink-3); }
+  .price .anchor { margin-top:14px; font-size:14px; line-height:1.6; color:var(--ink-2); }
+  .price .anchor b { color:var(--ink); font-weight:600; }
+
+  .price ul { list-style:none; margin:24px 0 0; display:flex; flex-direction:column; gap:15px; }
+  .price li { display:grid; grid-template-columns:19px minmax(0,1fr); gap:11px; font-size:15px; font-weight:600; color:var(--ink); align-items:start; }
+  .price li svg { width:18px; height:18px; color:var(--green); flex:none; margin-top:2px; }
+  .price li .sub { display:block; margin-top:4px; font-size:13.5px; font-weight:400; line-height:1.55; color:var(--ink-3); }
+  .price li.off { color:var(--ink-4); font-weight:500; } .price li.off svg { color:var(--ink-4); }
+  .price li.off .sub { color:var(--ink-4); }
+
+  .price .grow { flex:1 1 auto; min-height:14px; }
+  .price .btn { width:100%; margin-top:26px; }
+  .price .foot { margin-top:14px; font-size:12.5px; line-height:1.55; color:var(--ink-3); text-align:center; }
+
+  .price-assure { display:flex; flex-wrap:wrap; justify-content:center; gap:10px; max-width:1000px; margin:28px auto 0; }
+  .price-assure span { display:inline-flex; align-items:center; gap:8px; padding:9px 15px; border:1px solid var(--border); border-radius:999px; background:var(--surface); font-size:13px; color:var(--ink-2); }
+  .price-assure svg { width:14px; height:14px; color:var(--green); flex:none; }
 
   /* signup */
   .signup { padding:96px 0 80px; text-align:center; border-top:1px solid var(--border); }
@@ -453,7 +508,7 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
         <b data-github-stars>0</b>
       </a>
       <button class="icon-btn" id="themeToggle" aria-label="Switch theme" title="Switch theme"></button>
-      <a class="btn btn-dark btn-sm" href="https://app.lyfos.in">Open the app</a>
+      <a class="btn btn-dark btn-sm" href="https://app.lyfos.in/?src=nav">Open the app</a>
     </div>
   </div>
 </nav>
@@ -482,7 +537,7 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
       <h1 class="hero-in" style="animation-delay:.95s">Yours.<br><span class="soft">Then theirs.</span></h1>
       <p class="sub hero-in" style="animation-delay:1.08s">Know exactly what you have, every month — in a vault your family can actually open.</p>
       <div class="cta-row hero-in" style="animation-delay:1.22s">
-        <a class="btn btn-green btn-lg" href="https://app.lyfos.in">Create your vault</a>
+        <a class="btn btn-green btn-lg" href="https://app.lyfos.in/?src=hero">Create your vault</a>
         <a class="btn btn-ghost btn-lg" href="#trust">See how it works</a>
       </div>
       <p class="tiny hero-in" style="animation-delay:1.36s">Free Forever · open source · works in your browser</p>
@@ -490,7 +545,7 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
     <!-- one beautiful product shot -->
     <div class="hero-shot reveal">
       <div class="browser" id="heroDevice" style="max-width:720px;">
-        <div class="chrome"><div class="tl"><i></i><i></i><i></i></div><div class="urlbar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11 V8 a4 4 0 0 1 8 0 v3"/></svg>app.lyfos.com/home</div></div>
+        <div class="chrome"><div class="tl"><i></i><i></i><i></i></div><div class="urlbar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11 V8 a4 4 0 0 1 8 0 v3"/></svg>app.lyfos.in/home</div></div>
         <div class="wapp">
           <div class="wapp-topbar">
             <div class="wapp-brand"><span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11 V8 a4 4 0 0 1 8 0 v3"/></svg></span>Lyfos</div>
@@ -544,7 +599,7 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
   <section class="feat wrap" id="ritual">
     <div class="feat-vis reveal">
       <div class="browser float" style="max-width:520px;">
-        <div class="chrome"><div class="tl"><i></i><i></i><i></i></div><div class="urlbar">app.lyfos.com/balance</div></div>
+        <div class="chrome"><div class="tl"><i></i><i></i><i></i></div><div class="urlbar">app.lyfos.in/balance</div></div>
         <div class="wapp" style="grid-template-columns:1fr;">
           <div class="wapp-topbar"><div class="wapp-brand"><span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>Lyfos</div><span class="scr-eye" style="margin-left:auto;">June check-in · 4-month streak</span></div>
           <div class="wapp-main">
@@ -576,8 +631,8 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
       <div class="demo-stage reveal">
         <div class="frames" id="demoFrames">
           <!-- screen 1: add a record (capture) -->
-          <div class="browser show" data-cap="Add what matters in seconds — sealed the moment you save it." data-url="app.lyfos.com/add">
-            <div class="chrome"><div class="tl"><i></i><i></i><i></i></div><div class="urlbar">app.lyfos.com/add</div></div>
+          <div class="browser show" data-cap="Add what matters in seconds — sealed the moment you save it." data-url="app.lyfos.in/add">
+            <div class="chrome"><div class="tl"><i></i><i></i><i></i></div><div class="urlbar">app.lyfos.in/add</div></div>
             <div class="wapp" style="grid-template-columns:1fr;">
               <div class="wapp-topbar"><div class="wapp-brand"><span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>Lyfos</div><span class="scr-eye" style="margin-left:auto;">New record</span></div>
               <div class="wapp-main" style="display:flex;flex-direction:column;gap:11px;">
@@ -597,8 +652,8 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
             </div>
           </div>
           <!-- screen 2: balance sheet -->
-          <div class="browser" data-cap="Watch your net worth climb, month over month." data-url="app.lyfos.com/balance">
-            <div class="chrome"><div class="tl"><i></i><i></i><i></i></div><div class="urlbar">app.lyfos.com/balance</div></div>
+          <div class="browser" data-cap="Watch your net worth climb, month over month." data-url="app.lyfos.in/balance">
+            <div class="chrome"><div class="tl"><i></i><i></i><i></i></div><div class="urlbar">app.lyfos.in/balance</div></div>
             <div class="wapp" style="grid-template-columns:1fr;">
               <div class="wapp-topbar"><div class="wapp-brand"><span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>Lyfos</div><span class="scr-eye" style="margin-left:auto;">Balance sheet</span></div>
               <div class="wapp-main">
@@ -619,8 +674,8 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
             </div>
           </div>
           <!-- screen 3: recovery preview -->
-          <div class="browser" data-cap="See exactly what your family would receive — before anything happens." data-url="app.lyfos.com/recovery">
-            <div class="chrome"><div class="tl"><i></i><i></i><i></i></div><div class="urlbar">app.lyfos.com/recovery</div></div>
+          <div class="browser" data-cap="See exactly what your family would receive — before anything happens." data-url="app.lyfos.in/recovery">
+            <div class="chrome"><div class="tl"><i></i><i></i><i></i></div><div class="urlbar">app.lyfos.in/recovery</div></div>
             <div class="wapp" style="grid-template-columns:1fr;">
               <div class="wapp-topbar"><div class="wapp-brand"><span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>Lyfos</div><span class="scr-eye" style="margin-left:auto;">Recovery preview</span></div>
               <div class="wapp-main">
@@ -653,7 +708,7 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
   <section class="feat wrap" id="organise">
     <div class="feat-vis reveal">
       <div class="browser float" style="max-width:520px;">
-        <div class="chrome"><div class="tl"><i></i><i></i><i></i></div><div class="urlbar">app.lyfos.com/records</div></div>
+        <div class="chrome"><div class="tl"><i></i><i></i><i></i></div><div class="urlbar">app.lyfos.in/records</div></div>
         <div class="wapp">
           <div class="wapp-topbar"><div class="wapp-brand"><span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>Lyfos</div><div class="wapp-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>Search…</div><span class="wapp-avatar">T</span></div>
           <div class="wapp-rail">
@@ -709,7 +764,7 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
   <section class="feat wrap" id="release">
     <div class="feat-vis reveal">
       <div class="browser float" style="max-width:520px;">
-        <div class="chrome"><div class="tl"><i></i><i></i><i></i></div><div class="urlbar">app.lyfos.com/circle</div></div>
+        <div class="chrome"><div class="tl"><i></i><i></i><i></i></div><div class="urlbar">app.lyfos.in/circle</div></div>
         <div class="wapp">
           <div class="wapp-topbar"><div class="wapp-brand"><span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>Lyfos</div><span class="wapp-seal" style="margin-left:auto;">Day 3 / 14</span></div>
           <div class="wapp-rail">
@@ -794,7 +849,7 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
         <div class="crow"><div class="feat-name">No one person can open it alone</div><div class="cell lyf yes">✓</div><div class="cell no">✗</div><div class="cell no">✗</div></div>
         <div class="crow"><div class="feat-name">Protects you if released by mistake</div><div class="cell lyf yes">✓</div><div class="cell no">—</div><div class="cell no">✗</div></div>
         <div class="crow"><div class="feat-name">Works the day it's actually needed</div><div class="cell lyf yes">✓</div><div class="cell no">✗</div><div class="cell no">Slowly</div></div>
-        <div class="crow"><div class="feat-name">Costs</div><div class="cell lyf">₹999 once</div><div class="cell">₹2–4k/yr</div><div class="cell">₹10k+</div></div>
+        <div class="crow"><div class="feat-name">Costs</div><div class="cell lyf"><span class="cur cur-inr">₹999 once</span><span class="cur cur-usd">$9 once</span></div><div class="cell"><span class="cur cur-inr">₹2–4k/yr</span><span class="cur cur-usd">$35–60/yr</span></div><div class="cell"><span class="cur cur-inr">₹10k+</span><span class="cur cur-usd">$150+</span></div></div>
       </div>
     </div>
   </section>
@@ -830,34 +885,90 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
   <section class="pricing" id="pricing">
     <div class="wrap">
       <span class="eyebrow reveal">Pricing</span>
-      <h2 class="reveal" style="margin-top:12px;">Two versions. Clear forever.</h2>
-      <p class="reveal" style="max-width:46ch;margin:14px auto 0;color:var(--ink-2);">Start with 11 encrypted entries for free. Upgrade only when you want the full family vault: unlimited entries, personal balance sheet, and Circle of Trust release.</p>
+      <h2 class="reveal" style="margin-top:12px;">Pay once.<br>Then never think about it again.</h2>
+      <p class="p-lede reveal">Start free with 11 encrypted entries. When you want the full family vault, it's <b>one payment of <span class="cur cur-inr">₹999</span><span class="cur cur-usd">$9</span></b> and it's yours for life — no renewal, no plan to lapse, nothing your family can lose because a card expired.</p>
+
+      <p class="cur-note reveal" data-currency-note>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/></svg>
+        <span class="cur cur-inr">Showing prices in ₹ INR for India.</span>
+        <span class="cur cur-usd">Showing prices in $ USD.</span>
+        <span class="sep">·</span>
+        <button type="button" data-currency-toggle>
+          <span class="cur cur-inr">Switch to $ USD</span>
+          <span class="cur cur-usd">Switch to ₹ INR</span>
+        </button>
+      </p>
+
       <div class="price-grid">
+
+        <!-- FREE -->
         <div class="price reveal">
-          <div class="tag">Free Forever</div>
-          <div class="amt">₹0<span> / forever</span></div>
+          <div class="tag">Free forever</div>
+          <div class="amt"><span class="cur cur-inr">₹0</span><span class="cur cur-usd">$0</span><span class="per">forever · no card</span></div>
+          <p class="anchor">A calm, encrypted place for the handful of things you'd panic about losing. Good enough to be useful on its own.</p>
           <ul>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> 11 encrypted entries</li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Encrypted cloud sync</li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> 24-word recovery phrase</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>11 encrypted entries<span class="sub">Two bank accounts, a demat, three insurance policies and a passport is already seven. It fills up faster than you'd think.</span></span></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Encrypted cloud sync<span class="sub">Encrypted on your device before it leaves. We only ever hold ciphertext.</span></span></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>24-word recovery phrase<span class="sub">Standard BIP39. It opens your vault with or without us.</span></span></li>
+            <li class="off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg><span>No personal balance sheet</span></li>
+            <li class="off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg><span>No Circle of Trust release<span class="sub">If you're not there, nobody can open it. The free tier stores; it doesn't hand over.</span></span></li>
           </ul>
-          <a class="btn btn-ghost btn-lg" href="https://app.lyfos.in">Start free</a>
+          <div class="grow"></div>
+          <a class="btn btn-ghost btn-lg" href="https://app.lyfos.in/?src=home_free">Start free</a>
+          <p class="foot">No card, no trial clock. Free stays free.</p>
         </div>
+
+        <!-- VAULT -->
         <div class="price feature reveal">
-          <div class="tag">Vault · full product</div>
-          <div class="amt">₹999<span> one-time</span></div>
-          <p class="tiny" style="margin:6px 0 0;color:var(--ink-2);">$9 internationally, one-time</p>
+          <span class="ribbon">Full product</span>
+          <div class="tag">Vault</div>
+          <div class="amt"><span class="cur cur-inr">₹999</span><span class="cur cur-usd">$9</span><span class="per">one&#8209;time · yours for life</span></div>
+          <p class="anchor">
+            <span class="cur cur-inr">Keep it ten years and it works out to <b>about ₹8 a month</b> — except there's no month eleven to pay for. A password manager bills you ₹2,000–4,000 <b>every</b> year. A lawyer-drafted will starts near ₹10,000.</span>
+            <span class="cur cur-usd">Keep it ten years and it works out to <b>under 10¢ a month</b> — except there's no month eleven to pay for. A password manager typically bills you $35–60 <b>every</b> year. A simple drafted will starts well north of $150.</span>
+          </p>
           <ul>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Unlimited entries</li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Personal balance sheet</li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Circle of Trust release</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Unlimited entries<span class="sub">Passwords, policies, property papers, bank and demat accounts, loans, subscriptions, the lot. No cap, ever.</span></span></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Personal balance sheet<span class="sub">Every asset and liability in one running net-worth view your family can read without hiring an accountant to find it.</span></span></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Circle of Trust — up to 5 key holders<span class="sub">Pick a primary or backup recipient plus supporting nominees. Update the circle whenever life changes.</span></span></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>3-of-5 release<span class="sub">No single person can open your vault alone — and it still works if one holder is unreachable, estranged, or gone.</span></span></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>14-day owner-protection hold<span class="sub">If a release ever starts by mistake, you get alerted and you get to stop it. Being alive is always the winning argument.</span></span></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Invite emails and release alerts<span class="sub">Your nominees are told they've been chosen, and told again the moment anything moves.</span></span></li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Everything in Free, permanently<span class="sub">Encrypted sync and your recovery phrase, with no subscription holding them hostage.</span></span></li>
           </ul>
-          <a class="btn btn-green btn-lg" href="https://app.lyfos.in" style="margin-top:12px;display:inline-block;">Get Vault →</a>
+          <div class="grow"></div>
+          <a class="btn btn-green btn-lg" href="https://app.lyfos.in/?src=home_vault">Get Vault →</a>
+          <p class="foot"><span class="cur cur-inr">Secure checkout via Razorpay · GST invoice · 7-day refund, no questions asked</span><span class="cur cur-usd">Secure international checkout · 7-day refund, no questions asked</span></p>
         </div>
+
       </div>
-      <p class="tiny reveal" style="margin-top:22px;"><a href="/pricing/" style="color:var(--green-ink);border-bottom:1px solid color-mix(in srgb,var(--green) 35%,transparent);">compare all plans →</a> · GST invoices · one-time, no subscription</p>
+
+      <div class="price-assure reveal">
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> One-time payment — no subscription, ever</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> 7-day refund, no exit interview</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Price changes never touch what you already own</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Open source — read the encryption yourself</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Free tier stays readable even if you never upgrade</span>
+      </div>
+
+      <p class="tiny reveal" style="margin-top:24px;"><a href="/pricing/" style="color:var(--green-ink);border-bottom:1px solid color-mix(in srgb,var(--green) 35%,transparent);">compare both versions in detail →</a></p>
     </div>
   </section>
+
+  <script>
+  /* Currency toggle. The initial choice is made pre-paint in <head>; this just
+     lets a visitor override the guess and remembers it. */
+  (function(){
+    var root = document.documentElement;
+    document.querySelectorAll('[data-currency-toggle]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var next = root.getAttribute('data-currency') === 'inr' ? 'usd' : 'inr';
+        root.setAttribute('data-currency', next);
+        try { localStorage.setItem('lyfos-currency', next); } catch(e) {}
+      });
+    });
+  })();
+  </script>
 
   <!-- START NOW + FOUNDING MEMBERS -->
   <section class="signup" id="join">
@@ -866,7 +977,7 @@ addEventListener('load',function(){ try{ if(!location.hash) window.scrollTo(0,0)
       <h2 class="reveal" style="margin-top:12px;">Start your vault now.</h2>
       <p class="reveal">Lyfos is live — free, in your browser, nothing to install. Create your vault whenever you like. Founder pricing, locked for life, for everyone who joins early.</p>
       <div class="cta-row reveal" style="justify-content:center;margin-top:30px;">
-        <a class="btn btn-green btn-lg" href="https://app.lyfos.in">Create your vault</a>
+        <a class="btn btn-green btn-lg" href="https://app.lyfos.in/?src=home_footer_cta">Create your vault</a>
         <a class="btn btn-ghost btn-lg" href="/security/">How we keep it safe</a>
       </div>
       <p class="tiny reveal" style="margin-top:18px;">Want occasional founder updates instead? Leave your email — no spam, ever.</p>

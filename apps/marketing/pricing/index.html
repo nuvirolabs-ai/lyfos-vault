@@ -38,7 +38,7 @@
       <li><a href="/press/">Press</a></li>
       <li><a href="/blog/">Blog</a></li>
     </ul>
-    <a class="cta" href="https://app.lyfos.in">Open the app →</a>
+    <a class="cta" href="https://app.lyfos.in/?src=nav">Open the app →</a>
   </div>
 </nav>
 
@@ -47,58 +47,91 @@
 <section class="hero big">
   <div class="hero-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
   <div class="eyebrow">Pricing</div>
-  <h1>Honest pricing.<br>No surprises.</h1>
-  <p class="lede">Two versions. Free Forever for your first 11 entries. Vault when you want the full family vault: unlimited entries, personal balance sheet, and Circle of Trust release.</p>
+  <h1>Pay once.<br>Then never think about it again.</h1>
+  <p class="lede">Start free with 11 encrypted entries. When you want the full family vault, it's <b>one payment of <span class="cur cur-inr">₹999</span><span class="cur cur-usd">$9</span></b> and it's yours for life — no renewal, no plan to lapse, nothing your family can lose because a card expired.</p>
+  <p class="cur-note">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/></svg>
+    <span class="cur cur-inr">Showing prices in ₹ INR for India.</span>
+    <span class="cur cur-usd">Showing prices in $ USD.</span>
+    <span class="sep">·</span>
+    <button type="button" data-currency-toggle>
+      <span class="cur cur-inr">Switch to $ USD</span>
+      <span class="cur cur-usd">Switch to ₹ INR</span>
+    </button>
+  </p>
 </section>
 
-<section style="padding: 24px 0 80px;">
+<section style="padding: 30px 0 80px;">
   <div class="pricing-grid">
 
     <div class="plan">
       <div class="name">Free Forever</div>
-      <h2 class="price">₹0<small>&nbsp;forever</small></h2>
-      <p class="tagline">For getting your essential records in one calm encrypted place.</p>
+      <h2 class="price"><span class="cur cur-inr">₹0</span><span class="cur cur-usd">$0</span><small>&nbsp;forever · no card</small></h2>
+      <p class="tagline">A calm, encrypted place for the handful of things you'd panic about losing. Good enough to be useful on its own.</p>
       <ul>
-        <li>Up to 11 vault entries</li>
-        <li>Encrypted cloud sync</li>
-        <li>Recovery phrase</li>
-        <li class="dim">Personal balance sheet</li>
-        <li class="dim">Circle of Trust</li>
-        <li class="dim">Nominee release function</li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>11 encrypted entries<span class="sub">Two bank accounts, a demat, three insurance policies and a passport is already seven. It fills up faster than you'd think.</span></span></li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Encrypted cloud sync<span class="sub">Encrypted on your device before it leaves. We only ever hold ciphertext.</span></span></li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>24-word recovery phrase<span class="sub">Standard BIP39. It opens your vault with or without us.</span></span></li>
+        <li class="dim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg><span>No personal balance sheet</span></li>
+        <li class="dim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg><span>No Circle of Trust</span></li>
+        <li class="dim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg><span>No nominee release<span class="sub">If you're not there, nobody can open it. The free tier stores; it doesn't hand over.</span></span></li>
       </ul>
-      <a class="btn ghost cta" href="https://app.lyfos.in">Open the app</a>
+      <div class="grow"></div>
+      <a class="btn ghost cta" href="https://app.lyfos.in/?src=pricing_free">Start free</a>
+      <p class="foot">No card, no trial clock. Free stays free.</p>
     </div>
 
     <div class="plan featured">
-      <div class="name" style="color: var(--ink);">Vault · Full product</div>
-      <h2 class="price">₹999<small>&nbsp;one-time · India</small></h2>
-      <p class="tagline">$9 internationally, one-time. Yours for life — for families who want the full vault and release system.</p>
+      <span class="ribbon">Full product</span>
+      <div class="name">Vault</div>
+      <h2 class="price"><span class="cur cur-inr">₹999</span><span class="cur cur-usd">$9</span><small>&nbsp;one-time · yours for life</small></h2>
+      <p class="tagline">
+        <span class="cur cur-inr">Keep it ten years and it works out to <b>about ₹8 a month</b> — except there's no month eleven to pay for. A password manager bills you ₹2,000–4,000 <b>every</b> year. A lawyer-drafted will starts near ₹10,000.</span>
+        <span class="cur cur-usd">Keep it ten years and it works out to <b>under 10¢ a month</b> — except there's no month eleven to pay for. A password manager typically bills you $35–60 <b>every</b> year. A simple drafted will starts well north of $150.</span>
+      </p>
       <ul>
-        <li>Unlimited vault entries</li>
-        <li>Personal balance sheet</li>
-        <li>Encrypted cloud sync</li>
-        <li>Recovery phrase</li>
-        <li>Circle of Trust with up to 5 nominees/key holders</li>
-        <li>3-of-5 release function for nominees</li>
-        <li>Owner-protection hold and release alerts</li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Unlimited vault entries<span class="sub">Passwords, policies, property papers, bank and demat accounts, loans, subscriptions, the lot. No cap, ever.</span></span></li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Personal balance sheet<span class="sub">Every asset and liability in one running net-worth view your family can read without hiring an accountant to find it.</span></span></li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Circle of Trust — up to 5 key holders<span class="sub">A primary or backup recipient plus supporting nominees. Update the circle whenever life changes.</span></span></li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>3-of-5 release function<span class="sub">No single person can open your vault alone — and it still works if one holder is unreachable, estranged, or gone.</span></span></li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>14-day owner-protection hold<span class="sub">If a release ever starts by mistake, you get alerted and you get to stop it. Being alive is always the winning argument.</span></span></li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Invite emails and release alerts<span class="sub">Your nominees are told they've been chosen, and told again the moment anything moves.</span></span></li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>Everything in Free, permanently<span class="sub">Encrypted sync and your recovery phrase, with no subscription holding them hostage.</span></span></li>
       </ul>
-      <a class="btn primary cta" href="https://app.lyfos.in" style="margin-top: 16px; display: inline-block;">Get Vault →</a>
-      <p style="margin: 10px 0 0; color: var(--ink2); font-size: 12px;">Sign in or create your account, then upgrade from inside the app. Secure checkout via Razorpay.</p>
+      <div class="grow"></div>
+      <a class="btn primary cta" href="https://app.lyfos.in/?src=pricing_vault">Get Vault →</a>
+      <p class="foot">Sign in or create your account, then upgrade from inside the app.<br><span class="cur cur-inr">Secure checkout via Razorpay · GST invoice · 7-day refund, no questions asked</span><span class="cur cur-usd">Secure international checkout · 7-day refund, no questions asked</span></p>
     </div>
 
+  </div>
+
+  <div class="price-assure">
+    <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> One-time payment — no subscription, ever</span>
+    <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> 7-day refund, no exit interview</span>
+    <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Price changes never touch what you already own</span>
+    <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Open source — read the encryption yourself</span>
   </div>
 </section>
 
 <section class="row">
-  <h2>Pricing in your currency.</h2>
+  <h2>What the two versions actually differ on.</h2>
   <table>
-    <thead><tr><th>Plan</th><th>India (INR)</th><th>International (USD)</th><th>Entries</th><th>Release</th></tr></thead>
+    <thead><tr><th>&nbsp;</th><th>Free Forever</th><th>Vault</th></tr></thead>
     <tbody>
-      <tr><td>Free Forever</td><td>₹0</td><td>$0</td><td>11</td><td>No</td></tr>
-      <tr><td>Vault</td><td>₹999 once</td><td>$9 once</td><td>Unlimited</td><td>Yes</td></tr>
+      <tr><td>Price</td><td><span class="cur cur-inr">₹0</span><span class="cur cur-usd">$0</span></td><td><span class="cur cur-inr">₹999 once</span><span class="cur cur-usd">$9 once</span></td></tr>
+      <tr><td>Vault entries</td><td>11</td><td>Unlimited</td></tr>
+      <tr><td>Zero-knowledge encryption</td><td>Yes</td><td>Yes</td></tr>
+      <tr><td>Encrypted cloud sync</td><td>Yes</td><td>Yes</td></tr>
+      <tr><td>24-word recovery phrase</td><td>Yes</td><td>Yes</td></tr>
+      <tr><td>Personal balance sheet</td><td>No</td><td>Yes</td></tr>
+      <tr><td>Circle of Trust key holders</td><td>0</td><td>Up to 5</td></tr>
+      <tr><td>3-of-5 nominee release</td><td>No</td><td>Yes</td></tr>
+      <tr><td>14-day owner-protection hold</td><td>—</td><td>Yes</td></tr>
+      <tr><td>Invite emails and release alerts</td><td>No</td><td>Yes</td></tr>
+      <tr><td>Renewal</td><td>None</td><td>None — one payment, for life</td></tr>
     </tbody>
   </table>
-  <p style="color: var(--ink2); font-size: 14px;">Both plans are live now. Sign in at the app to upgrade to Vault whenever you're ready.</p>
+  <p style="color: var(--ink2); font-size: 14px;">Both versions are live now. Sign in at the app and upgrade to Vault whenever you're ready — nothing you've already stored is lost or re-entered.</p>
 </section>
 
 <section class="row">
@@ -137,7 +170,7 @@
 <footer>
   <div class="inner">
     <div><div class="brand">Lyfos</div><p class="copy">© 2026 Nuviro Labs.</p></div>
-    <div><h4>Product</h4><ul><li><a href="https://app.lyfos.in">Open the app</a></li><li><a href="/security/">Security</a></li></ul></div>
+    <div><h4>Product</h4><ul><li><a href="https://app.lyfos.in/?src=footer">Open the app</a></li><li><a href="/security/">Security</a></li></ul></div>
     <div><h4>Company</h4><ul><li><a href="/press/">Press</a></li><li><a href="/blog/">Blog</a></li></ul></div>
     <div><h4>Legal</h4><ul><li><a href="/privacy/">Privacy</a></li><li><a href="/terms/">Terms</a></li><li><a href="/refund-cancellation/">Refunds</a></li><li><a href="/shipping-delivery/">Delivery</a></li><li><a href="/contact/">Contact</a></li></ul></div>
   </div>

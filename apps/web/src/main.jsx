@@ -58,7 +58,7 @@ import {
 import { verifyBackup } from "./lib/stage2BackupVerification.js";
 import { getBackupReminderCopy } from "./lib/stage2BackupReminders.js";
 import { prepareStage2BackupExport } from "./lib/stage2BackupManifest.js";
-import { initTelemetry, registerServiceWorker } from "./lib/telemetry.js";
+import { initTelemetry, registerServiceWorker, trackEvent, getSource, bucketCount } from "./lib/telemetry.js";
 import { buildSnapshotsCsv, suggestedCsvFilename } from "./lib/csvExport.js";
 import { formatCurrency, formatCompact, DEFAULT_CURRENCY } from "./lib/currency.js";
 import { listMyKeyHolders, createKeyHolderInvite, requeueKeyHolderInvite, revokeKeyHolder, deleteKeyHolder, sendInviteEmail, activateCircleGeneration, summarizeKeyHolders, buildTrustRosterSlots, listKeysIHeld, summarizeHeldKeys } from "./lib/releasePlan.js";
@@ -66,7 +66,7 @@ import { buildExternalAppUrl } from "./lib/appUrls.js";
 import { validateCircleForActivation } from "./lib/recoveryCeremony.js";
 import { loadMyReleaseSettings, upsertMyReleaseSettings, rotateMyClaimToken, fetchActiveReleaseAgainstMe, ownerAbortRelease, isValidNomineeEmail } from "./lib/releaseClaim.js";
 import { fetchMySubscription, fetchMyBillingEvents, fetchMyBillingProfile, upsertMyBillingProfile, fetchInvoiceUrl, joinVaultFallWaitlist, startUpgrade, validateCoupon } from "./lib/billing.js";
-import { planFor, entitlementsFor, daysLeftFor, paidPlans } from "./lib/plans.js";
+import { planFor, entitlementsFor, daysLeftFor, paidPlans, isPaid } from "./lib/plans.js";
 import { isSupabaseConfigured } from "./lib/supabaseClient.js";
 import { getSession, onAuthStateChange, signOut, appendServerAuditEvent, ensureDeviceToken, getDeviceToken, deleteAccount, signInWithPassword, signUpWithPassword } from "./lib/auth.js";
 import {
@@ -936,6 +936,25 @@ function App() {
     setPendingReauth({ action });
   }
   const entitlements = useMemo(() => entitlementsFor(subscription), [subscription]);
+
+  // Fire once, the first time this browser sees a paid entitlement — Razorpay
+  // returns the user to the app, but the subscription row is written by the
+  // webhook, so there's no "success" callback to hang this off. The localStorage
+  // latch stops it re-firing on every subsequent load.
+  //
+  // Client-side, so it under-counts (cleared storage, a second device). The
+  // authoritative revenue number is the subscriptions table in Supabase; this
+  // event exists to close the funnel, not to count money.
+  useEffect(() => {
+    if (!isPaid(entitlements.effective)) return;
+    try {
+      if (localStorage.getItem("lyfos-purchase-tracked") === entitlements.effective) return;
+      localStorage.setItem("lyfos-purchase-tracked", entitlements.effective);
+    } catch {
+      return; // No storage means no dedupe; skip rather than spam.
+    }
+    trackEvent("purchase_completed", { plan: entitlements.effective });
+  }, [entitlements.effective]);
   const backupSizeWarning = useMemo(() => getBackupSizeWarning({
     encryptedPayloadBytes: storedRecord ? new TextEncoder().encode(JSON.stringify(storedRecord, null, 2)).byteLength : 0,
     encryptedAttachmentBytes: 0
@@ -1175,6 +1194,9 @@ function App() {
     setUnlockedAt(Date.now());
     setLockNotice("");
     setNotice("Vault created and encrypted locally.");
+    // The one number that separates "looked at the marketing site" from
+    // "actually became a user". `src` is the marketing CTA they came from.
+    trackEvent("vault_created", { src: getSource() });
   }
 
   async function handleVaultUnlocked(key, nextVault, usedEnvelope, secret, sourceRecord) {
@@ -4980,6 +5002,9 @@ function CategoryWorkspace({ vault, area, initialRecordId, onSave, onCapture, on
     setSelectedId(nextRecord.id);
     setMode("detail");
     setMessage(exists ? "Record updated." : "Record created.");
+    // Habit signal: one record is a trial, ten is a vault they rely on.
+    // Bucketed — an exact item count would be a weak fingerprint.
+    if (!exists) trackEvent("record_added", { count: bucketCount(vault.items.length + 1) });
   }
 
   async function deleteRecord(record) {
@@ -5557,6 +5582,9 @@ function CaptureScreen({ vault, onSave, entitlements, onNavigate }) {
       items: [nextItem, ...vault.items],
       audit: [{ id: crypto.randomUUID(), event: `Captured record: ${nextItem.title}`, at: now }, ...vault.audit]
     }, attachments.length || hasStructuredDrafts ? "attachment_change" : "record_change");
+    // Second of the two record-creation paths (the other is the area drawer's
+    // saveRecord). Both are instrumented, or the habit signal under-counts.
+    trackEvent("record_added", { count: bucketCount(vault.items.length + 1) });
     const remainingDrafts = drafts.filter((_, index) => index !== selectedDraftIndex);
     setMessage(remainingDrafts.length ? "Saved. Continue reviewing the remaining extracted records." : "Saved as a protected record.");
     setDrafts(remainingDrafts);
@@ -5855,12 +5883,17 @@ function ReleaseScreen({ vault, onSave, session, vaultKey, entitlements, autoPre
       return;
     }
     const now = new Date().toISOString();
+    const previouslyFilled = (vault.releaseSettings?.keyHolders ?? []).filter((holder) => holder.trim()).length;
     await onSave({
       ...vault,
       releaseSettings: settings,
       audit: [{ id: crypto.randomUUID(), event: "Release circle updated", at: now }, ...vault.audit]
     }, null);
     setMessage(confirmed ? "Plan saved locally. Lyfos cannot yet contact your nominees — share these details with them yourself." : "Plan saved as a draft.");
+    // Did they reach the feature that justifies the paid tier? Fires only on a
+    // real addition, so re-saving the same circle doesn't inflate the count.
+    // Only the number of holders leaves the device — never a name or email.
+    if (filledKeys > previouslyFilled) trackEvent("nominee_added", { holders: String(filledKeys) });
   }
 
   const supabaseOn = isSupabaseConfigured();

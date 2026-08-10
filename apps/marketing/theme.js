@@ -11,11 +11,28 @@
   try { saved = localStorage.getItem('lyfos-theme'); } catch (e) {}
   root.setAttribute('data-theme', saved || root.getAttribute('data-theme') || 'light');
 
+  // 1a. Pricing currency, decided before paint so nobody sees the wrong price
+  //     flash. India gets INR, everywhere else gets USD. Detection is entirely
+  //     local — timezone, UTC offset, language. No IP lookup, no geo API.
+  var currency = 'usd';
+  try {
+    var savedCur = localStorage.getItem('lyfos-currency');
+    if (savedCur === 'inr' || savedCur === 'usd') {
+      currency = savedCur;
+    } else {
+      var tz = '';        try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}
+      var istOffset = false; try { istOffset = new Date().getTimezoneOffset() === -330; } catch (e) {}
+      var lang = '';      try { lang = navigator.language || ''; } catch (e) {}
+      if (/^Asia\/(Kolkata|Calcutta)$/i.test(tz) || istOffset || /-IN$/i.test(lang)) currency = 'inr';
+    }
+  } catch (e) {}
+  root.setAttribute('data-currency', currency);
+
   // 1b. Privacy-respecting analytics (no cookies). Activates once a Plausible
   //     account exists for the domain; harmless otherwise.
   if (!document.querySelector('script[data-domain]')) {
     var pl = document.createElement('script');
-    pl.defer = true; pl.setAttribute('data-domain', 'lyfos.com');
+    pl.defer = true; pl.setAttribute('data-domain', 'lyfos.in');
     pl.src = 'https://plausible.io/js/script.js';
     document.head.appendChild(pl);
   }
@@ -31,6 +48,15 @@
         m.className = 'mark'; m.innerHTML = LOCK;
         b.insertBefore(m, b.firstChild);
       }
+    });
+
+    // 2b. Let a visitor override the currency guess; remember the override.
+    document.querySelectorAll('[data-currency-toggle]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var next = root.getAttribute('data-currency') === 'inr' ? 'usd' : 'inr';
+        root.setAttribute('data-currency', next);
+        try { localStorage.setItem('lyfos-currency', next); } catch (e) {}
+      });
     });
 
     // 3. Theme toggle + group the right-hand nav items.

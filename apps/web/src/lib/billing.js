@@ -7,6 +7,7 @@
 
 import { getSupabase, isSupabaseConfigured } from "./supabaseClient.js";
 import { planFor } from "./plans.js";
+import { trackEvent } from "./telemetry.js";
 
 const WAITLIST_ENDPOINT =
   import.meta.env.VITE_WAITLIST_ENDPOINT ||
@@ -105,6 +106,13 @@ export async function startUpgrade({ plan, provider = "razorpay", couponCode }) 
   });
   if (error) throw new Error(data?.error || error.message || "Could not start checkout");
   if (!data?.ok || !data?.checkoutUrl) throw new Error(data?.error || "Checkout session did not return a payment link");
+
+  // Instrumented here rather than at the two button handlers, so both upgrade
+  // paths are covered by one call. Fires only once the session really exists —
+  // a checkout that failed to open was never started. The coupon *code* is
+  // never sent, only whether one was used.
+  trackEvent("checkout_started", { plan, coupon: couponCode ? "yes" : "no" });
+
   return { checkoutUrl: data.checkoutUrl, subscriptionId: data.subscription_id };
 }
 
