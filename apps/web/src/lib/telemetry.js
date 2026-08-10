@@ -1,14 +1,21 @@
-// Telemetry stubs — wired up but inactive until env vars are set in the host
-// (Cloudflare Pages / Vercel / wherever app.lyfos.in is deployed).
+// Telemetry for app.lyfos.in.
 //
-// Set in deployment env:
-//   VITE_PLAUSIBLE_DOMAIN=app.lyfos.in
-//   VITE_SENTRY_DSN=https://...@sentry.io/...
+// Plausible only — no cookies, no personal data, no cross-site identifier, and
+// nothing from inside the vault (see the ALLOWED_EVENTS firewall below). The
+// Google tag deliberately does NOT run on this origin: it holds the decrypted
+// vault, and the CSP in vercel.json blocks Google's domains outright.
 //
-// Both are evaluated at BUILD time by Vite. If unset, this module does nothing —
-// no script tags injected, no Sentry SDK loaded, no telemetry leaves the device.
+// PRODUCTION BUILDS ONLY. Local dev and preview builds stay silent so they
+// don't pollute the real numbers. Override for a one-off local check with
+//   VITE_PLAUSIBLE_FORCE=1
+//
+// Sentry stays opt-in via VITE_SENTRY_DSN, evaluated at build time by Vite.
 
-const PLAUSIBLE_DOMAIN = import.meta.env.VITE_PLAUSIBLE_DOMAIN;
+// Site-specific script for app.lyfos.in, from the Plausible dashboard. Public
+// by nature (it ships in the page), so it lives in source rather than an env
+// var — one less thing to forget on a redeploy.
+const PLAUSIBLE_SRC = "https://plausible.io/js/pa-R92RFGL3XfPb96Z4-cS3h.js";
+const PLAUSIBLE_ON = import.meta.env.PROD || import.meta.env.VITE_PLAUSIBLE_FORCE === "1";
 const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN;
 
 // Build identity, set by vite.config.js
@@ -71,15 +78,25 @@ export function bucketCount(n) {
 }
 
 function initPlausible() {
-  if (!PLAUSIBLE_DOMAIN) return;
-  if (typeof document === "undefined") return;
+  if (!PLAUSIBLE_ON) return;
+  if (typeof document === "undefined" || typeof window === "undefined") return;
   if (document.querySelector("script[data-lyfos-plausible]")) return;
+
+  // The queue stub goes up FIRST, exactly as Plausible's snippet does it, so
+  // events fired before the script finishes downloading are buffered rather
+  // than dropped. Matters here: vault_created can fire seconds after load.
+  window.plausible = window.plausible || function () {
+    (window.plausible.q = window.plausible.q || []).push(arguments);
+  };
+  window.plausible.init = window.plausible.init || function (i) { window.plausible.o = i || {}; };
+
   const script = document.createElement("script");
   script.defer = true;
-  script.dataset.domain = PLAUSIBLE_DOMAIN;
   script.dataset.lyfosPlausible = "1";
-  script.src = "https://plausible.io/js/script.js";
+  script.src = PLAUSIBLE_SRC;
   document.head.appendChild(script);
+
+  window.plausible.init();
 }
 
 function initSentry() {
