@@ -2,6 +2,7 @@ import { LEGACY_ACTIONS, SENSITIVITY_LEVELS } from "./constants.js";
 import { LEGACY_CATEGORIES } from "./categories.js";
 import { FIELD_TEMPLATES } from "./fieldTemplates.js";
 import { LEGACY_SERVICE_TEMPLATES } from "./services.js";
+import { regionRelevance } from "./regions.js";
 
 const categoryById = new Map(LEGACY_CATEGORIES.map((category) => [category.id, category]));
 const serviceById = new Map(LEGACY_SERVICE_TEMPLATES.map((service) => [service.id, service]));
@@ -14,12 +15,27 @@ export function getService(id) {
   return serviceById.get(String(id ?? "")) ?? null;
 }
 
-export function listServices({ categoryId, featuredOnly = false, enabledOnly = true } = {}) {
-  return LEGACY_SERVICE_TEMPLATES.filter((service) =>
+/**
+ * List service templates.
+ *
+ * `region` REORDERS, it does not exclude — a template authored for another
+ * country stays in the list so an existing record still resolves and search
+ * still finds it. Only `featuredOnly` narrows by region, because the quick-pick
+ * strip is the one place where showing every country's banks is just noise.
+ *
+ * Omitting `region` preserves the original ordering exactly.
+ */
+export function listServices({ categoryId, featuredOnly = false, enabledOnly = true, region = null } = {}) {
+  const matches = LEGACY_SERVICE_TEMPLATES.filter((service) =>
     (!categoryId || service.categoryId === categoryId)
-    && (!featuredOnly || service.isFeatured)
     && (!enabledOnly || service.isEnabled)
+    && (!featuredOnly || (service.isFeatured && (!region || regionRelevance(service, region) <= 1)))
   );
+  if (!region) return matches;
+  return matches.slice().sort((left, right) =>
+    regionRelevance(left, region) - regionRelevance(right, region)
+    || getCategory(left.categoryId).sortOrder - getCategory(right.categoryId).sortOrder
+    || left.sortOrder - right.sortOrder);
 }
 
 function searchableText(service) {
@@ -42,7 +58,10 @@ export function searchServiceTemplates(query, options = {}) {
       return { service, rank };
     })
     .filter(({ rank }) => rank !== null)
+    // Text match dominates; region only breaks ties. Typing "HDFC" from London
+    // must still find HDFC.
     .sort((left, right) => left.rank - right.rank
+      || (options.region ? regionRelevance(left.service, options.region) - regionRelevance(right.service, options.region) : 0)
       || getCategory(left.service.categoryId).sortOrder - getCategory(right.service.categoryId).sortOrder
       || left.service.sortOrder - right.service.sortOrder)
     .map(({ service }) => service);

@@ -2,6 +2,7 @@ export * from "./constants.js";
 export * from "./categories.js";
 export * from "./fieldTemplates.js";
 export * from "./services.js";
+export * from "./regions.js";
 export * from "./catalogue.js";
 export * from "./permissions.js";
 export * from "./status.js";

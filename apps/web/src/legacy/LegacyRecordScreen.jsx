@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { FIELD_TEMPLATES, deriveRecordStatus, getCategory, getFreshnessState, getService } from "@os-one/digital-legacy";
+import { FIELD_TEMPLATES, deriveRecordStatus, fieldLabelForRegion, getCategory, getFreshnessState, getService } from "@os-one/digital-legacy";
+import { getRegionPreference } from "../lib/region.js";
 import { appendAuditEvent } from "../lib/stage1Audit.js";
 import { DIGITAL_LEGACY_FEATURE_FLAGS } from "./featureFlags.js";
 import { AUDIENCE_LABELS, LEGACY_ACTION_LABELS, RECIPIENT_LABELS } from "./labels.js";
@@ -106,7 +107,7 @@ export default function LegacyRecordScreen({ digitalLegacy, vault, onSave, recor
               const sensitive = template?.revealRequiresReauthentication;
               return (
                 <div key={field.fieldKey} className="flex items-start justify-between gap-4 py-2.5">
-                  <dt className="shrink-0 text-[12.5px] text-[var(--ink-3)]">{template?.label ?? field.fieldKey}</dt>
+                  <dt className="shrink-0 text-[12.5px] text-[var(--ink-3)]">{template ? fieldLabelForRegion(template.id, template.label, getRegionPreference()) : field.fieldKey}</dt>
                   <dd className="max-w-[60%] break-words text-right text-[13px] text-[var(--ink)]">
                     {sensitive && !revealed ? <span className="text-[var(--ink-4)]">•••• •••• ••••</span> : String(field.value ?? "—")}
                   </dd>

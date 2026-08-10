@@ -14,16 +14,16 @@ export const LEGACY_ACTION_LABELS = {
 
 export const AUDIENCE_LABELS = {
   owner_only: "Private — visible only to you",
-  existence_only: "Nominees would see this exists, not its details",
-  instructions_only: "Nominees would see your instructions, not stored values",
+  existence_only: "Trusted contacts would see this exists, not its details",
+  instructions_only: "Trusted contacts would see your instructions, not stored values",
   full_record: "Full record would be included in a release"
 };
 
 export const RECIPIENT_LABELS = {
-  primary: "Primary nominee",
-  backup_fallback: "Backup nominee (fallback only)",
-  all_authorized: "All authorized nominees",
-  selected: "Selected nominees"
+  primary: "Primary trusted contact",
+  backup_fallback: "Backup trusted contact (fallback only)",
+  all_authorized: "All authorised trusted contacts",
+  selected: "Selected trusted contacts"
 };
 
 export const REVIEW_FREQUENCY_LABELS = {

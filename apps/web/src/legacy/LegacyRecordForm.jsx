@@ -4,11 +4,14 @@ import {
   LEGACY_ACTIONS,
   RECIPIENT_MODES,
   RELEASE_AUDIENCES,
+  applyRegionToFieldKeys,
   createLegacyRecord,
+  fieldLabelForRegion,
   getCategory,
   getService,
   listServices
 } from "@os-one/digital-legacy";
+import { getRegionPreference } from "../lib/region.js";
 import { appendAuditEvent } from "../lib/stage1Audit.js";
 import { readFilesAsAttachments } from "../lib/stage1Attachments.js";
 import { DIGITAL_LEGACY_FEATURE_FLAGS } from "./featureFlags.js";
@@ -42,7 +45,10 @@ export default function LegacyRecordForm({ digitalLegacy, vault, onSave, categor
   const existingRecord = useMemo(() => digitalLegacy.records.find((r) => r.id === recordId) ?? null, [digitalLegacy, recordId]);
   const effectiveCategoryId = existingRecord?.categoryId ?? categoryId;
   const category = getCategory(effectiveCategoryId);
-  const services = useMemo(() => listServices({ categoryId: effectiveCategoryId }), [effectiveCategoryId]);
+  const region = useMemo(() => getRegionPreference(), []);
+  // Region reorders this list so local providers come first; it never removes
+  // one, so a record created in another country still finds its template.
+  const services = useMemo(() => listServices({ categoryId: effectiveCategoryId, region }), [effectiveCategoryId, region]);
 
   const [selectedServiceId, setSelectedServiceId] = useState(existingRecord?.serviceTemplateId ?? null);
   const [serviceQuery, setServiceQuery] = useState("");
@@ -72,11 +78,15 @@ export default function LegacyRecordForm({ digitalLegacy, vault, onSave, categor
     // every record instead of touching the domain package's data, so any
     // account can hold whichever one actually applies to it.
     const credentialKeys = DIGITAL_LEGACY_FEATURE_FLAGS.credentialFields ? ["password", "pin", "recovery-code"] : [];
-    return [...new Set([...suggested, ...credentialKeys, ...existingKeys])]
+    // Drop fields this region's banks don't issue (a US bank has no customer
+    // ID) — but only from the SUGGESTED set. Anything already saved on the
+    // record stays visible, so moving country never hides your own data.
+    const regional = applyRegionToFieldKeys(suggested, region);
+    return [...new Set([...regional, ...credentialKeys, ...existingKeys])]
       // "account-label" duplicates the record's own top-level Label field.
       .filter((key) => key !== "account-label" && ["allowed", "feature_gated"].includes(FIELD_TEMPLATES[key]?.storagePolicy))
       .filter((key) => FIELD_TEMPLATES[key]?.storagePolicy !== "feature_gated" || DIGITAL_LEGACY_FEATURE_FLAGS.credentialFields);
-  }, [selectedService, existingRecord]);
+  }, [selectedService, existingRecord, region]);
 
   const basicFieldKeys = useMemo(
     () => allowedFieldKeys.filter((key) => BASIC_CLASSIFICATIONS.includes(FIELD_TEMPLATES[key]?.classification)).slice(0, BASIC_FIELD_COUNT),
@@ -235,7 +245,7 @@ export default function LegacyRecordForm({ digitalLegacy, vault, onSave, categor
           const template = FIELD_TEMPLATES[key];
           return (
             <div key={key}>
-              <label className="mb-1 block text-[12px] text-[var(--ink-3)]">{template.label}</label>
+              <label className="mb-1 block text-[12px] text-[var(--ink-3)]">{fieldLabelForRegion(template.id, template.label, region)}</label>
               {fieldInput(template, fieldValues[key] ?? "", (value) => setFieldValues((prev) => ({ ...prev, [key]: value })))}
             </div>
           );
@@ -259,7 +269,7 @@ export default function LegacyRecordForm({ digitalLegacy, vault, onSave, categor
                 const template = FIELD_TEMPLATES[key];
                 return (
                   <div key={key}>
-                    <label className="mb-1 block text-[12px] text-[var(--ink-3)]">{template.label}</label>
+                    <label className="mb-1 block text-[12px] text-[var(--ink-3)]">{fieldLabelForRegion(template.id, template.label, region)}</label>
                     {fieldInput(template, fieldValues[key] ?? "", (value) => setFieldValues((prev) => ({ ...prev, [key]: value })))}
                   </div>
                 );

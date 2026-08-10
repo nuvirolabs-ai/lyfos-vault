@@ -175,7 +175,7 @@ async function sendEmail(to: string, request: any): Promise<string | null> {
         `If you are alive and reading this, ABORT NOW:`,
         `${APP_URL}/release/abort`,
         ``,
-        `Once the hold expires, your nominee will be able to download your emergency-eligible records.`
+        `Once the hold expires, your trusted contact will be able to download your emergency-eligible records.`
       ].join("\n"),
       html: emailHtml(daysLeft, request.nominee_email_at_request)
     })

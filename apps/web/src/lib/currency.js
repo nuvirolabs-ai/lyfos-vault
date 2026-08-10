@@ -9,12 +9,19 @@
 // Direct `₹` characters in JSX are a code smell.
 
 export const CURRENCIES = {
-  INR: { code: "INR", symbol: "₹", locale: "en-IN", compact: "in" },
-  USD: { code: "USD", symbol: "$", locale: "en-US", compact: "en" },
-  EUR: { code: "EUR", symbol: "€", locale: "en-IE", compact: "en" },
-  GBP: { code: "GBP", symbol: "£", locale: "en-GB", compact: "en" }
+  INR: { code: "INR", symbol: "₹",   locale: "en-IN", compact: "in" },
+  USD: { code: "USD", symbol: "$",   locale: "en-US", compact: "en" },
+  EUR: { code: "EUR", symbol: "€",   locale: "en-IE", compact: "en" },
+  GBP: { code: "GBP", symbol: "£",   locale: "en-GB", compact: "en" },
+  AED: { code: "AED", symbol: "AED ", locale: "en-AE", compact: "en" },
+  SGD: { code: "SGD", symbol: "S$",  locale: "en-SG", compact: "en" },
+  CAD: { code: "CAD", symbol: "C$",  locale: "en-CA", compact: "en" },
+  AUD: { code: "AUD", symbol: "A$",  locale: "en-AU", compact: "en" }
 };
 
+// The fallback when nothing else is known. A region can suggest a better one
+// (see regionCurrency in the digital-legacy package), and the user's own
+// choice always wins over both.
 export const DEFAULT_CURRENCY = "INR";
 
 // Compact units per system. The "in" system uses lakh (L) and crore (Cr);

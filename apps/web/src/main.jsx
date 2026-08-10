@@ -59,6 +59,7 @@ import { verifyBackup } from "./lib/stage2BackupVerification.js";
 import { getBackupReminderCopy } from "./lib/stage2BackupReminders.js";
 import { prepareStage2BackupExport } from "./lib/stage2BackupManifest.js";
 import { initTelemetry, registerServiceWorker, trackEvent, getSource, bucketCount } from "./lib/telemetry.js";
+import { REGIONS, getRegionPreference, setRegionPreference } from "./lib/region.js";
 import { buildSnapshotsCsv, suggestedCsvFilename } from "./lib/csvExport.js";
 import { formatCurrency, formatCompact, DEFAULT_CURRENCY } from "./lib/currency.js";
 import { listMyKeyHolders, createKeyHolderInvite, requeueKeyHolderInvite, revokeKeyHolder, deleteKeyHolder, sendInviteEmail, activateCircleGeneration, summarizeKeyHolders, buildTrustRosterSlots, listKeysIHeld, summarizeHeldKeys } from "./lib/releasePlan.js";
@@ -256,20 +257,48 @@ function daysUntil(iso) {
   return Math.round((target - Date.now()) / (1000 * 60 * 60 * 24));
 }
 
+// `regions` limits which categories are OFFERED, never which resolve — an id
+// is permanent once a user has money filed under it. `hints` localises the
+// examples; the generic `hint` is the fallback.
 export const BALANCE_SHEET_CATEGORIES = [
-  { id: "cash",         kind: "asset",     label: "Cash & bank",      hint: "Savings, current, FDs" },
-  { id: "investments",  kind: "asset",     label: "Investments",      hint: "Stocks, MFs, NPS, PPF, EPF, bonds" },
+  { id: "cash",         kind: "asset",     label: "Cash & bank",      hint: "Savings, current accounts, deposits",
+    hints: { IN: "Savings, current, FDs", US: "Checking, savings, CDs", GB: "Current, savings, premium bonds" } },
+  { id: "investments",  kind: "asset",     label: "Investments",      hint: "Stocks, funds, bonds",
+    hints: { IN: "Stocks, MFs, NPS, PPF, EPF, bonds", US: "Brokerage, stocks, ETFs", GB: "ISAs, funds, shares" } },
+  { id: "retirement",   kind: "asset",     label: "Retirement",       hint: "Pensions and retirement accounts",
+    hints: { US: "401(k), IRA, Roth", GB: "Workplace pension, SIPP", AE: "End-of-service gratuity" },
+    regions: ["US", "GB", "AE"] },
   { id: "real_estate",  kind: "asset",     label: "Real estate",      hint: "Property at your own valuation" },
-  { id: "gold",         kind: "asset",     label: "Gold & jewellery", hint: "Physical and digital gold" },
-  { id: "vehicles",     kind: "asset",     label: "Vehicles",         hint: "Cars, bikes (current resale value)" },
-  { id: "crypto",       kind: "asset",     label: "Crypto",           hint: "Holdings in INR" },
+  // Gold is a mainstream household asset class in India and the Gulf, and
+  // noise almost everywhere else.
+  { id: "gold",         kind: "asset",     label: "Gold & jewellery", hint: "Physical and digital gold",
+    regions: ["IN", "AE"] },
+  { id: "vehicles",     kind: "asset",     label: "Vehicles",         hint: "Current resale value" },
+  { id: "crypto",       kind: "asset",     label: "Crypto",           hint: "Holdings at current value" },
   { id: "other_asset",  kind: "asset",     label: "Other assets",     hint: "Anything else of value" },
-  { id: "home_loan",    kind: "liability", label: "Home loan",        hint: "Outstanding principal" },
+  { id: "home_loan",    kind: "liability", label: "Home loan",        hint: "Outstanding principal",
+    hints: { US: "Mortgage — outstanding principal", GB: "Mortgage — outstanding principal" } },
   { id: "personal_loan",kind: "liability", label: "Personal loan",    hint: "Outstanding principal" },
   { id: "car_loan",     kind: "liability", label: "Car / vehicle loan", hint: "Outstanding principal" },
   { id: "credit_card",  kind: "liability", label: "Credit card",      hint: "Unpaid balance" },
   { id: "other_debt",   kind: "liability", label: "Other debt",       hint: "Any other liability" }
 ];
+
+/** Hint text for a category in a region, falling back to the generic one. */
+export function categoryHint(cat, region) {
+  return cat?.hints?.[region] ?? cat?.hint ?? "";
+}
+
+/**
+ * Categories to OFFER. Region-restricted ones appear only in their regions —
+ * except any the user already has an account filed under, which always stay
+ * visible so moving country never hides someone's own money.
+ */
+export function balanceSheetCategoriesFor(region, usedCategoryIds = []) {
+  const used = new Set(usedCategoryIds);
+  return BALANCE_SHEET_CATEGORIES.filter((cat) =>
+    !cat.regions || cat.regions.includes(region) || used.has(cat.id));
+}
 
 function categoryById(id) {
   return BALANCE_SHEET_CATEGORIES.find((c) => c.id === id) ?? null;
@@ -578,7 +607,7 @@ function deriveAttention(vault) {
       tone: "urgent",
       area: "release",
       title: "Choose who your vault is for",
-      sub: "Name a nominee so your family can recover everything.",
+      sub: "Name a trusted contact so your family can recover everything.",
       when: "Set up",
       sort: -10
     });
@@ -1653,7 +1682,7 @@ function WelcomeScreen({ onCreated, onUnlocked, onUnlockFailed, onSignedIn, onCo
           {onNomineeEntry && (
             <div className="mt-5 text-center">
               <button type="button" onClick={onNomineeEntry} className="rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-4 py-2 text-[12.5px] font-semibold text-[var(--ink-2)] transition hover:text-[var(--ink)]">
-                I am a nominee
+                I am a trusted contact
               </button>
             </div>
           )}
@@ -1963,7 +1992,7 @@ function FamilyHomeDashboard({ vault, onNavigate, onOpenRecord, onOpenArea }) {
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--ink-3)]">{primaryAction.id === "healthy" ? "Today" : "One thing to finish"}</p>
             <h2 className="mt-4 max-w-xs text-[22px] font-semibold leading-tight text-[var(--ink)]">{primaryAction.label}</h2>
-            <p className="mt-3 max-w-xs text-[13px] leading-5 text-[var(--ink-2)]">{primaryAction.id === "nominee-email" ? "Your nominee needs an email so Lyfos can send the key when it matters." : primaryAction.id === "release" ? "Five trusted people hold keys. Three are needed to release the vault." : primaryAction.id === "capture" ? "Add one important record and your vault health will begin to reflect what matters." : "Keep the areas your family depends on current."}</p>
+            <p className="mt-3 max-w-xs text-[13px] leading-5 text-[var(--ink-2)]">{primaryAction.id === "nominee-email" ? "Your trusted contact needs an email so Lyfos can send the key when it matters." : primaryAction.id === "release" ? "Five trusted people hold keys. Three are needed to release the vault." : primaryAction.id === "capture" ? "Add one important record and your vault health will begin to reflect what matters." : "Keep the areas your family depends on current."}</p>
           </div>
           <span className="text-[13px] font-semibold text-[var(--green-ink)]">{primaryAction.id === "healthy" ? "Open vault" : "Continue"} <span className="text-xl align-[-2px] transition group-hover:translate-x-1">›</span></span>
         </button>
@@ -2449,6 +2478,7 @@ function SettingsPage({ vault, onExport, onReset, onLoadDemo, session, onShowAut
   const supabaseOn = isSupabaseConfigured();
   const [theme, setTheme] = useState(() => (typeof document !== "undefined" && document.body.dataset.theme === "dark") ? "dark" : "light");
   function applyTheme(t) { document.body.dataset.theme = t; try { localStorage.setItem("lyfos-theme", t); } catch {} setTheme(t); }
+  const [region, setRegion] = useState(() => getRegionPreference());
   function downloadCsv() { const csv = buildSnapshotsCsv(vault?.balanceSheet ?? {}); downloadTextFile(suggestedCsvFilename(), csv, "text/csv"); }
 
   const Card = ({ children }) => <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)]">{children}</div>;
@@ -2473,6 +2503,19 @@ function SettingsPage({ vault, onExport, onReset, onLoadDemo, session, onShowAut
 
       <Label>Appearance</Label>
       <Card><Row title="Theme" hint="Light is easy on the eyes by day; dark is calmer at night." last><Seg options={[["light", "Light"], ["dark", "Dark"]]} value={theme} onChange={applyTheme} /></Row></Card>
+
+      <Label>Region</Label>
+      <Card>
+        <Row title="Your country" hint="Sets which banks, IDs and account types are suggested first. Nothing is ever hidden — you can still search for any provider." last>
+          <select
+            value={region}
+            onChange={(e) => { setRegion(setRegionPreference(e.target.value)); }}
+            className="shrink-0 rounded-full border border-[var(--line-2)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+          >
+            {REGIONS.map((r) => <option key={r.code} value={r.code}>{r.label}</option>)}
+          </select>
+        </Row>
+      </Card>
 
       <Label>Security</Label>
       <Card>
@@ -2952,7 +2995,7 @@ function ActiveReleaseBanner({ onNavigateRelease }) {
   if (!request) return null;
 
   async function abort() {
-    if (!window.confirm("Abort this release request? Your nominee will be notified and your vault stays sealed.")) return;
+    if (!window.confirm("Abort this release request? Your trusted contact will be notified and your vault stays sealed.")) return;
     setAborting(true);
     setError("");
     try {
@@ -3010,7 +3053,7 @@ function stateTone(state) {
 function stateLabel(state) {
   return {
     under_review:      "Evidence under review",
-    collecting_support:"Waiting for two supporting nominees",
+    collecting_support:"Waiting for two supporting trusted contacts",
     ready_to_recover:  "Ready for the recipient",
     opened:            "Opened read-only",
     aborted:           "Aborted",
@@ -3031,7 +3074,7 @@ function bannerCopy(request, daysRemaining) {
     case "under_review":
       return `A recovery recipient (${request.nominee_email_at_request}) submitted evidence. Lyfos is reviewing it. If this is unexpected, abort now.`;
     case "collecting_support":
-      return `Two nominees other than the selected recipient must independently release their keys. Your vault remains sealed and you can still abort.`;
+      return `Two trusted contacts other than the selected recipient must independently release their keys. Your vault remains sealed and you can still abort.`;
     case "pending_review":
       return `Someone (${request.nominee_email_at_request}) filed a release claim. Lyfos is reviewing the certificate. If this isn't expected — abort now.`;
     case "approved":
@@ -3043,7 +3086,7 @@ function bannerCopy(request, daysRemaining) {
     case "ready_to_recover":
       return `The owner-protection hold has completed. The selected recipient can now match their private recovery key and open the entire vault read-only. You can still abort until it is opened.`;
     case "ready_to_release":
-      return `The 14-day hold has expired. Your nominee can now download the emergency-eligible records. Abort is no longer possible.`;
+      return `The 14-day hold has expired. Your trusted contact can now download the emergency-eligible records. Abort is no longer possible.`;
     default:
       return `Release request in state: ${request.state}.`;
   }
@@ -4507,7 +4550,7 @@ function SetupScreen({ vault, onSave, onNavigate }) {
       </div>
 
       <div className="mt-12 space-y-2">
-        {BALANCE_SHEET_CATEGORIES.map((cat) => {
+        {balanceSheetCategoriesFor(getRegionPreference(), accounts.map((a) => a.category)).map((cat) => {
           const list = byCat.get(cat.id) ?? [];
           const open = openCategory === cat.id;
           return (
@@ -4520,7 +4563,7 @@ function SetupScreen({ vault, onSave, onNavigate }) {
                   <span className={cx("h-1.5 w-1.5 rounded-full", cat.kind === "liability" ? "bg-[#b42318]" : "bg-[#1d1d1f]")} />
                   <div>
                     <div className="text-[14px] font-semibold text-[var(--ink)]">{cat.label}</div>
-                    <div className="text-[11px] text-[var(--ink-4)]">{cat.hint}</div>
+                    <div className="text-[11px] text-[var(--ink-4)]">{categoryHint(cat, getRegionPreference())}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -5864,13 +5907,13 @@ function ReleaseScreen({ vault, onSave, session, vaultKey, entitlements, autoPre
   const confirmed = nomineeReady && !hasDuplicates && activeKeys.length >= RELEASE_POLICY.requiredKeys;
   const remainingKeys = Math.max(0, RELEASE_POLICY.requiredKeys - activeKeys.length);
   const releaseStatus = !nomineeReady
-    ? "Add a Main Nominee before any recovery request can begin."
+    ? "Add a main trusted contact before any recovery request can begin."
     : hasDuplicates
       ? "Each trusted key must be a different person."
     : filledKeys < RELEASE_POLICY.requiredKeys
       ? `Add ${RELEASE_POLICY.requiredKeys - filledKeys} more trusted key holder${RELEASE_POLICY.requiredKeys - filledKeys === 1 ? "" : "s"}.`
       : confirmed
-        ? "Plan looks complete. The live release service is not active yet — share these details with your nominee manually for now."
+        ? "Plan looks complete. The live release service is not active yet — share these details with your trusted contact manually for now."
         : `Select ${remainingKeys} more trusted key${remainingKeys === 1 ? "" : "s"} to simulate the threshold.`;
 
   useEffect(() => {
@@ -5889,7 +5932,7 @@ function ReleaseScreen({ vault, onSave, session, vaultKey, entitlements, autoPre
       releaseSettings: settings,
       audit: [{ id: crypto.randomUUID(), event: "Release circle updated", at: now }, ...vault.audit]
     }, null);
-    setMessage(confirmed ? "Plan saved locally. Lyfos cannot yet contact your nominees — share these details with them yourself." : "Plan saved as a draft.");
+    setMessage(confirmed ? "Plan saved locally. Lyfos cannot yet contact your trusted contacts — share these details with them yourself." : "Plan saved as a draft.");
     // Did they reach the feature that justifies the paid tier? Fires only on a
     // real addition, so re-saving the same circle doesn't inflate the count.
     // Only the number of holders leaves the device — never a name or email.
@@ -5937,7 +5980,7 @@ function ReleaseScreen({ vault, onSave, session, vaultKey, entitlements, autoPre
           {confirmed ? "Your plan is complete." : "Plan who would help your family."}
         </h1>
         <p className="mx-auto mt-4 max-w-md text-[14px] leading-6 text-[var(--ink-2)]">
-          You name a nominee and five trusted key holders. In the future, three keys plus a 14-day hold will be required to release.
+          You name a main trusted contact and five key holders. In the future, three keys plus a 14-day hold will be required to release.
         </p>
       </div>
       )}
@@ -5945,7 +5988,7 @@ function ReleaseScreen({ vault, onSave, session, vaultKey, entitlements, autoPre
       {!cloudEnabled && (
       <div className={cx("mt-10 rounded-2xl border p-5", confirmed ? "border-[#34c759]/25 bg-[#34c759]/8" : hasDuplicates ? "border-[#ff453a]/25 bg-[#ff453a]/6" : "border-[var(--line)] bg-[var(--surface)]")}>
         <div className="grid grid-cols-3 gap-3 text-center">
-          <ReleaseStat label="Nominee" value={nomineeReady ? "Set" : "—"} ok={nomineeReady} />
+          <ReleaseStat label="Trusted contact" value={nomineeReady ? "Set" : "—"} ok={nomineeReady} />
           <ReleaseStat label="Key holders" value={`${filledKeys}/5`} ok={filledKeys >= RELEASE_POLICY.requiredKeys} />
           <ReleaseStat label="Threshold" value={`${activeKeys.length}/3`} ok={activeKeys.length >= RELEASE_POLICY.requiredKeys} />
         </div>
@@ -5961,7 +6004,7 @@ function ReleaseScreen({ vault, onSave, session, vaultKey, entitlements, autoPre
 
       <div className="mt-8">
         {releaseStep === 1 && (
-          <ReleasePanelLight subtitle="Choose the Main Nominee" body="This is the person who starts a recovery request. They still cannot open the vault alone.">
+          <ReleasePanelLight subtitle="Choose the main trusted contact" body="This is the person who starts a recovery request. They still cannot open the vault alone.">
             <input
               className="w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-[14px] outline-none focus:border-[var(--ink)]"
               value={settings.mainNominee}
@@ -6016,9 +6059,9 @@ function ReleaseScreen({ vault, onSave, session, vaultKey, entitlements, autoPre
         )}
 
         {releaseStep === 4 && (
-          <ReleasePanelLight subtitle="Preview emergency access" body="The exact sequence a nominee should expect. Simulated in this prototype.">
+          <ReleasePanelLight subtitle="Preview emergency access" body="The exact sequence a trusted contact should expect. Simulated in this prototype.">
             <div className="space-y-0">
-              {["Primary or approved backup signs in", "Two other nominees release keys", "14-day owner alert hold", "Entire vault opens read-only"].map((step, index) => (
+              {["Primary or approved backup signs in", "Two other trusted contacts release keys", "14-day owner alert hold", "Entire vault opens read-only"].map((step, index) => (
                 <div key={step} className="flex items-center gap-4 border-b border-[var(--line)] py-3.5 last:border-0">
                   <span className="grid h-7 w-7 place-items-center rounded-full bg-[var(--surface-2)] text-[12px] font-semibold text-[var(--ink-2)]">{index + 1}</span>
                   <span className="text-[14px] text-[var(--ink)]">{step}</span>
@@ -6031,7 +6074,7 @@ function ReleaseScreen({ vault, onSave, session, vaultKey, entitlements, autoPre
         {releaseStep === 5 && (
           <ReleasePanelLight subtitle="Readiness state" body={confirmed ? "Coherent for demo. Production still needs identity, alert delivery, and server-side enforcement." : "Not ready. Fix the readiness gaps before relying on it."}>
             <div className="divide-y divide-[var(--line)]">
-              <RuleRow label="Nominee" value={nomineeReady ? "Ready" : "Missing"} tone={nomineeReady ? "ok" : "warn"} />
+              <RuleRow label="Trusted contact" value={nomineeReady ? "Ready" : "Missing"} tone={nomineeReady ? "ok" : "warn"} />
               <RuleRow label="Key holders" value={`${filledKeys}/5 added`} tone={filledKeys >= 5 ? "ok" : "warn"} />
               <RuleRow label="Supporting keys" value={`${Math.min(activeKeys.length, 2)}/2 selected`} tone={activeKeys.length >= 2 ? "ok" : "warn"} />
             </div>
@@ -6154,7 +6197,7 @@ function CloudKeyHolders({ vaultKey, entitlements }) {
 
   async function revoke(holder) {
     const extraWarning = holder.status === "verified"
-      ? `\n\nThis nominee is part of your active recovery generation. Revoking them makes the plan incomplete, and primary or backup recovery may stop working. Invite a replacement and activate a fresh five-person generation before relying on it again.`
+      ? `\n\nThis trusted contact is part of your active recovery generation. Revoking them makes the plan incomplete, and primary or backup recovery may stop working. Invite a replacement and activate a fresh five-person generation before relying on it again.`
       : "";
     if (!window.confirm(`Revoke ${holder.label}'s invite? They will no longer be a key holder.${extraWarning}`)) return;
     try {

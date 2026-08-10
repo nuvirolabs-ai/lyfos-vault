@@ -66,7 +66,11 @@ function normalizeRow(row) {
   return row;
 }
 
+// `sortBase` keeps ordering stable when a category is assembled from several
+// calls (a universal group plus one group per region). Universal rows sort
+// first; each region pack occupies its own band.
 function buildServices(categoryId, rows, options = {}) {
+  const base = options.sortBase ?? 0;
   return rows.map((input, index) => {
     const row = normalizeRow(input);
     return {
@@ -85,18 +89,48 @@ function buildServices(categoryId, rows, options = {}) {
       defaultSensitivityLevel: row.sensitivityLevel ?? options.sensitivityLevel ?? "high",
       isFeatured: row.isFeatured ?? index < (options.featuredCount ?? 6),
       isEnabled: true,
-      sortOrder: index + 1
+      sortOrder: base + index + 1
     };
   });
 }
 
+// Sort bands, so a category assembled from several calls stays deterministic.
+const BAND = Object.freeze({ universal: 0, IN: 100, US: 200, GB: 300, AE: 400 });
+
 const groups = [
+  // ---- banking & payments -------------------------------------------------
   buildServices("banking-payments", [
-    ["hdfc-bank", "HDFC Bank"], ["icici-bank", "ICICI Bank"], ["state-bank-of-india", "State Bank of India", ["SBI"]], ["axis-bank", "Axis Bank"], ["bank-of-baroda", "Bank of Baroda", ["BOB"]], ["kotak-mahindra-bank", "Kotak Mahindra Bank"], ["punjab-national-bank", "Punjab National Bank", ["PNB"]], ["indusind-bank", "IndusInd Bank"], ["yes-bank", "Yes Bank"], ["idfc-first-bank", "IDFC FIRST Bank"], ["federal-bank", "Federal Bank"], ["au-small-finance-bank", "AU Small Finance Bank"], ["paytm", "Paytm"], ["phonepe", "PhonePe"], ["google-pay", "Google Pay", ["GPay"]], ["amazon-pay", "Amazon Pay"], ["paypal", "PayPal"], ["other-bank", "Other bank"], ["other-payment-account", "Other payment account"]
-  ], { countryCodes: ["IN"], featuredCount: 10 }),
+    ["paypal", "PayPal"], ["google-pay", "Google Pay", ["GPay"]], ["apple-pay", "Apple Pay"], ["amazon-pay", "Amazon Pay"], ["wise", "Wise", ["TransferWise"]], ["other-bank", "Other bank"], ["other-payment-account", "Other payment account"]
+  ], { featuredCount: 2, sortBase: BAND.universal }),
+  buildServices("banking-payments", [
+    ["hdfc-bank", "HDFC Bank"], ["icici-bank", "ICICI Bank"], ["state-bank-of-india", "State Bank of India", ["SBI"]], ["axis-bank", "Axis Bank"], ["bank-of-baroda", "Bank of Baroda", ["BOB"]], ["kotak-mahindra-bank", "Kotak Mahindra Bank"], ["punjab-national-bank", "Punjab National Bank", ["PNB"]], ["indusind-bank", "IndusInd Bank"], ["yes-bank", "Yes Bank"], ["idfc-first-bank", "IDFC FIRST Bank"], ["federal-bank", "Federal Bank"], ["au-small-finance-bank", "AU Small Finance Bank"], ["paytm", "Paytm"], ["phonepe", "PhonePe"]
+  ], { countryCodes: ["IN"], featuredCount: 10, sortBase: BAND.IN }),
+  buildServices("banking-payments", [
+    ["chase-bank", "Chase"], ["bank-of-america", "Bank of America", ["BofA"]], ["wells-fargo", "Wells Fargo"], ["citibank", "Citibank", ["Citi"]], ["capital-one", "Capital One"], ["us-bank", "U.S. Bank"], ["pnc-bank", "PNC Bank"], ["truist", "Truist"], ["ally-bank", "Ally Bank"], ["venmo", "Venmo"], ["zelle", "Zelle"], ["cash-app", "Cash App"]
+  ], { countryCodes: ["US"], featuredCount: 8, sortBase: BAND.US }),
+  buildServices("banking-payments", [
+    ["barclays", "Barclays"], ["hsbc-uk", "HSBC UK"], ["lloyds-bank", "Lloyds Bank"], ["natwest", "NatWest"], ["santander-uk", "Santander UK"], ["halifax", "Halifax"], ["nationwide-uk", "Nationwide"], ["monzo", "Monzo"], ["starling-bank", "Starling Bank"], ["revolut", "Revolut"]
+  ], { countryCodes: ["GB"], featuredCount: 8, sortBase: BAND.GB }),
+  buildServices("banking-payments", [
+    ["emirates-nbd", "Emirates NBD"], ["first-abu-dhabi-bank", "First Abu Dhabi Bank", ["FAB"]], ["adcb", "ADCB", ["Abu Dhabi Commercial Bank"]], ["mashreq", "Mashreq"], ["dubai-islamic-bank", "Dubai Islamic Bank", ["DIB"]], ["adib", "ADIB", ["Abu Dhabi Islamic Bank"]], ["rakbank", "RAKBANK"], ["wio-bank", "Wio Bank"]
+  ], { countryCodes: ["AE"], featuredCount: 7, sortBase: BAND.AE }),
+
+  // ---- investments & wealth -----------------------------------------------
   buildServices("investments-wealth", [
-    ["zerodha", "Zerodha"], ["groww", "Groww"], ["upstox", "Upstox"], ["angel-one", "Angel One"], ["icici-direct", "ICICI Direct"], ["hdfc-securities", "HDFC Securities"], ["kotak-securities", "Kotak Securities"], ["sharekhan", "Sharekhan"], ["mutual-fund-accounts", "Mutual fund accounts", ["MF"]], ["demat-accounts", "Demat accounts"], ["national-pension-system", "National Pension System", ["NPS"]], ["employee-provident-fund", "Employee Provident Fund", ["EPF", "PF"]], ["public-provident-fund", "Public Provident Fund", ["PPF"]], ["bonds", "Bonds"], ["fixed-deposits", "Fixed deposits", ["FD"]], ["cryptocurrency-wallets", "Cryptocurrency wallets", ["Crypto wallet"]], ["other-investment", "Other investment"]
-  ], { countryCodes: ["IN"], featuredCount: 8 }),
+    ["bonds", "Bonds"], ["cryptocurrency-wallets", "Cryptocurrency wallets", ["Crypto wallet"]], ["other-investment", "Other investment"]
+  ], { featuredCount: 1, sortBase: BAND.universal }),
+  buildServices("investments-wealth", [
+    ["zerodha", "Zerodha"], ["groww", "Groww"], ["upstox", "Upstox"], ["angel-one", "Angel One"], ["icici-direct", "ICICI Direct"], ["hdfc-securities", "HDFC Securities"], ["kotak-securities", "Kotak Securities"], ["sharekhan", "Sharekhan"], ["mutual-fund-accounts", "Mutual fund accounts", ["MF"]], ["demat-accounts", "Demat accounts"], ["national-pension-system", "National Pension System", ["NPS"]], ["employee-provident-fund", "Employee Provident Fund", ["EPF", "PF"]], ["public-provident-fund", "Public Provident Fund", ["PPF"]], ["fixed-deposits", "Fixed deposits", ["FD"]]
+  ], { countryCodes: ["IN"], featuredCount: 8, sortBase: BAND.IN }),
+  buildServices("investments-wealth", [
+    ["plan-401k", "401(k)"], ["roth-ira", "Roth IRA"], ["traditional-ira", "Traditional IRA"], ["fidelity", "Fidelity"], ["charles-schwab", "Charles Schwab"], ["vanguard-us", "Vanguard"], ["robinhood", "Robinhood"], ["etrade", "E*TRADE"], ["coinbase", "Coinbase"], ["hsa-account", "HSA", ["Health Savings Account"]], ["plan-529", "529 plan"], ["treasury-bonds-us", "Treasury bonds", ["I bonds", "TreasuryDirect"]], ["certificates-of-deposit", "Certificates of deposit", ["CD"]]
+  ], { countryCodes: ["US"], featuredCount: 9, sortBase: BAND.US }),
+  buildServices("investments-wealth", [
+    ["stocks-shares-isa", "Stocks & Shares ISA"], ["cash-isa", "Cash ISA"], ["lifetime-isa", "Lifetime ISA", ["LISA"]], ["sipp", "SIPP", ["Self-invested personal pension"]], ["workplace-pension", "Workplace pension"], ["hargreaves-lansdown", "Hargreaves Lansdown"], ["vanguard-uk", "Vanguard UK"], ["aj-bell", "AJ Bell"], ["interactive-investor", "Interactive Investor"], ["trading-212", "Trading 212"], ["freetrade", "Freetrade"], ["premium-bonds", "Premium Bonds", ["NS&I"]]
+  ], { countryCodes: ["GB"], featuredCount: 8, sortBase: BAND.GB }),
+  buildServices("investments-wealth", [
+    ["end-of-service-gratuity", "End-of-service gratuity"], ["gpssa-pension", "GPSSA pension"], ["national-bonds-uae", "National Bonds"], ["sarwa", "Sarwa"], ["interactive-brokers", "Interactive Brokers", ["IBKR"]], ["saxo-bank", "Saxo Bank"], ["etoro", "eToro"]
+  ], { countryCodes: ["AE"], featuredCount: 6, sortBase: BAND.AE }),
   buildServices("social-media", [
     ["facebook", "Facebook"], ["instagram", "Instagram", ["Insta"]], ["x", "X", ["Twitter"]], ["linkedin", "LinkedIn"], ["snapchat", "Snapchat"], ["reddit", "Reddit"], ["pinterest", "Pinterest"], ["threads", "Threads"], ["youtube", "YouTube"], ["other-social-account", "Other social account"]
   ], { sensitivityLevel: "standard" }),
@@ -109,9 +143,22 @@ const groups = [
   buildServices("cloud-digital-files", [
     ["google-drive", "Google Drive"], ["icloud-drive", "iCloud Drive"], ["microsoft-onedrive", "Microsoft OneDrive", ["OneDrive"]], ["dropbox", "Dropbox"], ["box", "Box"], ["pcloud", "pCloud"], ["amazon-photos", "Amazon Photos"], ["google-photos", "Google Photos"], ["other-cloud-storage", "Other cloud storage"]
   ]),
+  // ---- government & identity ----------------------------------------------
   buildServices("government-identity", [
-    ["aadhaar", "Aadhaar"], ["pan", "PAN", ["Permanent Account Number"]], ["passport", "Passport"], ["driving-licence", "Driving licence", ["Driving license", "DL"]], ["voter-id", "Voter ID"], ["digilocker", "DigiLocker"], ["income-tax-account", "Income Tax account"], ["gst-account", "GST account"], ["government-pension-account", "Government pension account"], ["other-government-identity", "Other government identity"]
-  ], { countryCodes: ["IN"], sensitivityLevel: "critical" }),
+    ["passport", "Passport"], ["driving-licence", "Driving licence", ["Driving license", "DL"]], ["other-government-identity", "Other government identity"]
+  ], { sensitivityLevel: "critical", featuredCount: 2, sortBase: BAND.universal }),
+  buildServices("government-identity", [
+    ["aadhaar", "Aadhaar"], ["pan", "PAN", ["Permanent Account Number"]], ["voter-id", "Voter ID"], ["digilocker", "DigiLocker"], ["income-tax-account", "Income Tax account"], ["gst-account", "GST account"], ["government-pension-account", "Government pension account"]
+  ], { countryCodes: ["IN"], sensitivityLevel: "critical", featuredCount: 5, sortBase: BAND.IN }),
+  buildServices("government-identity", [
+    ["social-security-number", "Social Security number", ["SSN"]], ["state-id-us", "State ID"], ["irs-account", "IRS account"], ["medicare-account", "Medicare"], ["green-card", "Green card", ["Permanent Resident Card"]], ["voter-registration-us", "Voter registration"]
+  ], { countryCodes: ["US"], sensitivityLevel: "critical", featuredCount: 5, sortBase: BAND.US }),
+  buildServices("government-identity", [
+    ["national-insurance-number", "National Insurance number", ["NI number"]], ["hmrc-account", "HMRC account"], ["nhs-number", "NHS number"], ["government-gateway", "Government Gateway"], ["electoral-roll", "Electoral roll"]
+  ], { countryCodes: ["GB"], sensitivityLevel: "critical", featuredCount: 5, sortBase: BAND.GB }),
+  buildServices("government-identity", [
+    ["emirates-id", "Emirates ID"], ["uae-pass", "UAE Pass"], ["residence-visa", "Residence visa"], ["labour-card", "Labour card"]
+  ], { countryCodes: ["AE"], sensitivityLevel: "critical", featuredCount: 4, sortBase: BAND.AE }),
   buildServices("insurance", [
     ["life-insurance", "Life insurance"], ["health-insurance", "Health insurance"], ["vehicle-insurance", "Vehicle insurance"], ["home-insurance", "Home insurance"], ["travel-insurance", "Travel insurance"], ["employer-insurance", "Employer insurance"], ["other-insurance", "Other insurance"]
   ]),
@@ -121,9 +168,24 @@ const groups = [
   buildServices("business-professional", [
     ["company-email", "Company email"], ["google-workspace", "Google Workspace", ["G Suite"]], ["microsoft-365", "Microsoft 365", ["Office 365"]], ["github", "GitHub"], ["gitlab", "GitLab"], ["domain-registrar", "Domain registrar"], ["website-hosting", "Website hosting"], ["aws", "AWS", ["Amazon Web Services"]], ["azure", "Azure", ["Microsoft Azure"]], ["google-cloud", "Google Cloud", ["GCP"]], ["stripe", "Stripe"], ["razorpay", "Razorpay"], ["shopify", "Shopify"], ["zoho", "Zoho"], ["accounting-software", "Accounting software"], ["crm", "CRM"], ["other-business-system", "Other business system"]
   ]),
+  // ---- shopping, travel & subscriptions -----------------------------------
+  // Previously one India-flavoured list with no country tag at all, so Flipkart
+  // and Swiggy were being offered worldwide.
   buildServices("shopping-travel-subscriptions", [
-    ["amazon-shopping", "Amazon"], ["flipkart", "Flipkart"], ["myntra", "Myntra"], ["swiggy", "Swiggy"], ["zomato", "Zomato"], ["uber", "Uber"], ["ola", "Ola"], ["airbnb", "Airbnb"], ["booking-com", "Booking.com"], ["airline-accounts", "Airline accounts"], ["hotel-accounts", "Hotel accounts"], ["streaming-subscriptions", "Streaming subscriptions"], ["software-subscriptions", "Software subscriptions"], ["other-subscription", "Other subscription"]
-  ], { sensitivityLevel: "standard" }),
+    ["amazon-shopping", "Amazon"], ["uber", "Uber"], ["airbnb", "Airbnb"], ["booking-com", "Booking.com"], ["airline-accounts", "Airline accounts"], ["hotel-accounts", "Hotel accounts"], ["streaming-subscriptions", "Streaming subscriptions"], ["software-subscriptions", "Software subscriptions"], ["other-subscription", "Other subscription"]
+  ], { sensitivityLevel: "standard", featuredCount: 6, sortBase: BAND.universal }),
+  buildServices("shopping-travel-subscriptions", [
+    ["flipkart", "Flipkart"], ["myntra", "Myntra"], ["swiggy", "Swiggy"], ["zomato", "Zomato"], ["ola", "Ola"]
+  ], { countryCodes: ["IN"], sensitivityLevel: "standard", featuredCount: 4, sortBase: BAND.IN }),
+  buildServices("shopping-travel-subscriptions", [
+    ["walmart", "Walmart"], ["target-store", "Target"], ["costco", "Costco"], ["doordash", "DoorDash"], ["lyft", "Lyft"], ["instacart", "Instacart"]
+  ], { countryCodes: ["US"], sensitivityLevel: "standard", featuredCount: 4, sortBase: BAND.US }),
+  buildServices("shopping-travel-subscriptions", [
+    ["tesco", "Tesco"], ["sainsburys", "Sainsbury's"], ["ocado", "Ocado"], ["asos", "ASOS"], ["deliveroo", "Deliveroo"], ["just-eat", "Just Eat"]
+  ], { countryCodes: ["GB"], sensitivityLevel: "standard", featuredCount: 4, sortBase: BAND.GB }),
+  buildServices("shopping-travel-subscriptions", [
+    ["noon", "Noon"], ["careem", "Careem"], ["talabat", "Talabat"]
+  ], { countryCodes: ["AE"], sensitivityLevel: "standard", featuredCount: 3, sortBase: BAND.AE }),
   buildServices("health-medical", [
     ["health-records", "Health records"], ["hospital-portals", "Hospital portals"], ["diagnostic-reports", "Diagnostic reports"], ["prescription-history", "Prescription history"], ["health-insurance-portal", "Health insurance portal"], ["fitness-accounts", "Fitness accounts"], ["emergency-health-instructions", "Emergency health instructions"], ["other-medical-information", "Other medical information"]
   ], { sensitivityLevel: "critical" }),

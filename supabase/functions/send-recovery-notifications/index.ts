@@ -96,7 +96,7 @@ async function sendForRequest(admin: ReturnType<typeof createClient>, requestId:
     const vaultWasOpened = isOwner && recovery.state === "opened";
     const actionUrl = vaultWasOpened ? `${appOrigin}/` : isOwner ? `${appOrigin}/release/abort` : `${appOrigin}/hold-release`;
     const subject = vaultWasOpened
-      ? "Your Lyfos vault was opened by a nominee"
+      ? "Your Lyfos vault was opened by a trusted contact"
       : isOwner ? "A recovery request for your Lyfos vault was started" : "Your key is needed for a Lyfos recovery";
     const intro = vaultWasOpened
       ? `${recovery.nominee_email_at_request} just opened your vault read-only through the Circle of Trust recovery process. If you did not expect this, contact support immediately.`

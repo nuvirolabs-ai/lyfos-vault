@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Lyfos · Only you know where everything is.</title>
+<meta name="description" content="Lyfos keeps your accounts, policies and papers encrypted — and hands them to the people you choose, only if you can't." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+(function(){var c='usd';try{
+  var s=localStorage.getItem('lyfos-currency');
+  if(s==='inr'||s==='usd'){c=s;}else{
+    var tz='';try{tz=Intl.DateTimeFormat().resolvedOptions().timeZone||'';}catch(e){}
+    var ist=false;try{ist=new Date().getTimezoneOffset()===-330;}catch(e){}
+    var lg='';try{lg=navigator.language||'';}catch(e){}
+    if(/^Asia\/(Kolkata|Calcutta)$/i.test(tz)||ist||/-IN$/i.test(lg)) c='inr';
+  }}catch(e){}
+  document.documentElement.setAttribute('data-currency',c);})();
+</script>
+<style>
+:root{
+  --paper:#FBF9F5; --paper-2:#F3F0E9; --ink:#15171B; --ink-2:#565C64; --ink-3:#8A9098; --ink-4:#B4B9BF;
+  --line:rgba(21,23,27,.10); --line-2:rgba(21,23,27,.18);
+  --green:#1a9d5a; --green-deep:#0C5D35; --green-soft:rgba(26,157,90,.10);
+  --night:#101318; --night-2:#181C22;
+  --serif:"Fraunces",Georgia,serif; --sans:"Inter",-apple-system,BlinkMacSystemFont,sans-serif;
+  --maxw:1180px;
+  --sh-sm:0 1px 2px rgba(21,23,27,.05);
+  --sh:0 2px 6px rgba(21,23,27,.05),0 24px 60px rgba(21,23,27,.09);
+  --sh-lg:0 2px 8px rgba(21,23,27,.06),0 50px 110px rgba(21,23,27,.18);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.55;
+     -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;overflow-x:hidden}
+a{color:inherit;text-decoration:none} svg{display:block} img{max-width:100%;display:block}
+::selection{background:var(--green-soft)}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 28px}
+@media(max-width:640px){.wrap{padding:0 20px}}
+
+.d1,.d2{font-family:var(--serif);font-weight:500;letter-spacing:-.02em;line-height:1;
+  font-variation-settings:'SOFT' 0,'WONK' 0}
+.d1{font-size:clamp(46px,8vw,92px)}
+.d2{font-size:clamp(32px,5vw,58px);line-height:1.04}
+.eyebrow{font-size:11.5px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--green-deep)}
+.say{font-size:clamp(17px,2vw,21px);color:var(--ink-2);line-height:1.5}
+
+.cur{display:none}
+html[data-currency="inr"] .cur-inr,html[data-currency="usd"] .cur-usd{display:inline}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;border-radius:999px;font-weight:600;
+  border:1px solid transparent;cursor:pointer;transition:transform .16s cubic-bezier(.2,.8,.3,1),box-shadow .16s,background .16s;white-space:nowrap}
+.btn-lg{padding:17px 32px;font-size:16.5px} .btn-sm{padding:10px 18px;font-size:14px}
+.btn-green{background:var(--green);color:#fff;box-shadow:0 1px 2px rgba(12,93,53,.2),0 12px 30px rgba(26,157,90,.3)}
+.btn-green:hover{transform:translateY(-2px);box-shadow:0 2px 4px rgba(12,93,53,.2),0 20px 44px rgba(26,157,90,.36)}
+.btn-ink{background:var(--ink);color:var(--paper)} .btn-ink:hover{transform:translateY(-2px)}
+.btn-quiet{background:transparent;color:var(--ink);border-color:var(--line-2)}
+.btn-quiet:hover{background:#fff;border-color:var(--ink);transform:translateY(-2px)}
+
+nav{position:sticky;top:0;z-index:60;background:color-mix(in srgb,var(--paper) 84%,transparent);
+    backdrop-filter:saturate(180%) blur(16px);-webkit-backdrop-filter:saturate(180%) blur(16px);
+    border-bottom:1px solid transparent;transition:border-color .2s}
+nav.stuck{border-color:var(--line)}
+nav .inner{max-width:var(--maxw);margin:0 auto;height:68px;display:flex;align-items:center;gap:26px;padding:0 28px}
+.brand{display:flex;align-items:center;gap:11px;font-weight:600;font-size:19px;letter-spacing:-.02em}
+.mark{width:30px;height:30px;border-radius:9px;background:var(--green);display:grid;place-items:center;box-shadow:0 4px 14px rgba(26,157,90,.32)}
+.mark svg{width:16px;height:16px}
+nav ul{list-style:none;display:flex;gap:24px;margin-left:12px}
+nav ul a{font-size:14.5px;color:var(--ink-2)} nav ul a:hover{color:var(--ink)}
+nav .right{margin-left:auto;display:flex;gap:10px}
+@media(max-width:820px){nav ul{display:none}}
+@media(max-width:520px){nav .inner{padding:0 20px;gap:12px}}
+
+.rv{opacity:0;transform:translateY(22px);transition:opacity .7s cubic-bezier(.16,1,.3,1),transform .7s cubic-bezier(.16,1,.3,1)}
+.rv.in{opacity:1;transform:none}
+@media(prefers-reduced-motion:reduce){.rv{opacity:1;transform:none;transition:none}}
+
+/* HERO */
+.hero{position:relative;text-align:center;padding:76px 0 0;overflow:hidden}
+.hero::before{content:"";position:absolute;left:50%;top:-360px;width:1200px;height:760px;transform:translateX(-50%);
+  background:radial-gradient(50% 50% at 50% 50%,rgba(26,157,90,.20),transparent 70%);pointer-events:none}
+.hero h1{margin:18px auto 0;max-width:13ch;position:relative}
+.hero .say{margin:22px auto 0;max-width:40ch;position:relative}
+.hero-cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:32px;position:relative}
+.hero-micro{margin-top:20px;font-size:13.5px;color:var(--ink-3);position:relative}
+.shot-hero{position:relative;margin:56px auto 0;max-width:1080px;padding:0 28px}
+.shot-hero img{border-radius:16px;border:1px solid var(--line);box-shadow:var(--sh-lg)}
+.shot-hero::after{content:"";position:absolute;left:0;right:0;bottom:0;height:150px;
+  background:linear-gradient(180deg,rgba(251,249,245,0),var(--paper) 88%);pointer-events:none}
+
+/* NUMBERS */
+.nums{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--paper-2)}
+.nums .wrap{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;padding-top:44px;padding-bottom:44px;text-align:center}
+@media(max-width:680px){.nums .wrap{grid-template-columns:1fr;gap:28px}}
+.num b{display:block;font-family:var(--serif);font-size:clamp(40px,5.5vw,62px);font-weight:500;line-height:1;letter-spacing:-.03em}
+.num span{display:block;margin-top:10px;font-size:14.5px;color:var(--ink-2)}
+
+section.band{padding:104px 0}
+@media(max-width:720px){section.band{padding:74px 0}}
+.center{text-align:center}
+
+/* GAP */
+.gap-grid{display:grid;grid-template-columns:1fr 1fr;gap:60px;align-items:center}
+@media(max-width:900px){.gap-grid{grid-template-columns:1fr;gap:40px}}
+.headlist{position:relative;background:#fff;border:1px solid var(--line);border-radius:20px;padding:28px 28px 0;
+  box-shadow:var(--sh);max-height:400px;overflow:hidden}
+.headlist::after{content:"";position:absolute;left:0;right:0;bottom:0;height:220px;
+  background:linear-gradient(180deg,rgba(255,255,255,0),#fff 72%)}
+.headlist .t{font-size:11.5px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3);margin-bottom:12px}
+.headlist ol{list-style:none;counter-reset:h}
+.headlist li{counter-increment:h;display:flex;gap:14px;padding:10px 0;font-size:15.5px;border-bottom:1px dashed var(--line)}
+.headlist li::before{content:counter(h,decimal-leading-zero);font-size:11.5px;font-weight:600;color:var(--ink-4);padding-top:3px;font-variant-numeric:tabular-nums}
+.list-note{position:relative;z-index:2;margin-top:-58px;text-align:center;font-size:14px;color:var(--ink-3);font-style:italic}
+
+/* STEPS */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:52px}
+@media(max-width:880px){.steps{grid-template-columns:1fr;max-width:460px;margin-inline:auto}}
+.step{background:#fff;border:1px solid var(--line);border-radius:20px;padding:30px 26px;box-shadow:var(--sh-sm)}
+.step .ic{width:46px;height:46px;border-radius:14px;background:var(--green-soft);display:grid;place-items:center;margin:0 auto 18px}
+.step .ic svg{width:22px;height:22px;color:var(--green-deep)}
+.step h3{font-family:var(--serif);font-size:25px;font-weight:500;line-height:1.1}
+.step p{margin-top:8px;font-size:14.5px;color:var(--ink-2)}
+
+/* HANDOVER */
+.night{background:var(--night);color:#F2F3F4;position:relative;overflow:hidden}
+.night::before{content:"";position:absolute;left:50%;top:-260px;width:1000px;height:560px;transform:translateX(-50%);
+  background:radial-gradient(50% 50% at 50% 50%,rgba(26,157,90,.20),transparent 70%)}
+.night .eyebrow{color:#5BD394} .night .d2{color:#fff} .night .say{color:#A6ADB6}
+.circle-wrap{position:relative;margin:52px auto 0;max-width:600px}
+.circle{position:relative;width:100%;aspect-ratio:1.4/1}
+.holder{position:absolute;width:92px;transform:translate(-50%,-50%);text-align:center;z-index:3}
+.holder .av{width:56px;height:56px;margin:0 auto;border-radius:50%;background:var(--night-2);border:1px solid rgba(255,255,255,.14);
+  display:grid;place-items:center;font-size:15px;font-weight:600;color:#8F97A1;transition:all .5s cubic-bezier(.2,.8,.3,1)}
+.holder .lb{margin-top:9px;font-size:12px;color:#7A828C;transition:color .5s}
+.circle.go .holder.on .av{background:rgba(26,157,90,.16);border-color:#3FCB84;color:#7EE2AB;
+  box-shadow:0 0 0 6px rgba(26,157,90,.10),0 10px 30px rgba(26,157,90,.28)}
+.circle.go .holder.on .lb{color:#B9E9CF}
+.vault-c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:112px;height:112px;border-radius:50%;
+  background:linear-gradient(180deg,#252C36,#1A1F26);border:1px solid rgba(255,255,255,.20);display:grid;place-items:center;
+  transition:all .6s cubic-bezier(.2,.8,.3,1);z-index:2;box-shadow:0 0 0 8px rgba(16,19,24,.9),0 18px 50px rgba(0,0,0,.5)}
+.vault-c svg{width:40px;height:40px;color:#A8B1BB;transition:color .6s}
+.circle.open .vault-c{border-color:#3FCB84;background:linear-gradient(180deg,#1D3A2A,#152A20);
+  box-shadow:0 0 0 8px rgba(16,19,24,.9),0 0 0 14px rgba(26,157,90,.14),0 20px 60px rgba(26,157,90,.34)}
+.circle.open .vault-c svg{color:#6EE0A4}
+.spoke{position:absolute;left:50%;top:50%;height:1px;transform-origin:0 50%;background:rgba(255,255,255,.12);transition:background .5s;z-index:1}
+.circle.go .spoke.on{background:linear-gradient(90deg,rgba(26,157,90,.65),rgba(26,157,90,.12))}
+.hsteps{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:44px}
+@media(max-width:820px){.hsteps{grid-template-columns:1fr 1fr}}
+.hs{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:18px}
+.hs b{display:block;font-size:22px;font-family:var(--serif);font-weight:500;color:#5BD394}
+.hs span{display:block;margin-top:6px;font-size:13.5px;color:#B7BDC4}
+
+/* PRODUCT SHOTS */
+.shots{display:grid;gap:22px;margin-top:52px}
+.shotrow{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+@media(max-width:880px){.shotrow{grid-template-columns:1fr}}
+.shotcard{background:#fff;border:1px solid var(--line);border-radius:22px;padding:28px 28px 0;box-shadow:var(--sh-sm);overflow:hidden}
+.shotcard h4{font-family:var(--serif);font-size:26px;font-weight:500;letter-spacing:-.01em}
+.shotcard p{margin-top:7px;font-size:14.5px;color:var(--ink-2);max-width:36ch}
+.shotcard img{margin-top:22px;border-radius:12px 12px 0 0;border:1px solid var(--line);border-bottom:0}
+
+/* LEDGER */
+.ledger{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:48px;text-align:left}
+@media(max-width:820px){.ledger{grid-template-columns:1fr}}
+.led{border-radius:22px;padding:30px;border:1px solid var(--line);background:#fff;box-shadow:var(--sh-sm)}
+.led.no{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.led h3{font-family:var(--serif);font-size:21px;font-weight:500}
+.led ul{list-style:none;margin-top:18px;display:flex;flex-direction:column;gap:12px}
+.led li{display:flex;gap:11px;font-size:15px;color:var(--ink-2)} .led.no li{color:#B7BDC4}
+.led li svg{width:16px;height:16px;flex:none;margin-top:4px;color:var(--ink-4)} .led.no li svg{color:#5BD394}
+
+/* FOUNDER */
+.founder{display:grid;grid-template-columns:auto 1fr;gap:28px;align-items:start;max-width:820px;margin:0 auto;text-align:left}
+@media(max-width:640px){.founder{grid-template-columns:1fr;gap:18px}}
+.face{width:76px;height:76px;border-radius:50%;background:linear-gradient(160deg,var(--green),#0C5D35);display:grid;place-items:center;
+  color:#fff;font-weight:600;font-size:24px;letter-spacing:.02em;box-shadow:0 12px 30px rgba(26,157,90,.3)}
+.founder blockquote{font-family:var(--serif);font-size:clamp(22px,3vw,32px);font-weight:500;line-height:1.28;letter-spacing:-.01em}
+.founder .who{margin-top:18px;font-size:14px;color:var(--ink-3)}
+
+/* PRICING */
+.cur-note{display:inline-flex;align-items:center;gap:9px;margin-top:22px;padding:9px 16px;border:1px solid var(--line);
+  border-radius:999px;background:#fff;font-size:12.5px;color:var(--ink-3)}
+.cur-note button{background:none;border:0;padding:0;font:inherit;font-weight:600;color:var(--green-deep);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.plans{display:grid;grid-template-columns:1fr 1.12fr;gap:20px;max-width:900px;margin:44px auto 0;align-items:start;text-align:left}
+@media(max-width:880px){.plans{grid-template-columns:1fr;max-width:480px}}
+.plan{position:relative;background:#fff;border:1px solid var(--line);border-radius:24px;padding:32px 28px;box-shadow:var(--sh-sm)}
+.plan.hero-plan{padding:38px 32px;border-color:rgba(26,157,90,.42);box-shadow:var(--sh)}
+.plan .ribbon{position:absolute;top:-13px;left:32px;background:var(--green);color:#fff;font-size:10.5px;font-weight:700;
+  letter-spacing:.13em;text-transform:uppercase;padding:6px 14px;border-radius:999px}
+.plan .tag{font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3)}
+.plan.hero-plan .tag{color:var(--green-deep)}
+.plan .amt{font-family:var(--serif);font-size:clamp(38px,5vw,52px);font-weight:500;letter-spacing:-.02em;margin-top:10px;line-height:1}
+.plan.hero-plan .amt{font-size:clamp(46px,6vw,64px)}
+.plan .amt small{font-family:var(--sans);font-size:13.5px;font-weight:500;color:var(--ink-3);letter-spacing:0}
+.plan ul{list-style:none;margin-top:22px;display:flex;flex-direction:column;gap:11px}
+.plan li{display:grid;grid-template-columns:17px 1fr;gap:10px;font-size:15px;align-items:start}
+.plan li svg{width:16px;height:16px;color:var(--green);margin-top:3px}
+.plan li.off{color:var(--ink-4)} .plan li.off svg{color:var(--ink-4)}
+.plan .btn{width:100%;margin-top:24px}
+.plan .fine{margin-top:12px;font-size:12.5px;color:var(--ink-3);text-align:center}
+
+/* FAQ */
+.faq{max-width:760px;margin:40px auto 0;text-align:left}
+.qa{border-bottom:1px solid var(--line)}
+.qa button{width:100%;text-align:left;background:none;border:0;cursor:pointer;font-family:var(--sans);font-size:17px;font-weight:600;
+  color:var(--ink);padding:22px 40px 22px 0;position:relative}
+.qa button::after{content:"";position:absolute;right:6px;top:50%;width:10px;height:10px;border-right:2px solid var(--ink-3);
+  border-bottom:2px solid var(--ink-3);transform:translateY(-70%) rotate(45deg);transition:transform .3s}
+.qa.open button::after{transform:translateY(-30%) rotate(225deg)}
+.qa .a{max-height:0;overflow:hidden;transition:max-height .35s ease}
+.qa .a p{padding:0 0 22px;font-size:15.5px;color:var(--ink-2);max-width:64ch}
+
+.close{text-align:center;padding:110px 0 116px;position:relative;overflow:hidden}
+.close::before{content:"";position:absolute;left:50%;bottom:-340px;width:1000px;height:640px;transform:translateX(-50%);
+  background:radial-gradient(50% 50% at 50% 50%,rgba(26,157,90,.18),transparent 70%)}
+.close .in{position:relative}
+
+footer{border-top:1px solid var(--line);background:var(--paper-2);padding:44px 0 36px}
+.f-row{display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-content:space-between}
+.f-links{display:flex;flex-wrap:wrap;gap:22px} .f-links a{font-size:14px;color:var(--ink-2)}
+.f-legal{margin-top:26px;font-size:12.5px;color:var(--ink-3);line-height:1.65}
+</style>
+</head>
+<body>
+
+<nav id="nav">
+  <div class="inner">
+    <a class="brand" href="#top"><span class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M8.2 11V8.3a3.8 3.8 0 0 1 7.6 0V11" stroke="#fff" stroke-width="2.1" stroke-linecap="round"/><rect x="5.4" y="10.6" width="13.2" height="9.4" rx="2.7" fill="#fff"/><circle cx="12" cy="14.7" r="1.55" fill="#1a9d5a"/><path d="M12 15.7l-1.05 3.5h2.1z" fill="#1a9d5a"/></svg></span>Lyfos</a>
+    <ul>
+      <li><a href="#handover">The handover</a></li>
+      <li><a href="#product">Product</a></li>
+      <li><a href="#security">Security</a></li>
+      <li><a href="#pricing">Pricing</a></li>
+    </ul>
+    <div class="right"><a class="btn btn-ink btn-sm" href="#start">Start free</a></div>
+  </div>
+</nav>
+
+<main id="top">
+
+  <!-- HERO — 14 words, then the product -->
+  <header class="hero">
+    <div class="wrap">
+      <span class="eyebrow rv">Encrypted · Built for handover</span>
+      <h1 class="d1 rv">Only you know where everything is.</h1>
+      <p class="say rv">Lyfos keeps it sealed — and hands it over only if you can't.</p>
+      <div class="hero-cta rv">
+        <a class="btn btn-green btn-lg" href="#start">Start free</a>
+        <a class="btn btn-quiet btn-lg" href="#handover">See the handover</a>
+      </div>
+      <p class="hero-micro rv">Free forever · Open source · Works in your browser</p>
+    </div>
+    <div class="shot-hero rv"><img src="shots/home.png" alt="The Lyfos vault home screen showing six protected life areas" width="1600" height="918" /></div>
+  </header>
+
+  <!-- NUMBERS — the whole model in three glances -->
+  <section class="nums">
+    <div class="wrap">
+      <div class="num rv"><b>11</b><span>records, free forever</span></div>
+      <div class="num rv"><b>3 of 5</b><span>must agree to open it</span></div>
+      <div class="num rv"><b>14 days</b><span>for you to stop it</span></div>
+    </div>
+  </section>
+
+  <!-- THE GAP -->
+  <section class="band">
+    <div class="wrap gap-grid">
+      <div>
+        <span class="eyebrow rv">The gap</span>
+        <h2 class="d2 rv" style="margin-top:14px;max-width:15ch;">They can't find what they don't know exists.</h2>
+        <p class="say rv" style="margin-top:20px;max-width:34ch;">Not hidden. Just never written down.</p>
+      </div>
+      <div class="rv">
+        <div class="headlist">
+          <div class="t">Things only you know</div>
+          <ol>
+            <li>Which bank the salary lands in</li>
+            <li>The second account from the old job</li>
+            <li>The term policy — still active</li>
+            <li>Where the property papers are</li>
+            <li>The locker branch, and the joint holder</li>
+            <li>Your phone PIN</li>
+            <li>The email every OTP goes to</li>
+            <li>The demat with the ESOPs</li>
+            <li>The loan you co-signed</li>
+          </ol>
+        </div>
+        <p class="list-note">…and it is all in one place.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- THREE STEPS — three words each -->
+  <section class="band center" style="background:var(--paper-2);border-top:1px solid var(--line);border-bottom:1px solid var(--line);">
+    <div class="wrap">
+      <span class="eyebrow rv">How it works</span>
+      <h2 class="d2 rv" style="margin-top:14px;">Three decisions. Once.</h2>
+      <div class="steps">
+        <div class="step rv">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></div>
+          <h3>Write it once.</h3>
+          <p>Encrypted on your device before it leaves.</p>
+        </div>
+        <div class="step rv">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9.5" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/></svg></div>
+          <h3>Pick five people.</h3>
+          <p>They see nothing while you're fine.</p>
+        </div>
+        <div class="step rv">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+          <h3>Forget about it.</h3>
+          <p>Nothing renews. Nothing lapses.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HANDOVER — the diagram does the talking -->
+  <section class="band night center" id="handover">
+    <div class="wrap">
+      <span class="eyebrow rv">The handover</span>
+      <h2 class="d2 rv" style="margin-top:14px;">No one can open it alone.</h2>
+      <div class="circle-wrap rv"><div class="circle" id="circle">
+        <div class="vault-c"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10.5" rx="2.6"/><path d="M8 10.5V7.6a4 4 0 0 1 8 0v2.9"/><circle cx="12" cy="15.4" r="1.5"/></svg></div>
+      </div></div>
+      <div class="hsteps">
+        <div class="hs rv"><b>01</b><span>Someone asks</span></div>
+        <div class="hs rv"><b>02</b><span>Three agree</span></div>
+        <div class="hs rv"><b>03</b><span>You get 14 days</span></div>
+        <div class="hs rv"><b>04</b><span>It opens, read-only</span></div>
+      </div>
+      <p class="say rv" style="margin-top:34px;max-width:34ch;margin-inline:auto;">Being alive is always the winning argument.</p>
+    </div>
+  </section>
+
+  <!-- PRODUCT — real screenshots -->
+  <section class="band center" id="product">
+    <div class="wrap">
+      <span class="eyebrow rv">The product</span>
+      <h2 class="d2 rv" style="margin-top:14px;">Built to be read by someone else.</h2>
+      <div class="shots">
+        <div class="shotrow">
+          <div class="shotcard rv">
+            <h4>One running number.</h4>
+            <p>Every asset and liability, always current.</p>
+            <img src="shots/balance.png" alt="Personal balance sheet showing net worth, assets and liabilities" width="1200" height="650" />
+          </div>
+          <div class="shotcard rv">
+            <h4>Five people. Three keys.</h4>
+            <p>Set it once, then it just sits there.</p>
+            <img src="shots/trust.png" alt="Circle of Trust release plan showing nominee set, 5 of 5 key holders and a 3 of 3 threshold" width="1200" height="390" />
+          </div>
+        </div>
+        <div class="shotcard rv" style="text-align:left;">
+          <h4>Everything, in one place.</h4>
+          <p>Seven records across six areas — each one marked emergency-enabled, so your family knows it's meant for them.</p>
+          <img src="shots/records.png" alt="All records list showing bank, email, identity, insurance and property records" width="1400" height="772" />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECURITY -->
+  <section class="band center" id="security" style="background:var(--paper-2);border-top:1px solid var(--line);border-bottom:1px solid var(--line);">
+    <div class="wrap">
+      <span class="eyebrow rv">Security</span>
+      <h2 class="d2 rv" style="margin-top:14px;">What we see. What we can't.</h2>
+      <div class="ledger">
+        <div class="led rv">
+          <h3>We can see</h3>
+          <ul>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"/></svg> Your email</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"/></svg> Your billing record</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"/></svg> When you last synced</li>
+          </ul>
+        </div>
+        <div class="led no rv">
+          <h3>We never can</h3>
+          <ul>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg> What's inside a record</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg> Your passphrase or recovery phrase</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg> Any key that opens your vault</li>
+          </ul>
+        </div>
+      </div>
+      <p class="rv" style="margin-top:26px;font-size:15px;color:var(--ink-2);">We hold ciphertext and no key. Not a policy — the architecture.</p>
+    </div>
+  </section>
+
+  <!-- FOUNDER -->
+  <section class="band">
+    <div class="wrap founder">
+      <div class="face rv">SV</div>
+      <div>
+        <blockquote class="rv">“I watched a family spend nine months piecing together what one person knew by heart.”</blockquote>
+        <p class="who rv">The Lyfos founder · Nuviro Labs · Building in public</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRICING -->
+  <section class="band center" id="pricing" style="background:var(--paper-2);border-top:1px solid var(--line);">
+    <div class="wrap">
+      <span class="eyebrow rv">Pricing</span>
+      <h2 class="d2 rv" style="margin-top:14px;">Pay once. That's it.</h2>
+      <p class="cur-note rv">
+        <span class="cur cur-inr">Prices in ₹ INR.</span><span class="cur cur-usd">Prices in $ USD.</span>
+        <button type="button" data-currency-toggle><span class="cur cur-inr">Switch to $</span><span class="cur cur-usd">Switch to ₹</span></button>
+      </p>
+      <div class="plans">
+        <div class="plan rv">
+          <div class="tag">Free forever</div>
+          <div class="amt"><span class="cur cur-inr">₹0</span><span class="cur cur-usd">$0</span> <small>no card</small></div>
+          <ul>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> 11 encrypted records</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Encrypted sync</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> 24-word recovery phrase</li>
+            <li class="off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h14"/></svg> No handover</li>
+          </ul>
+          <a class="btn btn-quiet btn-lg" href="#start">Start free</a>
+        </div>
+        <div class="plan hero-plan rv">
+          <span class="ribbon">Everything</span>
+          <div class="tag">Vault</div>
+          <div class="amt"><span class="cur cur-inr">₹999</span><span class="cur cur-usd">$9</span> <small>once · for life</small></div>
+          <ul>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Unlimited records</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> The handover — 5 holders, 3 to release</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Personal balance sheet</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Invites and release alerts</li>
+          </ul>
+          <a class="btn btn-green btn-lg" href="#start">Get Vault</a>
+          <p class="fine">7-day refund<span class="cur cur-inr"> · GST invoice</span></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="band center">
+    <div class="wrap">
+      <h2 class="d2 rv">Questions.</h2>
+      <div class="faq">
+        <div class="qa rv"><button>Isn't one place riskier?</button><div class="a"><p>Only if it's readable. Your vault is encrypted on your device with a key derived from a passphrase only you know. Compare it to the real alternative — a notes app, a shared drive, or a diary in a drawer.</p></div></div>
+        <div class="qa rv"><button>What if I forget my passphrase?</button><div class="a"><p>Your 24-word recovery phrase opens it. Lose both and nobody can — including us. That's the honest cost of real zero-knowledge.</p></div></div>
+        <div class="qa rv"><button>How is this different from a password manager?</button><div class="a"><p>A password manager keeps <em>you</em> in. Lyfos also gets your family through — without giving anyone access while you're fine.</p></div></div>
+        <div class="qa rv"><button>Could a nominee open it behind my back?</button><div class="a"><p>No. Three of five must agree, then a 14-day hold starts and you're alerted throughout. One tap ends it. It opens read-only.</p></div></div>
+        <div class="qa rv"><button>What if Lyfos shuts down?</button><div class="a"><p>It's local-first and open source. Your recovery phrase decrypts your vault with or without our servers or our company.</p></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CLOSE -->
+  <section class="close" id="start">
+    <div class="wrap in">
+      <h2 class="d1 rv" style="max-width:12ch;margin:0 auto;">Start with one record.</h2>
+      <div class="rv" style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:34px;">
+        <a class="btn btn-green btn-lg" href="#">Create your vault</a>
+      </div>
+      <p class="rv" style="margin-top:20px;font-size:13.5px;color:var(--ink-3);">Free forever · No card</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="f-row">
+      <a class="brand" href="#top"><span class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M8.2 11V8.3a3.8 3.8 0 0 1 7.6 0V11" stroke="#fff" stroke-width="2.1" stroke-linecap="round"/><rect x="5.4" y="10.6" width="13.2" height="9.4" rx="2.7" fill="#fff"/><circle cx="12" cy="14.7" r="1.55" fill="#1a9d5a"/><path d="M12 15.7l-1.05 3.5h2.1z" fill="#1a9d5a"/></svg></span>Lyfos</a>
+      <div class="f-links"><a href="#security">Security</a><a href="#pricing">Pricing</a><a href="#">Privacy</a><a href="#">Terms</a><a href="#">Contact</a></div>
+    </div>
+    <p class="f-legal">Lyfos is a product by Nuviro Labs · Udyam UDYAM-RJ-08-0134263 · Bikaner, Rajasthan.<br>
+      © 2026 Nuviro Labs · <span style="color:var(--green-deep);font-weight:600;">Design prototype — not the live site.</span></p>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var root=document.documentElement;
+  document.querySelectorAll('[data-currency-toggle]').forEach(function(b){
+    b.addEventListener('click',function(){
+      var n=root.getAttribute('data-currency')==='inr'?'usd':'inr';
+      root.setAttribute('data-currency',n);
+      try{localStorage.setItem('lyfos-currency',n);}catch(e){}
+    });
+  });
+
+  var nav=document.getElementById('nav');
+  var s=function(){nav.classList.toggle('stuck',window.scrollY>8);};
+  s(); addEventListener('scroll',s,{passive:true});
+
+  var rv=document.querySelectorAll('.rv');
+  if(!('IntersectionObserver' in window)){rv.forEach(function(e){e.classList.add('in');});}
+  else{
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(x){ if(x.isIntersecting){ x.target.classList.add('in'); io.unobserve(x.target); } });
+    },{threshold:.12,rootMargin:'0px 0px -6% 0px'});
+    rv.forEach(function(e,i){ e.style.transitionDelay=(Math.min(i,3)*60)+'ms'; io.observe(e); });
+  }
+
+  document.querySelectorAll('.qa').forEach(function(qa){
+    var b=qa.querySelector('button'), a=qa.querySelector('.a');
+    b.addEventListener('click',function(){ a.style.maxHeight = qa.classList.toggle('open') ? a.scrollHeight+'px' : 0; });
+  });
+
+  var circle=document.getElementById('circle');
+  if(circle){
+    var names=['Spouse','Sibling','Friend','Your CA','Cousin'], ini=['P','R','A','CA','M'], on=[0,1,3];
+    function place(){
+      var W=circle.clientWidth, H=circle.clientHeight;
+      circle.querySelectorAll('.holder,.spoke').forEach(function(n){n.remove();});
+      var cx=W/2, cy=H/2, rx=Math.min(W*0.40,270), ry=Math.min(H*0.40,175);
+      names.forEach(function(nm,i){
+        var ang=(-90+i*72)*Math.PI/180, x=cx+rx*Math.cos(ang), y=cy+ry*Math.sin(ang);
+        var d=document.createElement('div');
+        d.className='holder'+(on.indexOf(i)>=0?' on':'');
+        d.style.left=x+'px'; d.style.top=y+'px';
+        d.innerHTML='<div class="av">'+ini[i]+'</div><div class="lb">'+nm+'</div>';
+        circle.appendChild(d);
+        var dx=x-cx, dy=y-cy, dist=Math.sqrt(dx*dx+dy*dy), START=60, END=34;
+        var sp=document.createElement('div');
+        sp.className='spoke'+(on.indexOf(i)>=0?' on':'');
+        sp.style.width=Math.max(0,dist-START-END)+'px';
+        sp.style.transform='rotate('+Math.atan2(dy,dx)+'rad) translateX('+START+'px)';
+        circle.appendChild(sp);
+      });
+    }
+    place(); addEventListener('resize',place);
+    var fired=false;
+    new IntersectionObserver(function(es,o){
+      es.forEach(function(x){
+        if(!x.isIntersecting||fired) return; fired=true;
+        setTimeout(function(){circle.classList.add('go');},400);
+        setTimeout(function(){circle.classList.add('open');},1500);
+        o.disconnect();
+      });
+    },{threshold:.3}).observe(circle);
+  }
+})();
+</script>
+</body>
+</html>

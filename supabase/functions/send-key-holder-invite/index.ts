@@ -224,7 +224,7 @@ function json(body: unknown, status = 200) {
 
 function buildText({ ownerName, label, role, inviteUrl }: { ownerName: string; label: string; role: string; inviteUrl: string }) {
   return [
-    `${ownerName} has invited you to be a trusted nominee/key holder on Lyfos.`,
+    `${ownerName} has invited you to be a trusted contact and key holder on Lyfos.`,
     "",
     `Your role is ${role}. If a recovery is approved, the primary (or approved backup) still needs two other nominees plus a 14-day owner-protection hold. No one can open the vault alone.`,
     "",
